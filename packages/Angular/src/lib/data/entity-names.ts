@@ -46,6 +46,11 @@ export const MJO_ENTITIES = {
     StoredValueTransaction: 'MJ_BizApps_Orders: Stored Value Transactions',
     PaymentProvider: 'MJ_BizApps_Orders: Payment Providers',
     ProductEntitlement: 'MJ_BizApps_Orders: Product Entitlements',
+    // Product options (Tier, Size) and where they are assigned (golive #399).
+    ProductOption: 'MJ_BizApps_Orders: Product Options',
+    ProductOptionValue: 'MJ_BizApps_Orders: Product Option Values',
+    ProductOptionAssignment: 'MJ_BizApps_Orders: Product Option Assignments',
+    ProductOptionAssignmentValue: 'MJ_BizApps_Orders: Product Option Assignment Values',
     EventProduct: 'MJ_BizApps_Orders: Event Products',
     PriceListAssignment: 'MJ_BizApps_Orders: Price List Assignments',
     PromotionCode: 'MJ_BizApps_Orders: Promotion Codes',

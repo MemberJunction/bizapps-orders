@@ -1,7 +1,18 @@
 # Product options, with the schema for variant SKUs
 
-**Status:** not started. **Post go-live.** Plan only; no code, migration or metadata in the PR that adds
-it. Owner: Boston Gunderson. Reviewers: Robert Kihm, Craig Adam, Andrew. First use: converting
+> **Status: BUILT (2026-11-18), apart from the deferred items below.** Options, values, the
+> inheritance walk, picks on the line, the `Option` price source, the missing-pick refusal, the
+> entitlement same-option rule, renewals carrying picks and the refused variant schema shipped with
+> migration `V202611181800`; the screens (option catalog page, Options panel on the type, category and
+> product forms, line editor selectors, the When builder's Option fields, the checkout widget's option
+> inputs and the entitlement condition picker) followed. How it works now:
+> [`docs/HOW_THE_SYSTEM_WORKS.md`](../../docs/HOW_THE_SYSTEM_WORKS.md) §6 "Product options" and
+> [`docs/ERD.md`](../../docs/ERD.md) §2.1a. Not built: `PaymentProviderPriceOptionValue` (gateway
+> prices carrying picks), variant SKU wiring and inventory, the Sales deal line editor, unsaved picks
+> on the `Orders.PriceOrder` path, and option inputs on the checkout host page's no-element fallback
+> form. Required-option defaults (open question 4) pre-fill the line and stay editable.
+
+**Status at planning:** not started, post go-live. Owner: Boston Gunderson. Reviewers: Robert Kihm, Craig Adam, Andrew. First use: converting
 BlueCypress's MJ Central hosting products to options a few weeks after this ships. It builds on the
 code-described pricing source that #996 (revenue-band pricing) introduces.
 

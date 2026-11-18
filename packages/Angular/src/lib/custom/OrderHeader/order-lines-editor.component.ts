@@ -39,6 +39,11 @@ import {
     UserCanRunAlongside,
     loadApplicabilityContext,
     priceOverrideCatalogInstalled,
+    ApplyOptionDefaults,
+    LineOptionValueID,
+    OptionPicksOnly,
+    SetLineOptionPick,
+    type EffectiveProductOption,
     userPriceOverrideKind,
     type ApplicablePrice,
     type CheckCoverageOverlapOutput,
@@ -231,6 +236,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     /** One in-flight sync per line — see {@link syncStagedDiscount}. */
     private readonly discountSyncQueue = new Map<string, Promise<void>>();
     private orderEvents: MJOReleasable | null = null;
+    private optionsEngineReady = false;
+    private readonly optionsByProduct = new Map<string, EffectiveProductOption[]>();
 
     public get Lines(): mjBizAppsOrdersOrderLineEntity[] {
         return [...(this._order?.Lines.Items ?? [])];
@@ -1005,6 +1012,100 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         return product ? this.IsForeignCompany(product) : false;
     }
 
+    /**
+     * The product options (Tier, Size) the line's product offers, after inheritance (golive #399).
+     * Memoised per product: the template reads this on every change-detection pass and the walk
+     * runs over the whole option catalog. The memo is dropped when the order is rebound, which is
+     * also when the engine is reloaded.
+     */
+    public OptionsFor(line: mjBizAppsOrdersOrderLineEntity): EffectiveProductOption[] {
+        const productID = line.ProductID;
+        if (!productID || !this.optionsEngineReady) return [];
+        const key = productID.toLowerCase();
+        let options = this.optionsByProduct.get(key);
+        if (!options) {
+            options = OrdersEngine.Instance.EffectiveOptions(productID);
+            this.optionsByProduct.set(key, options);
+        }
+        return options;
+    }
+
+    /** The value picked on the line for one option, or '' for no pick (the select's empty row). */
+    public OptionPickFor(line: mjBizAppsOrdersOrderLineEntity, option: EffectiveProductOption): string {
+        return this.hasChoices(line) ? LineOptionValueID(line, option.Option.ID) ?? '' : '';
+    }
+
+    /** The picked value's label for read mode; a dash for no pick. */
+    public OptionLabelFor(line: mjBizAppsOrdersOrderLineEntity, option: EffectiveProductOption): string {
+        const id = this.OptionPickFor(line, option);
+        if (id) {
+            const value = option.Values.find((v) => UUIDsEqual(v.ID, id));
+            if (value) return value.Label;
+        }
+        // A saved pick whose value the product no longer allows still says what was sold.
+        const row = this.hasChoices(line) ? line.Choices.Items.find((c) => c.ProductOptionID && UUIDsEqual(c.ProductOptionID, option.Option.ID)) : undefined;
+        return row?.OptionLabel || '—';
+    }
+
+    /**
+     * Picks decide the line's price and entitlements, so they are part of the sale: editable until
+     * the order is booked, like its money. The server refuses a pick changed after that too.
+     */
+    public get CanEditOptions(): boolean {
+        return this.EditMode && !this.IsMoneyLocked;
+    }
+
+    /** A pick changed: write it into the line's Choices and price the order again. */
+    public async OnOptionPicked(line: mjBizAppsOrdersOrderLineEntity, option: EffectiveProductOption, event: Event): Promise<void> {
+        if (!this.CanEditOptions || !this.hasChoices(line)) return;
+        const target = event.target;
+        if (!(target instanceof HTMLSelectElement)) return;
+        if (!(await SetLineOptionPick(line, option, target.value || null))) return;
+        void this.refreshApplicable(line);
+        this.schedulePricing();
+        this.cdr.detectChanges();
+    }
+
+    /** True when the line can hold picks. A line built without its collection (a test double) cannot. */
+    private hasChoices(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !!(line as { Choices?: unknown }).Choices;
+    }
+
+    /**
+     * A new line starts with each option's default (a required option's too, still editable).
+     * Picks for options the product no longer offers are dropped, so a line never keeps a Size
+     * its product stopped offering.
+     */
+    private async applyOptionDefaults(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this.hasChoices(line)) return;
+        await ApplyOptionDefaults(line, this.OptionsFor(line));
+    }
+
+    /**
+     * A saved line's picks live in its Choices collection, which loads only when asked. It is loaded
+     * before the line is shown, so the selectors show the saved picks and an edit changes the saved
+     * row instead of adding a second one beside it. Only lines whose product offers options pay
+     * for the query.
+     */
+    private async loadSavedPicks(): Promise<void> {
+        await Promise.all(
+            this.Lines.filter((line) => line.IsSaved && this.hasChoices(line) && !line.Choices.IsLoaded && this.OptionsFor(line).length > 0).map(
+                (line) => line.Choices.Load(),
+            ),
+        );
+    }
+
+    private async loadOptionsEngine(): Promise<void> {
+        const user = this.metadata.CurrentUser as UserInfo | null;
+        try {
+            await LoadOrdersEngine(this.metadata, user);
+            this.optionsEngineReady = true;
+        } catch {
+            // Without the catalog no selectors are offered; pricing reports a missing pick on its own.
+            this.optionsEngineReady = false;
+        }
+    }
+
     public PricedLine(line: mjBizAppsOrdersOrderLineEntity): MJOLinePrice | undefined {
         return this.Pricing?.Result?.Lines.find((priced) => UUIDsEqual(priced.ClientKey, line.ID));
     }
@@ -1634,6 +1735,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         if (this._order && !this._order.Lines.IsLoaded && this._order.IsSaved) {
             await this._order.Lines.Load();
         }
+        await this.loadOptionsEngine();
+        await this.loadSavedPicks();
         await this.hydrateExtensions();
         await this.loadStampedTags();
         await this.resolveOverrideKind();
@@ -1678,6 +1781,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
         this.defaultUnitByLine.clear();
+        this.optionsByProduct.clear();
         this.OverrideKind = 'none';
     }
 
@@ -1686,6 +1790,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         const line = await this._order.Lines.Create();
         line.ProductID = product.ID;
         line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+        await this.applyOptionDefaults(line);
     }
 
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
@@ -1695,6 +1800,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         line.ProductID = product.ID;
         line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
         await line.EnsureISAChild(product.OrderLineExtensionEntity);
+        await this.applyOptionDefaults(line);
         this.expandedLineIds.add(line.ID);
     }
 
@@ -1877,6 +1983,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
                         ShipToOrganizationID: this._order.ShipToOrganizationID ?? null,
                         BillToAddressID: this._order.BillToAddressID ?? null,
                         ShipToAddressID: this._order.ShipToAddressID ?? null,
+                        // The line's picks as they stand, saved or not, so a rule on Option.TIER
+                        // lists for the tier on screen (golive #399).
+                        OptionPicks: this.hasChoices(line) ? OptionPicksOnly(line.Choices.Items) : [],
                     },
                     this.metadata,
                     user,

@@ -57,6 +57,7 @@ import { MJOSubscriptionsPageComponent } from '../pages/subscriptions/subscripti
 import { MJORenewalsPageComponent } from '../pages/subscriptions/renewals.page';
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
+import { MJOProductOptionsPageComponent } from '../pages/catalog/product-options.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { CompositeKey, Metadata } from '@memberjunction/core';
@@ -985,7 +986,7 @@ export class SubscriptionsSectionResource extends MJOSectionBaseComponent {
         <mjo-section-shell
             Title="Catalog"
             Icon="fa-solid fa-box-open"
-            Subtitle="Products, pricing, promotions, charges and tax"
+            Subtitle="Products, options, pricing, promotions, charges and tax"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"
@@ -1037,6 +1038,8 @@ export class CatalogSectionResource extends MJOSectionBaseComponent {
                 return MJOProductsPageComponent;
             case 'charges':
                 return MJOChargesTaxPageComponent;
+            case 'options':
+                return MJOProductOptionsPageComponent;
             case 'pricing':
                 return MJOPricingPageComponent;
             case 'promotions':

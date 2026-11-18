@@ -62,6 +62,12 @@ import {
     type CheckoutChoiceGroup,
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities/dist/checkout-choices.js';
+import {
+    CheckoutOptionDefaults,
+    MissingCheckoutOptions,
+    type CheckoutOptionPicksInput,
+    type CheckoutProductOption
+} from '@mj-biz-apps/orders-entities/dist/checkout-options.js';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -156,6 +162,8 @@ export interface CheckoutSubmissionEvent {
     answers: CheckoutAnswersInput;
     /** Options chosen from the widget's `choiceGroups`, keyed by group key. */
     choices: CheckoutChoicesInput;
+    /** The sold product's option picks (Tier, Size): option code -> value code. */
+    optionPicks: CheckoutOptionPicksInput;
     paymentToken?: string;
     stripePaymentMethodId?: string;
     stripePaymentIntentId?: string;
@@ -220,6 +228,15 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     @Input()
     public set config(val: CheckoutWidgetConfig | null) {
         this._config.set(val);
+        // Each option starts on its default (a required one too, still changeable); a pick the buyer
+        // already made survives a config refresh while the product still offers it.
+        const options = val?.productOptions ?? [];
+        const kept = Object.fromEntries(
+            Object.entries(this.optionPicks()).filter(([code, value]) =>
+                options.some((o) => o.code === code && o.values.some((v) => v.value === value))
+            )
+        );
+        this.optionPicks.set({ ...CheckoutOptionDefaults(options), ...kept });
         this.syncUnits();
     }
     public get config(): CheckoutWidgetConfig | null {
@@ -397,7 +414,35 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     }
 
     private choicesAreComplete(): boolean {
-        return !CheckChoicesAgainstGroups(this.choiceGroups(), this.choices()).Error;
+        return !CheckChoicesAgainstGroups(this.choiceGroups(), this.choices()).Error && this.optionsAreComplete();
+    }
+
+    /**
+     * The sold product's options (golive #399), discovered by the server from the product: no widget
+     * configuration names them. Each is a single choice; the picks travel on the draft line and the
+     * server judges them against the product as it is.
+     */
+    public productOptions = computed<CheckoutProductOption[]>(() => this._config()?.productOptions ?? []);
+    public optionPicks = signal<CheckoutOptionPicksInput>({});
+
+    public optionPickFor(code: string): string {
+        return this.optionPicks()[code] ?? '';
+    }
+
+    /** A pick can change the price, so the quote is dropped and asked for again. */
+    public onOptionPicked(code: string, value: string): void {
+        this.optionPicks.update((current) => {
+            const next = { ...current };
+            if (value) next[code] = value;
+            else delete next[code];
+            return next;
+        });
+        this.quoteInvalidated.emit();
+        this.requestQuote();
+    }
+
+    private optionsAreComplete(): boolean {
+        return MissingCheckoutOptions(this.productOptions(), this.optionPicks()).length === 0;
     }
 
     // Form state signals
@@ -938,6 +983,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             totalGross: this.totalGross(),
             answers: this.answers(),
             choices: this.choices(),
+            optionPicks: this.optionPicks(),
             stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey,
             autoRenewConsent: this.autoRenewConsentText() ? this.autoRenewConsent() : undefined,

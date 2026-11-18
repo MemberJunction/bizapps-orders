@@ -206,6 +206,40 @@
                 </div>
             }
 
+            <!--
+                PRODUCT OPTIONS (golive #399): one selector per option the product offers, after
+                inheritance. A pick is recorded on the line and can decide its price, so the line is
+                priced again on every change. A missing required pick shows as the line's price error.
+            -->
+            @if (OptionsFor(line); as options) {
+                @if (options.length) {
+                    <div class="mjo-ol-options" role="group" [attr.aria-label]="'Options for ' + (ProductFor(line)?.Name ?? 'line')">
+                        @for (option of options; track option.Option.ID) {
+                            <label class="mjo-ol-options__field" [class.is-required]="option.IsRequired">
+                                <span class="mjo-ol-options__label">
+                                    {{ option.Option.Name }}
+                                    @if (option.IsRequired) {<em class="mjo-ol-override__req" aria-hidden="true">*</em>}
+                                </span>
+                                @if (CanEditOptions) {
+                                    <select
+                                        class="mjo-ol-options__select"
+                                        [value]="OptionPickFor(line, option)"
+                                        [attr.aria-required]="option.IsRequired"
+                                        (change)="OnOptionPicked(line, option, $event)">
+                                        <option value="" [selected]="!OptionPickFor(line, option)">{{ option.IsRequired ? 'Choose…' : 'None' }}</option>
+                                        @for (value of option.Values; track value.ID) {
+                                            <option [value]="value.ID" [selected]="OptionPickFor(line, option) === value.ID">{{ value.Label }}</option>
+                                        }
+                                    </select>
+                                } @else {
+                                    <span class="mjo-ol-options__value">{{ OptionLabelFor(line, option) }}</span>
+                                }
+                            </label>
+                        }
+                    </div>
+                }
+            }
+
             <div class="mjo-ol-card__conseq">
                 @if (ProductFor(line); as product) {
                     @if (product.TypeName === 'Goods') {

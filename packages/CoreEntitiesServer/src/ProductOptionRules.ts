@@ -23,7 +23,7 @@
  *
  * CONNECTS TO:
  *   CODE: @mj-biz-apps/orders-entities product-options.ts (the walk these rules protect)
- *   PLAN: plans/product-options-and-variants.md
+ *   PLAN: plans/archive/product-options-and-variants.md
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */

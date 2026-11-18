@@ -50,6 +50,9 @@ import {
     Today,
     TodayAsDateValue,
     UniquePriceName,
+    OPTION_SOURCE,
+    ResolveEffectiveOptions,
+    type EffectiveProductOption,
     priceApplies,
     type PriceRule,
     type PricingModel,
@@ -554,6 +557,17 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         if (dot <= 0) return stored;
         const sourceKey = stored.slice(0, dot);
         const fieldName = stored.slice(dot + 1);
+        if (sourceKey === OPTION_SOURCE) {
+            // Named from the catalog when the option is known; the code otherwise.
+            let name = fieldName;
+            try {
+                const option = OrdersEngine.Instance.ProductOptions?.find((o) => o.Code.toLowerCase() === fieldName.toLowerCase());
+                if (option) name = option.Name;
+            } catch {
+                /* engine not loaded yet: the code is fine */
+            }
+            return `Option · ${name}`;
+        }
         const src = PRICE_APPLICABILITY_SOURCES.find((s) => s.key === sourceKey);
         if (!src) return stored.replace('.', ' · ');
         if (src.fields) {
@@ -1384,9 +1398,10 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     public OpenWhenEditor(row: PriceCard): void {
-        this.WhenFields = this.buildWhenFields();
+        // The filter first: the field list keeps every field the stored When already names.
         this.WhenFilter = this.parseWhenFilter(row.Record) ?? { logic: 'and', filters: [] };
         this.WhenEditorPriceID = row.ID;
+        this.WhenFields = this.buildWhenFields();
         this.cdr?.markForCheck();
     }
 
@@ -1422,6 +1437,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         const md = new Metadata();
         const out: FilterFieldInfo[] = [];
         const inUse = this.whenFieldsInUse();
+        out.push(...this.optionWhenFields(inUse));
         for (const src of PRICE_APPLICABILITY_SOURCES) {
             if (src.fields) {
                 for (const f of src.fields) {
@@ -1445,6 +1461,51 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             }
         }
         return out;
+    }
+
+    /**
+     * `Option.<Code>` fields (golive #399): one per option effective where the open price row hangs,
+     * the product itself or, for an inherited row, its category. A rule tests the picked value's code.
+     * An Option field the stored When names but no longer effective here (the option was removed or
+     * excluded) stays listed, so the rule still round-trips and can be edited.
+     */
+    private optionWhenFields(inUse: ReadonlySet<string>): FilterFieldInfo[] {
+        const out: FilterFieldInfo[] = [];
+        const seen = new Set<string>();
+        for (const e of this.optionsForOpenRow()) {
+            const name = `${OPTION_SOURCE}.${e.Option.Code}`;
+            seen.add(name.toLowerCase());
+            out.push({ name, displayName: `Option · ${e.Option.Name}`, type: 'string' });
+        }
+        for (const name of inUse) {
+            if (!name.startsWith(`${OPTION_SOURCE}.`) || seen.has(name.toLowerCase())) continue;
+            seen.add(name.toLowerCase());
+            out.push({ name, displayName: this.resolveWhenFieldLabel(name), type: 'string' });
+        }
+        return out;
+    }
+
+    /** Options effective for the price row whose When is open: its category's for an inherited row. */
+    private optionsForOpenRow(): EffectiveProductOption[] {
+        try {
+            const engine = OrdersEngine.Instance;
+            const record = this.AllPriceRecords.find((p) => p.ID === this.WhenEditorPriceID);
+            const categoryID = (record as { ProductCategoryID?: string | null } | undefined)?.ProductCategoryID;
+            const productTypeID = this.Product?.ProductTypeID ?? null;
+            if (categoryID) return engine.EffectiveOptionsForCategory(categoryID, productTypeID);
+            // The product as it stands on the form, so an unsaved type or category change counts.
+            return ResolveEffectiveOptions(
+                {
+                    ProductID: this.Product?.IsSaved ? this.Product.ID : null,
+                    ProductTypeID: productTypeID,
+                    CategoryChainNearestFirst: engine.CategoryChain(this.Product?.ProductCategoryID),
+                },
+                engine.OptionCatalog,
+            );
+        } catch {
+            // The catalog is not loaded yet: no option fields, the rest of the builder still works.
+            return [];
+        }
     }
 
     /** Every `Source.Field` the open When editor's filter names. */

@@ -107,6 +107,8 @@ erDiagram
     OrderLine ||--o{ OrderLine : "ParentOrderLineID"
     OrderLine ||--o{ OrderLine : "ReversesOrderLineID"
     OrderLine ||--o{ OrderLineChoice : "OrderLineID"
+    ProductOption ||--o{ OrderLineChoice : "ProductOptionID"
+    ProductOptionValue ||--o{ OrderLineChoice : "ProductOptionValueID"
     OrderLine ||--o{ OrderLineDimension : "OrderLineID"
     OrderLine ||--o{ OrderLinePriceComponent : "OrderLineID"
     OrderLine ||--o{ OrderLineProgressMeasurement : "OrderLineID"
@@ -158,6 +160,17 @@ erDiagram
     Product ||--o{ ProductEntitlement : "ProductID"
     Product ||--o{ ProductPrice : "ProductID"
     Product ||--o{ PromotionTarget : "ProductID"
+    Product ||--o{ Product : "ParentProductID"
+    Product ||--o{ ProductOptionAssignment : "ProductID"
+    Product ||--o{ ProductSuccessorOptionValue : "ProductID"
+    Product ||--o{ ProductVariantValue : "ProductID"
+    ProductCategory ||--o{ ProductOptionAssignment : "ProductCategoryID"
+    ProductType ||--o{ ProductOptionAssignment : "ProductTypeID"
+    ProductOption ||--o{ ProductOptionValue : "ProductOptionID"
+    ProductOption ||--o{ ProductOptionAssignment : "ProductOptionID"
+    ProductOptionAssignment ||--o{ ProductOptionAssignmentValue : "ProductOptionAssignmentID"
+    ProductOptionValue ||--o{ ProductOptionAssignmentValue : "ProductOptionValueID"
+    ProductOptionValue ||--o{ ProductOptionAssignment : "DefaultProductOptionValueID"
     Product ||--o{ Subscription : "ProductID"
     ProductCategory ||--o{ Product : "ProductCategoryID"
     ProductCategory ||--o{ ProductCategory : "ParentProductCategoryID"
@@ -323,7 +336,7 @@ erDiagram
         uuid ID PK "required"
         uuid ProductID FK "required"
         nvarchar_40 EntitlementType "required"
-        nvarchar_80 Code UK "required"
+        nvarchar_80 Code "required"
         nvarchar_200 Name
         decimal_18_4 Quantity
         nvarchar_40 UnitOfMeasure
@@ -399,6 +412,92 @@ erDiagram
 ```
 
 **Reaches outside the app:** `EventProduct.VenueAddressID` → `__mj_BizAppsCommon.Address`, `Product.CompanyID` → `__mj.Company`, `ProductCategory.CompanyID` → `__mj.Company`, `SubscriptionFamily.CompanyID` → `__mj.Company`.
+
+### 2.1a Choices on the line — product options (golive #399)
+
+`ProductOption` is a choice a buyer makes on a line (Tier, Size) and `ProductOptionValue` its values.
+An option with `CompanyID` null is shared; set, it belongs to that company. `Code` is unique among
+shared options and within a company (two filtered unique indexes), and a value's `Code` within its
+option.
+
+`ProductOptionAssignment` says which options a product offers. It hangs on exactly one of a product
+type, a category or a product (CHECK), and the most specific row per option wins whole: its
+`IsRequired`, `DefaultProductOptionValueID` and allowed values (`ProductOptionAssignmentValue`; none
+means every active value) together. `IsExcluded` removes an inherited option. A product type may
+assign only a shared option, a category or product a shared one or its own company's; that rule, and
+the default being an allowed value, are checked on save (`ProductOptionRules.ts`). A pick is an
+`OrderLineChoice` row with `ProductOptionID` and `ProductOptionValueID` set (§2.4).
+
+`ProductSuccessorOptionValue` names the picks a renewal takes when it moves from a retired product to
+its successor. `Product.ParentProductID`, `ProductVariantValue` and `Role = 'Variant'` are the variant
+SKU schema, refused on save until the walks read through a variant to its parent.
+
+```mermaid
+erDiagram
+    ProductOption ||--o{ ProductOptionValue : "ProductOptionID"
+    ProductOption ||--o{ ProductOptionAssignment : "ProductOptionID"
+    ProductType ||--o{ ProductOptionAssignment : "ProductTypeID"
+    ProductCategory ||--o{ ProductOptionAssignment : "ProductCategoryID"
+    Product ||--o{ ProductOptionAssignment : "ProductID"
+    ProductOptionValue ||--o{ ProductOptionAssignment : "DefaultProductOptionValueID"
+    ProductOptionAssignment ||--o{ ProductOptionAssignmentValue : "ProductOptionAssignmentID"
+    ProductOptionValue ||--o{ ProductOptionAssignmentValue : "ProductOptionValueID"
+    Product ||--o{ ProductSuccessorOptionValue : "ProductID"
+    ProductOption ||--o{ ProductSuccessorOptionValue : "ProductOptionID"
+    ProductOptionValue ||--o{ ProductSuccessorOptionValue : "ProductOptionValueID"
+    Product ||--o{ ProductVariantValue : "ProductID"
+    ProductOption ||--o{ ProductVariantValue : "ProductOptionID"
+    ProductOptionValue ||--o{ ProductVariantValue : "ProductOptionValueID"
+    Product ||--o{ Product : "ParentProductID"
+    ProductOption {
+        uuid ID PK "required"
+        uuid CompanyID FK
+        nvarchar_50 Code UK "required"
+        nvarchar_100 Name "required"
+        nvarchar_max Description
+        int SortOrder "required"
+        bit IsActive "required"
+    }
+    ProductOptionValue {
+        uuid ID PK "required"
+        uuid ProductOptionID FK "required"
+        nvarchar_50 Code UK "required"
+        nvarchar_200 Label "required"
+        int SortOrder "required"
+        bit IsActive "required"
+    }
+    ProductOptionAssignment {
+        uuid ID PK "required"
+        uuid ProductTypeID FK
+        uuid ProductCategoryID FK
+        uuid ProductID FK
+        uuid ProductOptionID FK "required"
+        bit IsExcluded "required"
+        bit IsRequired "required"
+        uuid DefaultProductOptionValueID FK
+        int SortOrder "required"
+        nvarchar_20 Role "required"
+    }
+    ProductOptionAssignmentValue {
+        uuid ID PK "required"
+        uuid ProductOptionAssignmentID FK "required"
+        uuid ProductOptionValueID FK "required"
+    }
+    ProductSuccessorOptionValue {
+        uuid ID PK "required"
+        uuid ProductID FK "required"
+        uuid ProductOptionID FK "required"
+        uuid ProductOptionValueID FK "required"
+    }
+    ProductVariantValue {
+        uuid ID PK "required"
+        uuid ProductID FK "required"
+        uuid ProductOptionID FK "required"
+        uuid ProductOptionValueID FK "required"
+    }
+```
+
+**Reaches outside the app:** `ProductOption.CompanyID` → `__mj.Company`.
 
 ### 2.2 What it costs — price, promotion and who may discount
 
@@ -948,10 +1047,12 @@ erDiagram
         nvarchar_500 GroupLabel "required"
         nvarchar_100 OptionValue UK "required"
         nvarchar_500 OptionLabel "required"
+        uuid ProductOptionID FK
+        uuid ProductOptionValueID FK
     }
 ```
 
-**Leaves this area:** `CheckoutSession.DraftOrderID` → `OrderHeader`, `CheckoutSession.PaymentIntentID` → `PaymentIntent`, `OrderCheckoutAnswer.OrderHeaderID` → `OrderHeader`, `OrderLineChoice.OrderLineID` → `OrderLine`.
+**Leaves this area:** `CheckoutSession.DraftOrderID` → `OrderHeader`, `CheckoutSession.PaymentIntentID` → `PaymentIntent`, `OrderCheckoutAnswer.OrderHeaderID` → `OrderHeader`, `OrderLineChoice.OrderLineID` → `OrderLine`, `OrderLineChoice.ProductOptionID` → `ProductOption`, `OrderLineChoice.ProductOptionValueID` → `ProductOptionValue` (§2.1a; set together for a product option pick, both null for a widget choice).
 
 **Reaches outside the app:** `CheckoutSession.PersonID` → `__mj_BizAppsCommon.Person`, `CheckoutSessionStep.LastReplayedByUserID` → `__mj.User`, `CheckoutWidget.CompanyID` → `__mj.Company`, `CheckoutWidgetDistribution.MagicLinkInviteID` → `__mj.MagicLinkInvite`.
 
@@ -1545,7 +1646,7 @@ erDiagram
 
 ## 3. Cross-app reference register
 
-78 foreign keys leave this schema. All point UP the dependency graph (rule 2). Nothing here is
+79 foreign keys leave this schema. All point UP the dependency graph (rule 2). Nothing here is
 optional trivia: **these are the references that break silently when an upstream app re-bakes its
 baseline**, because our generated metadata pins upstream entity IDs by GUID.
 
@@ -1562,6 +1663,7 @@ erDiagram
     MJ_Company ||--o{ PaymentProvider : "CompanyID"
     MJ_Company ||--o{ Product : "CompanyID"
     MJ_Company ||--o{ ProductCategory : "CompanyID"
+    MJ_Company ||--o{ ProductOption : "CompanyID"
     MJ_Company ||--o{ Promotion : "CompanyID"
     MJ_Company ||--o{ ReferralProgram : "CompanyID"
     MJ_Company ||--o{ StoredValueAccount : "IssuingCompanyID"
@@ -1625,7 +1727,7 @@ erDiagram
 
 | → target | count | from |
 |---|---|---|
-| `__mj.Company` | 16 | `CheckoutWidget.CompanyID`, `ExternalInvoice.CompanyID`, `OrderCompanyPolicy.ID`, `OrderHeader.CompanyID`, `OrderHeaderPaymentSchedule.CompanyID`, `OrderLine.CompanyID`, `PaymentDetail.CompanyID`, `PaymentHeader.ReceivingCompanyID`, `PaymentProvider.CompanyID`, `Product.CompanyID`, `ProductCategory.CompanyID`, `Promotion.CompanyID`, `ReferralProgram.CompanyID`, `StoredValueAccount.IssuingCompanyID`, `Subscription.CompanyID`, `SubscriptionFamily.CompanyID` |
+| `__mj.Company` | 17 | `CheckoutWidget.CompanyID`, `ExternalInvoice.CompanyID`, `OrderCompanyPolicy.ID`, `OrderHeader.CompanyID`, `OrderHeaderPaymentSchedule.CompanyID`, `OrderLine.CompanyID`, `PaymentDetail.CompanyID`, `PaymentHeader.ReceivingCompanyID`, `PaymentProvider.CompanyID`, `Product.CompanyID`, `ProductCategory.CompanyID`, `ProductOption.CompanyID`, `Promotion.CompanyID`, `ReferralProgram.CompanyID`, `StoredValueAccount.IssuingCompanyID`, `Subscription.CompanyID`, `SubscriptionFamily.CompanyID` |
 | `__mj_BizAppsCommon.Person` | 15 | `CheckoutSession.PersonID`, `CustomerPaymentMethod.OwnerPersonID`, `CustomerTaxExemption.PersonID`, `EntitlementGrant.BeneficiaryPersonID`, `EventOrderLine.PersonID`, `ExternalCustomer.BillToPersonID`, `OrderHeader.BillToPersonID`, `OrderHeader.ShipToPersonID`, `OrderLine.ShipToPersonID`, `PaymentHeader.BillToPersonID`, `PaymentIntent.BillToPersonID`, `PriceListAssignment.PersonID`, `PromotionCode.AssignedPersonID`, `StoredValueAccount.BeneficiaryPersonID`, `Subscription.BeneficiaryPersonID` |
 | `__mj.User` | 14 | `CheckoutSessionStep.LastReplayedByUserID`, `EntitlementAccessOverride.DecidedByUserID`, `EntitlementAccessOverride.RequestedByUserID`, `ExternalInvoice.IssuedByUserID`, `OrderConcession.DecidedByUserID`, `OrderConcession.RequestedByUserID`, `OrderConcession.WithdrawnByUserID`, `OrderHeader.ConfirmedByUserID`, `OrderHeader.PostedByUserID`, `OrderHeader.SalesRepUserID`, `OrderHeaderPaymentSchedule.InvoicedByUserID`, `OrderLineProgressMeasurement.AttestedByUserID`, `PaymentLine.AllocatedByUserID`, `SalesAuthority.SalesRepUserID` |
 | `__mj_BizAppsCommon.Organization` | 13 | `CustomerPaymentMethod.OwnerOrganizationID`, `CustomerTaxExemption.OrganizationID`, `EntitlementGrant.BeneficiaryOrganizationID`, `ExternalCustomer.BillToOrganizationID`, `OrderHeader.BillToOrganizationID`, `OrderHeader.ShipToOrganizationID`, `OrderLine.ShipToOrganizationID`, `PaymentHeader.BillToOrganizationID`, `PaymentIntent.BillToOrganizationID`, `PriceListAssignment.OrganizationID`, `PromotionCode.AssignedOrganizationID`, `StoredValueAccount.BeneficiaryOrganizationID`, `Subscription.HolderOrganizationID` |
@@ -1646,7 +1748,7 @@ column, `OrderLine` among them — that column is what makes a mixed-company ord
 
 ## 4. Value lists (CHECK-constrained)
 
-81 columns are constrained to a closed set at the database. These are the ones worth knowing
+82 columns are constrained to a closed set at the database. These are the ones worth knowing
 before writing a query — a value not on this list cannot be in the column. A column §2 does not mark
 `required` can also be NULL, because a CHECK of this shape does not refuse NULL.
 
@@ -1706,6 +1808,7 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `ProductCategory.DefaultEntitlementValidityMode` | `Perpetual` · `EventWindow` · `FixedDuration` · `SubscriptionTerm` |
 | `ProductEntitlement.EntitlementType` | `Feature` · `AccessLevel` · `ResourceQuantity` · `Custom` |
 | `ProductEntitlement.ValidityMode` | `Perpetual` · `EventWindow` · `FixedDuration` · `SubscriptionTerm` |
+| `ProductOptionAssignment.Role` | `LineOption` · `Variant` (refused on save until variants are wired) |
 | `ProductPrice.FeeType` | `Standard` · `Setup` · `Recurring` · `Overage` |
 | `ProductPrice.PricingModel` | `Flat` · `PerUnit` · `Tiered` · `Volume` · `Package` · `Usage` |
 | `ProductPrice.Status` | `Active` · `Inactive` |

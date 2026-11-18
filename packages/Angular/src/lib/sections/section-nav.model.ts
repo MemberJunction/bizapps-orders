@@ -95,6 +95,7 @@ export const SUBSCRIPTIONS_SUB_PAGES: OrdersSubPage[] = [
 /** Catalog — where the behaviour every order inherits is configured. */
 export const CATALOG_SUB_PAGES: OrdersSubPage[] = [
     { Id: 'products', Label: 'Products & categories', Icon: 'fa-solid fa-boxes-stacked' },
+    { Id: 'options', Label: 'Product options', Icon: 'fa-solid fa-list-check', Description: 'Tier, size and other picks on a line' },
     { Id: 'pricing', Label: 'Pricing', Icon: 'fa-solid fa-tags' },
     { Id: 'promotions', Label: 'Promotions', Icon: 'fa-solid fa-percent' },
     { Id: 'charges', Label: 'Charges & tax', Icon: 'fa-solid fa-receipt' },

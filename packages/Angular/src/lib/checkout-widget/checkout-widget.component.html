@@ -339,6 +339,36 @@
         </section>
     }
 
+    <!-- The product's own options (Tier, Size), discovered by the server; one pick each, recorded on the line -->
+    @if (productOptions().length) {
+        <section class="mj-widget-form-section">
+            <h3 class="mj-section-title">Options</h3>
+            <div class="mj-form-grid">
+                @for (option of productOptions(); track option.code) {
+                    <div class="mj-form-group">
+                        <label class="mj-label" [attr.for]="widgetInstanceId + '-opt-' + option.code">
+                            {{ option.label }}
+                            @if (option.required) {
+                                <span class="mj-required">*</span>
+                            }
+                        </label>
+                        <select
+                            class="mj-select"
+                            [id]="widgetInstanceId + '-opt-' + option.code"
+                            [ngModel]="optionPickFor(option.code)"
+                            (ngModelChange)="onOptionPicked(option.code, $event)"
+                            [required]="option.required">
+                            <option [ngValue]="''">{{ option.required ? 'Select ' + option.label : 'None' }}</option>
+                            @for (value of option.values; track value.value) {
+                                <option [ngValue]="value.value">{{ value.label }}</option>
+                            }
+                        </select>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+
     <!-- Choice groups from the widget's Configuration; the picks are recorded on the order line -->
     @for (group of choiceGroups(); track group.key) {
         <section class="mj-widget-form-section">

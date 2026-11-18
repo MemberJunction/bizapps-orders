@@ -19,6 +19,7 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import {
     CheckBillingLocation,
     LoadOrdersEngine,
+    OrdersEngineReady,
     OrderHeaderEntity,
     OrderLineEntity,
     OrderPricingService,
@@ -52,7 +53,12 @@ import {
     ReadCheckoutChoiceGroups,
     CheckChoicesAgainstGroups,
     type CheckoutChoicesCheck,
-    type CheckoutChoicesInput
+    type CheckoutChoicesInput,
+    CheckCheckoutOptionPicks,
+    CheckoutProductOptions,
+    type CheckoutOptionPicksCheck,
+    type CheckoutOptionPicksInput,
+    type ResolvedCheckoutOptionPick
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText, IsUUID, RequireUUID } from './sql-guards.js';
 import type { mjBizAppsCommonPersonEntity } from '@mj-biz-apps/common-entities';
@@ -191,6 +197,11 @@ export interface CheckoutLineInput {
     Units?: Array<Record<string, unknown>>;
     /** Legacy attendee input compatibility */
     Attendees?: CheckoutAttendeeInput[];
+    /**
+     * The buyer's product option picks (golive #399): option code -> value code. Judged against the
+     * product's effective options at every step, and written on each line the input becomes.
+     */
+    OptionPicks?: CheckoutOptionPicksInput;
 }
 
 /**
@@ -742,6 +753,7 @@ export class CheckoutSessionService {
         'allowCoupons',
         'questions',
         'choiceGroups',
+        'productOptions',
     ]);
 
     /**
@@ -982,6 +994,8 @@ export class CheckoutSessionService {
         md: Metadata,
         contextUser?: UserInfo
     ): Promise<void> {
+        // Options are always the server's reading of the product, never what the JSON says.
+        delete configObj.productOptions;
         let productId = typeof configObj.productId === 'string' ? configObj.productId.trim() || undefined : undefined;
         const productSku = typeof configObj.productSku === 'string' ? configObj.productSku : undefined;
 
@@ -997,6 +1011,8 @@ export class CheckoutSessionService {
         }
 
         if (!productId) return;
+
+        await this.discoverProductOptions(configObj, productId, contextUser ?? md.CurrentUser);
 
         const product = await md.GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, contextUser);
         const prodLoaded = await product.Load(productId);
@@ -1239,6 +1255,74 @@ export class CheckoutSessionService {
             }
         }
         return CheckCheckoutAnswers(questions, stored);
+    }
+
+    /**
+     * The sold product's options, for the widget to render with no configuration (golive #399), the
+     * way extension fields are discovered. A product with none leaves the key unset.
+     */
+    private static async discoverProductOptions(
+        configObj: CheckoutWidgetConfiguration,
+        productId: string,
+        contextUser: UserInfo | undefined
+    ): Promise<void> {
+        // A provider that cannot load the catalog (a unit test's stub) has no options to offer.
+        if (!(await OrdersEngineReady(Metadata.Provider, contextUser))) return;
+        const options = CheckoutProductOptions(OrdersEngine.Instance.EffectiveOptions(productId));
+        if (options.length) configObj.productOptions = options;
+    }
+
+    /**
+     * The buyer's option picks for one input line, judged against its product's options as they are
+     * now (golive #399). `partial` lets a draft leave a required option open; the payment intent and
+     * completion check in full. The same check runs again when the line saves.
+     */
+    private static async checkLineOptionPicks(
+        inputLine: CheckoutLineInput,
+        partial: boolean,
+        contextUser: UserInfo | undefined
+    ): Promise<CheckoutOptionPicksCheck> {
+        const hasPicks = inputLine.OptionPicks != null && Object.keys(inputLine.OptionPicks).length > 0;
+        if (!(await OrdersEngineReady(Metadata.Provider, contextUser))) {
+            // No catalog to judge against: nothing to record, and picks sent cannot be accepted blind.
+            return hasPicks ? { Picks: [], Error: 'The product options could not be checked. Try again shortly.' } : { Picks: [] };
+        }
+        const effective = OrdersEngine.Instance.EffectiveOptions(inputLine.ProductID);
+        if (!effective.length && inputLine.OptionPicks == null) return { Picks: [] };
+        return CheckCheckoutOptionPicks(effective, inputLine.OptionPicks, { partial });
+    }
+
+    /** Every drafted line's picks, checked in full; the first problem, or null. Run before money moves. */
+    private static async checkDraftedOptionPicks(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        contextUser: UserInfo | undefined
+    ): Promise<string | null> {
+        for (const line of this.readDraftedLines(session)) {
+            if (!line.ProductID) continue;
+            const check = await this.checkLineOptionPicks(line, false, contextUser);
+            if (check.Error) return check.Error;
+        }
+        return null;
+    }
+
+    /**
+     * Write checked picks onto a line as Order Line Choices with their option and value, in the
+     * order's graph, so pricing reads them and the confirm saves them with the line.
+     */
+    private static async recordOptionPicks(line: OrderLineEntity, picks: readonly ResolvedCheckoutOptionPick[]): Promise<void> {
+        if (!picks.length) return;
+        if (!CheckoutSessionService.canRecordChoices(line)) {
+            throw new Error('This checkout is not configured correctly (its options cannot be recorded on this item).');
+        }
+        for (const pick of picks) {
+            const row = await line.Choices.Create();
+            row.GroupKey = pick.GroupKey;
+            row.GroupLabel = pick.GroupLabel;
+            row.OptionValue = pick.OptionValue;
+            row.OptionLabel = pick.OptionLabel;
+            row.ProductOptionID = pick.ProductOptionID;
+            row.ProductOptionValueID = pick.ProductOptionValueID;
+        }
     }
 
     /** Whether a line can hold Order Line Choices. An extension-type line (IS-A) does not. */
@@ -1762,6 +1846,10 @@ export class CheckoutSessionService {
             if (unitPayloads.length > effectiveMax) {
                 return failed(`Unit payload count ${unitPayloads.length} exceeds maximum allowed quantity of ${effectiveMax} for this item`);
             }
+            const optionPicks = await this.checkLineOptionPicks(inputLine, true, contextUser);
+            if (optionPicks.Error) {
+                return failed(optionPicks.Error);
+            }
             const unitMismatch = this.unitDetailsMismatch(unitMode, inputLine.Quantity, unitPayloads);
             if (unitMismatch) {
                 return failed(unitMismatch);
@@ -1775,6 +1863,7 @@ export class CheckoutSessionService {
                     line.LineNumber = sequence++;
 
                     await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, widgetConfig.extensionFields);
+                    await this.recordOptionPicks(line, optionPicks.Picks);
                 }
             } else {
                 const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -1785,6 +1874,7 @@ export class CheckoutSessionService {
                 if (unitPayloads.length > 0) {
                     await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false, widgetConfig.extensionFields);
                 }
+                await this.recordOptionPicks(line, optionPicks.Picks);
             }
         }
 
@@ -2084,6 +2174,13 @@ export class CheckoutSessionService {
         const missingAttendees = await this.checkDraftedAttendees(session, contextUser);
         if (missingAttendees) {
             return failed(missingAttendees);
+        }
+
+        // Option picks in full (golive #399), for the same reason: a required option left open would
+        // otherwise be refused only by the confirm, after the money is taken.
+        const badPicks = await this.checkDraftedOptionPicks(session, contextUser);
+        if (badPicks) {
+            return failed(badPicks);
         }
 
         // Malformed configuration already fails InitializeSession; it reads as unset here.
@@ -2621,7 +2718,7 @@ export class CheckoutSessionService {
             // Refused before anything is written, so an unanswered checkout creates no Person.
             const answersCheck = this.checkSessionAnswers(widget, session);
             const choicesCheck = this.checkSessionChoices(widget, session);
-            const unanswered = answersCheck.Error ?? choicesCheck.Error;
+            const unanswered = answersCheck.Error ?? choicesCheck.Error ?? (await this.checkDraftedOptionPicks(session, contextUser));
             if (unanswered) {
                 await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                 session.Status = 'Open';
@@ -2769,6 +2866,9 @@ export class CheckoutSessionService {
                     };
                 }
 
+                // Checked in full before anything was written (checkDraftedOptionPicks); resolved again
+                // here for the rows each line records.
+                const linePicks = inputLine.ProductID ? (await this.checkLineOptionPicks(inputLine, false, contextUser)).Picks : [];
                 const hydrate = async (line: OrderLineEntity, unitData: Record<string, unknown>): Promise<void> => {
                     const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, configuredExtensionFields);
                     if (!hydrated.PersonID && hydrated.Extension) {
@@ -2783,6 +2883,7 @@ export class CheckoutSessionService {
                         line.LineNumber = sequence++;
 
                         await hydrate(line, unitData);
+                        await this.recordOptionPicks(line, linePicks);
                     }
                 } else {
                     const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -2793,6 +2894,7 @@ export class CheckoutSessionService {
                     if (unitPayloads.length > 0) {
                         await hydrate(line, unitPayloads[0]);
                     }
+                    await this.recordOptionPicks(line, linePicks);
                 }
             }
 
