@@ -8,6 +8,7 @@ import { BaseEntity, RunView, type IMetadataProvider, type IRunViewProvider, typ
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { RequireUUID } from '../sql-guards.js';
 import { LoadOrganizationRevenue, ORGANIZATION_REVENUE_SOURCE } from './organizationRevenue.js';
+import { OPTION_SOURCE, OptionApplicabilityRecord, type OptionPick } from '../product-options.js';
 import {
     EvaluateFilter,
     type CompositeFilterDescriptor,
@@ -94,6 +95,11 @@ export interface ApplicabilityPartyIDs {
     ShipToAddressID?: string | null;
     /** Used when the order is not saved yet (preview) so When can still see header fields. */
     OrderFallback?: Record<string, unknown> | null;
+    /**
+     * The line's option picks (Tier, Size), read by rules as `Option.<code>`. Saved or not: the
+     * caller passes what the line holds. Absent means no picks, so an option rule does not apply.
+     */
+    OptionPicks?: readonly OptionPick[] | null;
 }
 
 function entityToBag(entity: BaseEntity): Record<string, unknown> {
@@ -176,6 +182,7 @@ export async function loadApplicabilityContext(
         BillToAddress,
         ShipToAddress,
         [ORGANIZATION_REVENUE_SOURCE]: BillToOrganizationRevenue ? { ...BillToOrganizationRevenue } : null,
+        [OPTION_SOURCE]: OptionApplicabilityRecord(ids.OptionPicks),
     };
 }
 

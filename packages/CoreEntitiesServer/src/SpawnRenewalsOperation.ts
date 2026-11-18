@@ -76,6 +76,7 @@
  *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine,OrderHeaderPaymentSchedule,
  *            Product,ProductCategory,OrderCompanyPolicy,OrderAdjustment,PromotionCode,Promotion}
  */
+import { AddLineChoices, LoadLineChoices } from './renewal-choices.js';
 import {
     BaseRemotableOperation,
     DatabaseProviderBase,
@@ -125,7 +126,6 @@ export { NonSubscriptionSuccessorRefusal };
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
 
 /** Term statuses a renewal can continue from. */
 const RENEWABLE_TERM_STATUSES: ReadonlyArray<string> = ['Scheduled', 'Active'];
@@ -723,14 +723,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
 
                 // The buyer's choices carry forward (#291). A conditional entitlement is granted only on a
                 // line that carries its choice, so a renewal without them would silently drop the access
-                // the buyer chose. They ride in the line's graph and save with the draft.
-                for (const choice of await this.loadSourceChoices(provider, user, due.OrderLineID)) {
-                    const row = await line.Choices.Create();
-                    row.GroupKey = choice.GroupKey;
-                    row.GroupLabel = choice.GroupLabel;
-                    row.OptionValue = choice.OptionValue;
-                    row.OptionLabel = choice.OptionLabel;
-                }
+                // the buyer chose. They ride in the line's graph and save with the draft. Option picks
+                // (Tier, Size) carry too; on a move to a successor the move names them (golive #399).
+                await AddLineChoices(line, priced.SuccessorChoices ?? (await LoadLineChoices(due.OrderLineID, provider, user)));
             }
 
             // Promotions that carry into renewals (#289), through the ordinary promotion path: the
@@ -929,27 +924,6 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         const head = members.length > 1 ? [`${members.length} subscriptions renewed together: same customer, same term end.`] : [];
         const promotionNote = promotions ? RenewalPromotionNote(promotions) : '';
         return [...head, ...lines, ...(promotionNote ? [promotionNote] : [])].join('\n');
-    }
-
-    /** The choices recorded on the line that bought the expiring term, in group and option order. */
-    private async loadSourceChoices(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        orderLineID: string,
-    ): Promise<Array<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>(
-            {
-                EntityName: ORDER_LINE_CHOICE_ENTITY,
-                ExtraFilter: `OrderLineID='${orderLineID}'`,
-                Fields: ['GroupKey', 'GroupLabel', 'OptionValue', 'OptionLabel'],
-                OrderBy: 'GroupKey, OptionValue',
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        return result?.Results ?? [];
     }
 
     private async logEvent(

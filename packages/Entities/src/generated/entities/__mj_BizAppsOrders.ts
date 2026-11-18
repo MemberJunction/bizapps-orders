@@ -1,5 +1,5 @@
 import { BaseEntity, EntitySaveOptions, EntityDeleteOptions, CompositeKey, ValidationResult, ValidationErrorInfo, ValidationErrorType, Metadata, ProviderType, DatabaseProviderBase, RunView } from "@memberjunction/core";
-import { RegisterClass } from "@memberjunction/global";
+import { RegisterClass, UUIDsEqual } from "@memberjunction/global";
 import { z } from "zod";
 
      
@@ -1424,6 +1424,11 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: IsSellableNew
         * * Display Name: Is Sellable New
         * * SQL Data Type: bit`),
+    ParentProductID: z.string().nullable().describe(`
+        * * Field Name: ParentProductID
+        * * Display Name: Parent Product
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -2981,6 +2986,22 @@ export const mjBizAppsOrdersOrderLineChoiceSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ProductOptionID: z.string().nullable().describe(`
+        * * Field Name: ProductOptionID
+        * * Display Name: Product Option
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)
+        * * Description: For a product option pick, the option it answers; GroupKey is then the option code. Empty for a checkout-widget choice.`),
+    ProductOptionValueID: z.string().nullable().describe(`
+        * * Field Name: ProductOptionValueID
+        * * Display Name: Product Option Value
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+        * * Description: For a product option pick, the value picked; OptionValue is then the value code. Set together with ProductOptionID.`),
+    ProductOption: z.string().nullable().describe(`
+        * * Field Name: ProductOption
+        * * Display Name: Product Option
+        * * SQL Data Type: nvarchar(100)`),
 });
 
 export type mjBizAppsOrdersOrderLineChoiceEntityType = z.infer<typeof mjBizAppsOrdersOrderLineChoiceSchema>;
@@ -5234,6 +5255,248 @@ export const mjBizAppsOrdersProductEntitlementSchema = z.object({
 export type mjBizAppsOrdersProductEntitlementEntityType = z.infer<typeof mjBizAppsOrdersProductEntitlementSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Option Assignment Values
+ */
+export const mjBizAppsOrdersProductOptionAssignmentValueSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductOptionAssignmentID: z.string().describe(`
+        * * Field Name: ProductOptionAssignmentID
+        * * Display Name: Product Option Assignment
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Assignments (vwProductOptionAssignments.ID)`),
+    ProductOptionValueID: z.string().describe(`
+        * * Field Name: ProductOptionValueID
+        * * Display Name: Product Option Value
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersProductOptionAssignmentValueEntityType = z.infer<typeof mjBizAppsOrdersProductOptionAssignmentValueSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Option Assignments
+ */
+export const mjBizAppsOrdersProductOptionAssignmentSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductTypeID: z.string().nullable().describe(`
+        * * Field Name: ProductTypeID
+        * * Display Name: Product Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Types (vwProductTypes.ID)
+        * * Description: Set for a type-level default. Only a shared option may be assigned here. Exactly one of ProductTypeID, ProductCategoryID and ProductID is set.`),
+    ProductCategoryID: z.string().nullable().describe(`
+        * * Field Name: ProductCategoryID
+        * * Display Name: Product Category ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Categories (vwProductCategories.ID)
+        * * Description: Set for a category-level assignment, inherited by every subcategory and product below it.`),
+    ProductID: z.string().nullable().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+        * * Description: Set for a product-level assignment, which has the final say.`),
+    ProductOptionID: z.string().describe(`
+        * * Field Name: ProductOptionID
+        * * Display Name: Product Option ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)`),
+    IsExcluded: z.boolean().describe(`
+        * * Field Name: IsExcluded
+        * * Display Name: Is Excluded
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Removes an inherited option at this level and below, until a more specific assignment offers it again.`),
+    IsRequired: z.boolean().describe(`
+        * * Field Name: IsRequired
+        * * Display Name: Is Required
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: A line for the product cannot be saved or priced without a pick for this option.`),
+    DefaultProductOptionValueID: z.string().nullable().describe(`
+        * * Field Name: DefaultProductOptionValueID
+        * * Display Name: Default Option Value
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+        * * Description: Value a new line starts with; staff or the buyer can change it. Must be one of the allowed values.`),
+    SortOrder: z.number().describe(`
+        * * Field Name: SortOrder
+        * * Display Name: Sort Order
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: Order in which this option is shown on a line.`),
+    Role: z.union([z.literal('LineOption'), z.literal('Variant')]).describe(`
+        * * Field Name: Role
+        * * Display Name: Role
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: LineOption
+    * * Value List Type: List
+    * * Possible Values 
+    *   * LineOption
+    *   * Variant
+        * * Description: LineOption: picked on the order line. Variant: the option defines a separate SKU; not supported yet and refused on save.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    ProductType: z.string().nullable().describe(`
+        * * Field Name: ProductType
+        * * Display Name: Product Type
+        * * SQL Data Type: nvarchar(100)`),
+    ProductCategory: z.string().nullable().describe(`
+        * * Field Name: ProductCategory
+        * * Display Name: Product Category
+        * * SQL Data Type: nvarchar(200)`),
+    Product: z.string().nullable().describe(`
+        * * Field Name: Product
+        * * Display Name: Product
+        * * SQL Data Type: nvarchar(200)`),
+    ProductOption: z.string().describe(`
+        * * Field Name: ProductOption
+        * * Display Name: Product Option
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersProductOptionAssignmentEntityType = z.infer<typeof mjBizAppsOrdersProductOptionAssignmentSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Option Values
+ */
+export const mjBizAppsOrdersProductOptionValueSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductOptionID: z.string().describe(`
+        * * Field Name: ProductOptionID
+        * * Display Name: Product Option
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(50)
+        * * Description: Stable code for the value, compared by price rules (Option.TIER eq PRO) and recorded as the OptionValue of a pick. Unique within its option.`),
+    Label: z.string().describe(`
+        * * Field Name: Label
+        * * Display Name: Label
+        * * SQL Data Type: nvarchar(200)
+        * * Description: Label shown to staff and buyers. Copied onto the pick when the line is recorded, so a later rename does not change past orders.`),
+    SortOrder: z.number().describe(`
+        * * Field Name: SortOrder
+        * * Display Name: Sort Order
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: Order in which values are shown.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: An inactive value can no longer be picked on a new line.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    ProductOption: z.string().describe(`
+        * * Field Name: ProductOption
+        * * Display Name: Product Option Name
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersProductOptionValueEntityType = z.infer<typeof mjBizAppsOrdersProductOptionValueSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Options
+ */
+export const mjBizAppsOrdersProductOptionSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CompanyID: z.string().nullable().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The company that owns this option. Empty for a shared option, usable by every company and the only kind a product type may assign.`),
+    Code: z.string().describe(`
+        * * Field Name: Code
+        * * Display Name: Code
+        * * SQL Data Type: nvarchar(50)
+        * * Description: Stable code for the option, used as the field name in price rules (Option.<Code>) and as the GroupKey of the picks recorded on a line. Unique among shared options, and within a company.`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(100)
+        * * Description: Name shown to staff and buyers.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)`),
+    SortOrder: z.number().describe(`
+        * * Field Name: SortOrder
+        * * Display Name: Sort Order
+        * * SQL Data Type: int
+        * * Default Value: 0
+        * * Description: Order in which options are shown on a line.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: An inactive option is no longer offered on new lines. Lines that picked it keep their picks.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().nullable().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersProductOptionEntityType = z.infer<typeof mjBizAppsOrdersProductOptionSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Product Prices
  */
 export const mjBizAppsOrdersProductPriceSchema = z.object({
@@ -5408,6 +5671,53 @@ export const mjBizAppsOrdersProductPriceSchema = z.object({
 export type mjBizAppsOrdersProductPriceEntityType = z.infer<typeof mjBizAppsOrdersProductPriceSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Successor Option Values
+ */
+export const mjBizAppsOrdersProductSuccessorOptionValueSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+        * * Description: The product being moved away from, whose SuccessorProductID names the product the renewal books on.`),
+    ProductOptionID: z.string().describe(`
+        * * Field Name: ProductOptionID
+        * * Display Name: Product Option ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)`),
+    ProductOptionValueID: z.string().describe(`
+        * * Field Name: ProductOptionValueID
+        * * Display Name: Product Option Value ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product Name
+        * * SQL Data Type: nvarchar(200)`),
+    ProductOption: z.string().describe(`
+        * * Field Name: ProductOption
+        * * Display Name: Product Option
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersProductSuccessorOptionValueEntityType = z.infer<typeof mjBizAppsOrdersProductSuccessorOptionValueSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Product Types
  */
 export const mjBizAppsOrdersProductTypeSchema = z.object({
@@ -5541,6 +5851,52 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
 });
 
 export type mjBizAppsOrdersProductTypeEntityType = z.infer<typeof mjBizAppsOrdersProductTypeSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Product Variant Values
+ */
+export const mjBizAppsOrdersProductVariantValueSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)`),
+    ProductOptionID: z.string().describe(`
+        * * Field Name: ProductOptionID
+        * * Display Name: Product Option ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)`),
+    ProductOptionValueID: z.string().describe(`
+        * * Field Name: ProductOptionValueID
+        * * Display Name: Product Option Value ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product
+        * * SQL Data Type: nvarchar(200)`),
+    ProductOption: z.string().describe(`
+        * * Field Name: ProductOption
+        * * Display Name: Product Option
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersProductVariantValueEntityType = z.infer<typeof mjBizAppsOrdersProductVariantValueSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Products
@@ -5705,6 +6061,12 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 1
         * * Description: 0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it.`),
+    ParentProductID: z.string().nullable().describe(`
+        * * Field Name: ParentProductID
+        * * Display Name: Parent Product
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+        * * Description: For a variant SKU, the product it is a variant of. One level only. Not supported yet: refused on save until the pricing, tax and entitlement walks use it.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -5732,6 +6094,10 @@ export const mjBizAppsOrdersProductSchema = z.object({
     SubscriptionFamily: z.string().nullable().describe(`
         * * Field Name: SubscriptionFamily
         * * Display Name: Subscription Family
+        * * SQL Data Type: nvarchar(200)`),
+    ParentProduct: z.string().nullable().describe(`
+        * * Field Name: ParentProduct
+        * * Display Name: Parent Product Name
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -11391,6 +11757,20 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     set IsSellableNew(value: boolean) {
         this.Set('IsSellableNew', value);
     }
+
+    /**
+    * * Field Name: ParentProductID
+    * * Display Name: Parent Product
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get ParentProductID(): string | null {
+        return this.Get('ParentProductID');
+    }
+    set ParentProductID(value: string | null) {
+        this.Set('ParentProductID', value);
+    }
 }
 
 
@@ -16113,6 +16493,41 @@ export class mjBizAppsOrdersOrderLineChoiceEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Order Line Choices entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * Table-Level: Product Option and Product Option Value must either both be provided or both be left empty.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateProductOptionAndValueCoexistence(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Product Option and Product Option Value must either both be provided or both be left empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateProductOptionAndValueCoexistence(result: ValidationResult) {
+    	const hasOption = this.ProductOptionID != null;
+    	const hasOptionValue = this.ProductOptionValueID != null;
+    
+    	if ((hasOption && !hasOptionValue) || (!hasOption && hasOptionValue)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ProductOptionID",
+    			"Product Option and Product Option Value must either both be specified or both be left blank.",
+    			this.ProductOptionID,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -16209,6 +16624,43 @@ export class mjBizAppsOrdersOrderLineChoiceEntity extends BaseEntity<mjBizAppsOr
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ProductOptionID
+    * * Display Name: Product Option
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)
+    * * Description: For a product option pick, the option it answers; GroupKey is then the option code. Empty for a checkout-widget choice.
+    */
+    get ProductOptionID(): string | null {
+        return this.Get('ProductOptionID');
+    }
+    set ProductOptionID(value: string | null) {
+        this.Set('ProductOptionID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionValueID
+    * * Display Name: Product Option Value
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+    * * Description: For a product option pick, the value picked; OptionValue is then the value code. Set together with ProductOptionID.
+    */
+    get ProductOptionValueID(): string | null {
+        return this.Get('ProductOptionValueID');
+    }
+    set ProductOptionValueID(value: string | null) {
+        this.Set('ProductOptionValueID', value);
+    }
+
+    /**
+    * * Field Name: ProductOption
+    * * Display Name: Product Option
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ProductOption(): string | null {
+        return this.Get('ProductOption');
     }
 }
 
@@ -22884,6 +23336,729 @@ export class mjBizAppsOrdersProductEntitlementEntity extends BaseEntity<mjBizApp
 
 
 /**
+ * MJ_BizApps_Orders: Product Option Assignment Values - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductOptionAssignmentValue
+ * * Base View: vwProductOptionAssignmentValues
+ * * @description A value an option assignment allows. An assignment with no rows here allows every active value of its option.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Option Assignment Values')
+export class mjBizAppsOrdersProductOptionAssignmentValueEntity extends BaseEntity<mjBizAppsOrdersProductOptionAssignmentValueEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Option Assignment Values record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Option Assignment Values record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductOptionAssignmentValueEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionAssignmentID
+    * * Display Name: Product Option Assignment
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Assignments (vwProductOptionAssignments.ID)
+    */
+    get ProductOptionAssignmentID(): string {
+        return this.Get('ProductOptionAssignmentID');
+    }
+    set ProductOptionAssignmentID(value: string) {
+        this.Set('ProductOptionAssignmentID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionValueID
+    * * Display Name: Product Option Value
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+    */
+    get ProductOptionValueID(): string {
+        return this.Get('ProductOptionValueID');
+    }
+    set ProductOptionValueID(value: string) {
+        this.Set('ProductOptionValueID', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Product Option Assignments - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductOptionAssignment
+ * * Base View: vwProductOptionAssignments
+ * * @description Offers an option on a product type, a category (and everything below it) or one product. For each option the most specific assignment wins whole: product, then the nearest category, then the type.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Option Assignments')
+export class mjBizAppsOrdersProductOptionAssignmentEntity extends BaseEntity<mjBizAppsOrdersProductOptionAssignmentEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Option Assignments record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Option Assignments record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductOptionAssignmentEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Product Option Assignments entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * Table-Level: Exactly one target entity (Product Type, Product Category, or Product) must be specified.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateProductTargetSpecification(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Exactly one target entity (Product Type, Product Category, or Product) must be specified.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateProductTargetSpecification(result: ValidationResult): void {
+    	let count = 0;
+    	if (this.ProductTypeID != null) {
+    		count++;
+    	}
+    	if (this.ProductCategoryID != null) {
+    		count++;
+    	}
+    	if (this.ProductID != null) {
+    		count++;
+    	}
+    
+    	if (count !== 1) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ProductID",
+    			"Exactly one of Product Type, Product Category, or Product must be specified.",
+    			this.ProductID,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductTypeID
+    * * Display Name: Product Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Types (vwProductTypes.ID)
+    * * Description: Set for a type-level default. Only a shared option may be assigned here. Exactly one of ProductTypeID, ProductCategoryID and ProductID is set.
+    */
+    get ProductTypeID(): string | null {
+        return this.Get('ProductTypeID');
+    }
+    set ProductTypeID(value: string | null) {
+        this.Set('ProductTypeID', value);
+    }
+
+    /**
+    * * Field Name: ProductCategoryID
+    * * Display Name: Product Category ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Categories (vwProductCategories.ID)
+    * * Description: Set for a category-level assignment, inherited by every subcategory and product below it.
+    */
+    get ProductCategoryID(): string | null {
+        return this.Get('ProductCategoryID');
+    }
+    set ProductCategoryID(value: string | null) {
+        this.Set('ProductCategoryID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    * * Description: Set for a product-level assignment, which has the final say.
+    */
+    get ProductID(): string | null {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string | null) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionID
+    * * Display Name: Product Option ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)
+    */
+    get ProductOptionID(): string {
+        return this.Get('ProductOptionID');
+    }
+    set ProductOptionID(value: string) {
+        this.Set('ProductOptionID', value);
+    }
+
+    /**
+    * * Field Name: IsExcluded
+    * * Display Name: Is Excluded
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Removes an inherited option at this level and below, until a more specific assignment offers it again.
+    */
+    get IsExcluded(): boolean {
+        return this.Get('IsExcluded');
+    }
+    set IsExcluded(value: boolean) {
+        this.Set('IsExcluded', value);
+    }
+
+    /**
+    * * Field Name: IsRequired
+    * * Display Name: Is Required
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: A line for the product cannot be saved or priced without a pick for this option.
+    */
+    get IsRequired(): boolean {
+        return this.Get('IsRequired');
+    }
+    set IsRequired(value: boolean) {
+        this.Set('IsRequired', value);
+    }
+
+    /**
+    * * Field Name: DefaultProductOptionValueID
+    * * Display Name: Default Option Value
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+    * * Description: Value a new line starts with; staff or the buyer can change it. Must be one of the allowed values.
+    */
+    get DefaultProductOptionValueID(): string | null {
+        return this.Get('DefaultProductOptionValueID');
+    }
+    set DefaultProductOptionValueID(value: string | null) {
+        this.Set('DefaultProductOptionValueID', value);
+    }
+
+    /**
+    * * Field Name: SortOrder
+    * * Display Name: Sort Order
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: Order in which this option is shown on a line.
+    */
+    get SortOrder(): number {
+        return this.Get('SortOrder');
+    }
+    set SortOrder(value: number) {
+        this.Set('SortOrder', value);
+    }
+
+    /**
+    * * Field Name: Role
+    * * Display Name: Role
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: LineOption
+    * * Value List Type: List
+    * * Possible Values 
+    *   * LineOption
+    *   * Variant
+    * * Description: LineOption: picked on the order line. Variant: the option defines a separate SKU; not supported yet and refused on save.
+    */
+    get Role(): 'LineOption' | 'Variant' {
+        return this.Get('Role');
+    }
+    set Role(value: 'LineOption' | 'Variant') {
+        this.Set('Role', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ProductType
+    * * Display Name: Product Type
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ProductType(): string | null {
+        return this.Get('ProductType');
+    }
+
+    /**
+    * * Field Name: ProductCategory
+    * * Display Name: Product Category
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ProductCategory(): string | null {
+        return this.Get('ProductCategory');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string | null {
+        return this.Get('Product');
+    }
+
+    /**
+    * * Field Name: ProductOption
+    * * Display Name: Product Option
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ProductOption(): string {
+        return this.Get('ProductOption');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Product Option Values - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductOptionValue
+ * * Base View: vwProductOptionValues
+ * * @description One value of a product option, such as Pro for Tier. A value a line has used is deactivated, never deleted.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Option Values')
+export class mjBizAppsOrdersProductOptionValueEntity extends BaseEntity<mjBizAppsOrdersProductOptionValueEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Option Values record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Option Values record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductOptionValueEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Product Option Values entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * Code: Code cannot be empty.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateCodeNotEmpty(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Code cannot be empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateCodeNotEmpty(result: ValidationResult) {
+    	if (this.Code != null && this.Code.trim().length === 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"Code",
+    			"Code cannot be empty.",
+    			this.Code,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionID
+    * * Display Name: Product Option
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)
+    */
+    get ProductOptionID(): string {
+        return this.Get('ProductOptionID');
+    }
+    set ProductOptionID(value: string) {
+        this.Set('ProductOptionID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(50)
+    * * Description: Stable code for the value, compared by price rules (Option.TIER eq PRO) and recorded as the OptionValue of a pick. Unique within its option.
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: Label
+    * * Display Name: Label
+    * * SQL Data Type: nvarchar(200)
+    * * Description: Label shown to staff and buyers. Copied onto the pick when the line is recorded, so a later rename does not change past orders.
+    */
+    get Label(): string {
+        return this.Get('Label');
+    }
+    set Label(value: string) {
+        this.Set('Label', value);
+    }
+
+    /**
+    * * Field Name: SortOrder
+    * * Display Name: Sort Order
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: Order in which values are shown.
+    */
+    get SortOrder(): number {
+        return this.Get('SortOrder');
+    }
+    set SortOrder(value: number) {
+        this.Set('SortOrder', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: An inactive value can no longer be picked on a new line.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ProductOption
+    * * Display Name: Product Option Name
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ProductOption(): string {
+        return this.Get('ProductOption');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Product Options - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductOption
+ * * Base View: vwProductOptions
+ * * @description A choice a buyer makes on a line, such as Tier or Size. Its values are in Product Option Values; which products offer it is set by Product Option Assignments.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Options')
+export class mjBizAppsOrdersProductOptionEntity extends BaseEntity<mjBizAppsOrdersProductOptionEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Options record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Options record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductOptionEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Product Options entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * Code: Code cannot be empty and must contain at least one character.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateCodeNotEmpty(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Code cannot be empty and must contain at least one character.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateCodeNotEmpty(result: ValidationResult) {
+    	if (this.Code != null && this.Code.trim().length === 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"Code",
+    			"Code cannot be blank.",
+    			this.Code,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The company that owns this option. Empty for a shared option, usable by every company and the only kind a product type may assign.
+    */
+    get CompanyID(): string | null {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string | null) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Code
+    * * Display Name: Code
+    * * SQL Data Type: nvarchar(50)
+    * * Description: Stable code for the option, used as the field name in price rules (Option.<Code>) and as the GroupKey of the picks recorded on a line. Unique among shared options, and within a company.
+    */
+    get Code(): string {
+        return this.Get('Code');
+    }
+    set Code(value: string) {
+        this.Set('Code', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(100)
+    * * Description: Name shown to staff and buyers.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: SortOrder
+    * * Display Name: Sort Order
+    * * SQL Data Type: int
+    * * Default Value: 0
+    * * Description: Order in which options are shown on a line.
+    */
+    get SortOrder(): number {
+        return this.Get('SortOrder');
+    }
+    set SortOrder(value: number) {
+        this.Set('SortOrder', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: An inactive option is no longer offered on new lines. Lines that picked it keep their picks.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string | null {
+        return this.Get('Company');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Product Prices - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: ProductPrice
@@ -23438,6 +24613,129 @@ export class mjBizAppsOrdersProductPriceEntity extends BaseEntity<mjBizAppsOrder
 
 
 /**
+ * MJ_BizApps_Orders: Product Successor Option Values - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductSuccessorOptionValue
+ * * Base View: vwProductSuccessorOptionValues
+ * * @description The pick a renewal line takes when a subscription moves from this product to its successor product. Lets one product per combination be retired onto one product with options: the retired product names its successor and the tier and size it stood for.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Successor Option Values')
+export class mjBizAppsOrdersProductSuccessorOptionValueEntity extends BaseEntity<mjBizAppsOrdersProductSuccessorOptionValueEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Successor Option Values record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Successor Option Values record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductSuccessorOptionValueEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    * * Description: The product being moved away from, whose SuccessorProductID names the product the renewal books on.
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionID
+    * * Display Name: Product Option ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)
+    */
+    get ProductOptionID(): string {
+        return this.Get('ProductOptionID');
+    }
+    set ProductOptionID(value: string) {
+        this.Set('ProductOptionID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionValueID
+    * * Display Name: Product Option Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+    */
+    get ProductOptionValueID(): string {
+        return this.Get('ProductOptionValueID');
+    }
+    set ProductOptionValueID(value: string) {
+        this.Set('ProductOptionValueID', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
+    }
+
+    /**
+    * * Field Name: ProductOption
+    * * Display Name: Product Option
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ProductOption(): string {
+        return this.Get('ProductOption');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Product Types - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: ProductType
@@ -23761,6 +25059,128 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
 
 
 /**
+ * MJ_BizApps_Orders: Product Variant Values - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ProductVariantValue
+ * * Base View: vwProductVariantValues
+ * * @description The value a variant SKU has on one option, such as Size L for one shirt variant. Not supported yet: refused on save.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Product Variant Values')
+export class mjBizAppsOrdersProductVariantValueEntity extends BaseEntity<mjBizAppsOrdersProductVariantValueEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Product Variant Values record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Product Variant Values record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersProductVariantValueEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionID
+    * * Display Name: Product Option ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Options (vwProductOptions.ID)
+    */
+    get ProductOptionID(): string {
+        return this.Get('ProductOptionID');
+    }
+    set ProductOptionID(value: string) {
+        this.Set('ProductOptionID', value);
+    }
+
+    /**
+    * * Field Name: ProductOptionValueID
+    * * Display Name: Product Option Value ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Product Option Values (vwProductOptionValues.ID)
+    */
+    get ProductOptionValueID(): string {
+        return this.Get('ProductOptionValueID');
+    }
+    set ProductOptionValueID(value: string) {
+        this.Set('ProductOptionValueID', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
+    }
+
+    /**
+    * * Field Name: ProductOption
+    * * Display Name: Product Option
+    * * SQL Data Type: nvarchar(100)
+    */
+    get ProductOption(): string {
+        return this.Get('ProductOption');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Products - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: Product
@@ -23814,6 +25234,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     * * MaxQuantityPerLine: Maximum quantity per line must be at least 1 if specified.
     * * RenewalIncreasePercent: Renewal increase percentage must be between 0 and 100.
     * * Table-Level: The availability end date must be on or after the availability start date when both dates are provided.
+    * * Table-Level: A product cannot be its own parent product.
     * * Table-Level: A product cannot be its own successor. If a successor product is specified, it must be a different product to prevent circular references.
     * @public
     * @method
@@ -23824,6 +25245,7 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
         this.ValidateMaxQuantityPerLineMinimum(result);
         this.ValidateRenewalIncreasePercentRange(result);
         this.ValidateAvailableToOnOrAfterAvailableFrom(result);
+        this.ValidateParentProductIDNotSelf(result);
         this.ValidateSuccessorProductIDNotEqualToID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
@@ -23882,6 +25304,23 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     				ValidationErrorType.Failure
     			));
     		}
+    	}
+    }
+
+    /**
+    * A product cannot be its own parent product.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateParentProductIDNotSelf(result: ValidationResult) {
+    	if (this.ParentProductID != null && this.ID != null && UUIDsEqual(this.ParentProductID, this.ID)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ParentProductID",
+    			"A product cannot be set as its own parent product.",
+    			this.ParentProductID,
+    			ValidationErrorType.Failure
+    		));
     	}
     }
 
@@ -24273,6 +25712,20 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
 
     /**
+    * * Field Name: ParentProductID
+    * * Display Name: Parent Product
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    * * Description: For a variant SKU, the product it is a variant of. One level only. Not supported yet: refused on save until the pricing, tax and entitlement walks use it.
+    */
+    get ParentProductID(): string | null {
+        return this.Get('ParentProductID');
+    }
+    set ParentProductID(value: string | null) {
+        this.Set('ParentProductID', value);
+    }
+
+    /**
     * * Field Name: ProductType
     * * Display Name: Product Type Name
     * * SQL Data Type: nvarchar(100)
@@ -24333,6 +25786,15 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     */
     get SubscriptionFamily(): string | null {
         return this.Get('SubscriptionFamily');
+    }
+
+    /**
+    * * Field Name: ParentProduct
+    * * Display Name: Parent Product Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ParentProduct(): string | null {
+        return this.Get('ParentProduct');
     }
 }
 

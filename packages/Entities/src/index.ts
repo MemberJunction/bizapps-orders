@@ -170,3 +170,5 @@ export * from './external-payment-poll-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
 export * from './renewal-price.js';
 export * from './renewal-worklist.js';
+// Product options (Tier, Size): inheritance walk, pick checks and the Option price source (golive #399).
+export * from './product-options.js';

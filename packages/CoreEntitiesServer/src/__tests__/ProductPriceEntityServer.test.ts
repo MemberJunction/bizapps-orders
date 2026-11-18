@@ -96,6 +96,14 @@ describe('PriceRulesCanCollide', () => {
         expect(PriceRulesCanCollide(rule({ Applicability: band(0, null) }), rule({ Applicability: band(50 * M, null) }))).toBe(true);
     });
 
+    it('rows of an option matrix do not collide; a tier rule and a tier-and-size rule of that tier do', () => {
+        const opts = (...pairs: [string, string][]) =>
+            JSON.stringify({ logic: 'and', filters: pairs.map(([c, v]) => ({ field: `Option.${c}`, operator: 'eq', value: v })) });
+        expect(PriceRulesCanCollide(rule({ Applicability: opts(['TIER', 'PRO'], ['SIZE', 'SMALL']) }), rule({ Applicability: opts(['TIER', 'PRO'], ['SIZE', 'LARGE']) }))).toBe(false);
+        expect(PriceRulesCanCollide(rule({ Applicability: opts(['TIER', 'PRO']) }), rule({ Applicability: opts(['TIER', 'PRO'], ['SIZE', 'LARGE']) }))).toBe(true);
+        expect(PriceRulesCanCollide(rule({ Applicability: opts(['TIER', 'PRO']) }), rule())).toBe(true);
+    });
+
     it('a revenue band and a rule with no When collide: the plain rule applies to every organization', () => {
         expect(PriceRulesCanCollide(rule({ Applicability: band(0, 2 * M) }), rule())).toBe(true);
     });

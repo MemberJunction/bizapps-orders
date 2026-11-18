@@ -68,9 +68,17 @@ export interface LineSpec {
     ReversesOrderLineID?: string;
     /**
      * Options the buyer chose for this line (#291), recorded as Order Line Choices in the line's
-     * graph. A conditional Product Entitlement grants only on a line carrying its choice.
+     * graph. A conditional Product Entitlement grants only on a line carrying its choice. A product
+     * option pick (golive #399) also names its option and value.
      */
-    Choices?: Array<{ GroupKey: string; OptionValue: string; GroupLabel?: string; OptionLabel?: string }>;
+    Choices?: Array<{
+        GroupKey: string;
+        OptionValue: string;
+        GroupLabel?: string;
+        OptionLabel?: string;
+        ProductOptionID?: string;
+        ProductOptionValueID?: string;
+    }>;
 }
 
 export interface OrderSpec {
@@ -256,6 +264,8 @@ export async function BuildOrder(
             row.GroupLabel = c.GroupLabel ?? c.GroupKey;
             row.OptionValue = c.OptionValue;
             row.OptionLabel = c.OptionLabel ?? c.OptionValue;
+            if (c.ProductOptionID) row.ProductOptionID = c.ProductOptionID;
+            if (c.ProductOptionValueID) row.ProductOptionValueID = c.ProductOptionValueID;
         }
         lines.push(line);
     }

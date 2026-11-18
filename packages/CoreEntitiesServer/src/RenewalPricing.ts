@@ -38,6 +38,7 @@ import {
     type RenewalPrice,
 } from '@mj-biz-apps/orders-entities';
 import { RequireUUID } from './sql-guards.js';
+import { ChoicesForSuccessorRenewal, LoadLineChoices, type LineChoiceRow } from './renewal-choices.js';
 import {
     MonthsCovered,
     ResolveSubscriptionTypeID,
@@ -138,6 +139,12 @@ export interface PricedRenewal {
     PriorLineMonths: number | null;
     /** How the prior line's length compares with the renewal term (golive #468). */
     PriorLineScale: PriorLineScale;
+    /**
+     * The choices the renewal line carries when it moves to a successor: the source line's widget
+     * choices, and option picks from the successor link (golive #399). Undefined on the same
+     * product, where the caller copies the source line's choices as they are.
+     */
+    SuccessorChoices?: LineChoiceRow[];
     /** The prior line's unit price as it stood, before any cut to the renewal term's share. */
     PriorUnitPrice: number;
     /** The renewal term, as the confirm will decide it; null when it cannot be decided ahead of the confirm. */
@@ -273,8 +280,23 @@ export class RenewalPricer {
 
         // A list price is resolved only where the rule needs one: the successor's as of the renewal
         // day, or the prior product's as of the prior order when a price typed below it may lapse.
+        // On a successor the line's picks are the ones the move gives it, and its price rules read them.
+        const successorChoices = movesToSuccessor
+            ? await ChoicesForSuccessorRenewal(await LoadLineChoices(source.ID, this.provider, this.user), chain.map((c) => c.ID), this.provider, this.user)
+            : undefined;
         const successorList = movesToSuccessor
-            ? await this.listPrice({ ...source, ProductID: product.ID, Quantity: quantity, UnitPrice: null, ProductPriceID: null }, renewalDay)
+            ? await this.listPrice(
+                  {
+                      ...source,
+                      ID: null,
+                      ProductID: product.ID,
+                      Quantity: quantity,
+                      UnitPrice: null,
+                      ProductPriceID: null,
+                      OptionPicks: successorChoices,
+                  },
+                  renewalDay,
+              )
             : undefined;
         const priorList =
             !movesToSuccessor && source.PriceOverridden && !carry ? await this.listPrice({ ...source, Quantity: quantity }, null) : null;
@@ -321,6 +343,7 @@ export class RenewalPricer {
             Price: price,
             PriorLineMonths: scale.ScaledDown ? scale.LineMonths : null,
             PriorLineScale: scale,
+            ...(successorChoices ? { SuccessorChoices: successorChoices } : {}),
             PriorUnitPrice: Number(source.UnitPrice),
             Term: term,
             PromotionCodes: options.IncludePromotions === false ? [] : await this.loadRenewalPromotionCodes(source),

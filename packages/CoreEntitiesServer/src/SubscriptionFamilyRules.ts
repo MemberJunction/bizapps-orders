@@ -22,6 +22,7 @@
 import { BaseEntity, RunView, ValidationErrorInfo, ValidationResult, type IRunViewProvider } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { ProductEntity, mjBizAppsOrdersSubscriptionFamilyEntity } from '@mj-biz-apps/orders-entities';
+import { VARIANTS_NOT_SUPPORTED } from './ProductOptionRules.js';
 
 import { SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
@@ -37,6 +38,11 @@ export class ProductEntityServer extends ProductEntity {
 
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
+        // Variant SKUs are schema only for now (golive #399); a parent link would be read by nothing.
+        if (this.ParentProductID && (!this.IsSaved || this.GetFieldByName('ParentProductID')?.Dirty === true)) {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo('ParentProductID', VARIANTS_NOT_SUPPORTED, this.ParentProductID));
+        }
         if (!this.SubscriptionFamilyID) return result;
 
         const familyChanged = !this.IsSaved || this.GetFieldByName('SubscriptionFamilyID')?.Dirty === true;

@@ -115,7 +115,10 @@ describe('Product widget panels replace their duplicate generated sections', () 
         // IncludeInGeneratedForm = 0). The committed generated template still carries it
         // because CodeGen has not been re-run against that metadata yet, so it must not be
         // carried into the replacement panel.
-        const deprecated = ['StandaloneSellingPrice'];
+        //
+        // ParentProductID is the variant SKU link (golive #399). Its save is refused until variants
+        // are supported, so the panel leaves it off rather than offer a field that cannot be set.
+        const deprecated = ['StandaloneSellingPrice', 'ParentProductID'];
         const replaced = [
             ...GeneratedSectionFields('financialAndAccounting'),
             ...GeneratedSectionFields('catalogLifecycle'),

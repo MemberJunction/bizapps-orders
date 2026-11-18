@@ -62,6 +62,7 @@
  *   party-roster               the Party Signals contract the shared party pickers read
  *   progress-measurement       percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
  *   billcom-rail               the Bill.com invoice rail through its gateway seam: send, cancel, poll, webhook, job gate (#591)
+ *   product-options            Tier, Size and other buyer choices: inheritance, matrix price, required picks, renewals, variant refusals (golive #399)
  *
  * The `wire-*` bundles (wire-crud, wire-entitlements, wire-party-keep, wire-volume) run the same
  * kind of checks over the GraphQL client transport. They register from `client-index.ts`, not this
@@ -153,3 +154,4 @@ export function LoadOrdersIntegrationTests(): void {
     // intentionally empty
 }
 export * from './checks/service-period-lock.checks.js';
+export * from './checks/product-options.checks.js';

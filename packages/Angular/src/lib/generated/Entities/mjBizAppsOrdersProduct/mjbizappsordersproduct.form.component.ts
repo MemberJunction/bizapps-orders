@@ -27,13 +27,17 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
             { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Entitlements', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductBundleItemsComponentProductID', sectionName: 'Product Bundle Items (Component Product ID)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductBundleItemsBundleProductID', sectionName: 'Bundle Items', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductsSuccessorProductID', sectionName: 'Products (Successor Product)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinesSourceBundleProductID', sectionName: 'Order Lines (Source Bundle Product)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPaymentProviderPrices', sectionName: 'Payment Provider Prices', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPaymentProviderPrices', sectionName: 'Payment Provider Prices', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductsParentProductID', sectionName: 'Products (Parent Product)', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductVariantValues', sectionName: 'Product Variant Values', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductOptionAssignments', sectionName: 'Product Option Assignments', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductSuccessorOptionValues', sectionName: 'Product Successor Option Values', isExpanded: false }
         ]);
     }
 }
