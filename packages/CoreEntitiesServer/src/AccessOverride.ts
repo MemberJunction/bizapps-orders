@@ -63,6 +63,7 @@ import {
     ACCESS_OVERRIDE_AUTH,
     AccessOverrideDecisionRefusal,
     LoadAccessOverrideAssignees,
+    PermissionNotSetUp,
     ToISODate,
     mjBizAppsOrdersEntitlementAccessOverrideEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -118,6 +119,17 @@ const gatedTimings = PAYMENT_GATED_TIMINGS.map((t) => `'${t}'`).join(',');
 
 // ─── authorization ─────────────────────────────────────────────────────────────
 
+/** What a person is asking for with each override type, as it reads in a sentence. */
+const ACCESS_OVERRIDE_REQUEST_LABEL: Record<AccessOverrideType, string> = {
+    WaivePaymentHold: 'a payment hold waiver',
+    DeferCutoff: 'a renewal cutoff deferral',
+};
+
+/** The refusal for a user who holds no authorization to request this type of override. */
+export function AccessOverrideRequestRefusal(type: AccessOverrideType): string {
+    return `You don't have permission to request ${ACCESS_OVERRIDE_REQUEST_LABEL[type]}. Please contact your administrator if you need access.`;
+}
+
 /**
  * Whether `user` may request an override of this type, through its own authorization or the parent.
  * Throws when the authorization rows are not in metadata: see FAILS CLOSED above.
@@ -127,10 +139,7 @@ export function UserMayRequestAccessOverride(type: AccessOverrideType, user: Use
     const auths = provider.Authorizations ?? [];
     const auth = auths.find((a) => a.Name === name);
     if (!auth) {
-        throw new Error(
-            `Authorization '${name}' is not in metadata. Access overrides are refused until the ` +
-                `${ACCESS_OVERRIDE_AUTH.Parent} authorizations are installed and granted to roles.`,
-        );
+        throw new Error(PermissionNotSetUp(`Requesting ${ACCESS_OVERRIDE_REQUEST_LABEL[type]}`, name));
     }
     return new AuthorizationEvaluator().UserCanExecuteWithAncestors(auth, user, auths);
 }
@@ -168,7 +177,7 @@ export async function RequestAccessOverride(
         return { Success: false, Message: `OverrideType must be one of ${OVERRIDE_TYPES.join(', ')}; got '${input.OverrideType}'.` };
     }
     if (!UserMayRequestAccessOverride(input.OverrideType, user, provider)) {
-        return { Success: false, Message: `Requesting a ${input.OverrideType} override requires the ${ACCESS_OVERRIDE_AUTH[input.OverrideType]} authorization.` };
+        return { Success: false, Message: AccessOverrideRequestRefusal(input.OverrideType) };
     }
     const reason = (input.Reason ?? '').trim();
     if (!reason) return { Success: false, Message: 'An access override must state a reason.' };

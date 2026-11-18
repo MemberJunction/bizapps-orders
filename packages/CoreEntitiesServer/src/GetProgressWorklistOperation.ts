@@ -16,12 +16,13 @@ import {
     OrdersEngine,
     OrdersGetProgressWorklistOperation as OrdersGetProgressWorklistOperationBase,
     ToISODate,
+    UserHasAuthorization,
     type OrdersGetProgressWorklistInput,
     type OrdersGetProgressWorklistOutput,
     type ProgressWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
-import { EffectiveObservations, SupersedeRefusal } from './ProgressSupersede.js';
+import { EffectiveObservations, PROGRESS_SUPERSEDE_AUTH } from './ProgressSupersede.js';
 import { RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
@@ -90,7 +91,8 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         const maxCount = Math.max(1, Math.floor(Number(input?.MaxCount ?? 500)));
         // Said so the screen can offer the action; `Orders.RecordProgress` checks again, so a stale
         // answer here can hide the button but never grant it.
-        const canSupersede = SupersedeRefusal(user, provider.Authorizations ?? []) === null;
+        // Asked directly, not through `SupersedeRefusal`, which logs an error when the authorization is not installed.
+        const canSupersede = UserHasAuthorization(PROGRESS_SUPERSEDE_AUTH, user, provider);
         const pocProductIDs = await this.pocProductIDs(provider, user);
         if (pocProductIDs.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
 

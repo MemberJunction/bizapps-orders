@@ -1080,7 +1080,7 @@ export const ConcessionChecks: NamedCheck[] = [
 
         const notes = await TxQuery<{ Description: string }>(ctx,
           `SELECT Description FROM __mj_BizAppsTasks.TaskActivity WHERE TaskID = '${refused.Task.ID}'`);
-        Assert(notes.some((n) => n.Description.includes("Only a holder of the role")),
+        Assert(notes.some((n) => n.Description.includes("Only its assigned approvers can")),
           "the refused task records why the decision was not applied");
       }),
   },
@@ -1508,7 +1508,7 @@ export const ConcessionChecks: NamedCheck[] = [
 
         above.Entity.Status = "Approved";
         Assert(!(await above.Entity.Save()), "a holder of the lower tier's role must not decide a higher tier's concession");
-        Assert(/Only a holder of the role/.test(above.Entity.LatestResult?.CompleteMessage ?? ""),
+        Assert(/Only its assigned approvers can/.test(above.Entity.LatestResult?.CompleteMessage ?? ""),
           `the refusal should say why, got: ${above.Entity.LatestResult?.CompleteMessage}`);
       }),
   },

@@ -826,7 +826,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (UUIDsEqual(user.ID, this.RequestedByUserID)) return refuse('The person who asked for a shift cannot escalate it.');
         const reviewRoleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
         if (!reviewRoleID || !(await UserHoldsRole(reviewRoleID, this.provider(), user, user.ID))) {
-            return refuse('Only a holder of the finance acknowledgment role can escalate a shift.');
+            return refuse("You don't have permission to escalate this date change. Please request this from Finance.");
         }
         const tier = await FindConcessionTier(
             { Value: 0, CumulativeShare: this.CumulativeShare == null ? null : Number(this.CumulativeShare), TermLengthChangeDays: 0 },
@@ -1211,30 +1211,30 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         const rule = await this.approvingRule(user);
         if (!rule?.ApprovalRequiredRoleID) {
-            return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
+            return "No approver is set up for this concession, so it can't be approved or declined yet. Please contact your administrator.";
         }
         // A holder's own concession, under ConcessionSelfApprovalEscalation: only the escalation decides it.
         const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
         if (escalation) {
             if (UUIDsEqual(user.ID, this.RequestedByUserID)) {
                 return (
-                    'This concession was requested by a holder of the role that approves it, so it goes to the next ' +
-                    'approver up (Orders setting ConcessionSelfApprovalEscalation), and its requester cannot decide it.'
+                    "You can't approve or decline a concession you requested. It has been sent to the next approver."
                 );
             }
             if ('Refusal' in escalation) return escalation.Refusal;
             if (!escalation.UserIDs.some((id) => UUIDsEqual(id, user.ID))) {
                 return (
-                    `This concession was requested by a holder of the role that approves it, so only '${escalation.Target}' ` +
-                    `can decide it (Orders setting ConcessionSelfApprovalEscalation).`
+                    `This concession was requested by one of its usual approvers, so only ` +
+                    `${escalation.Target === 'CompanyCFO' ? "the company's CFO approver" : `the ${escalation.Target} role`} ` +
+                    `can approve or decline it.`
                 );
             }
         } else {
             if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
-                return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+                return "You don't have permission to approve or decline this concession. Only its assigned approvers can.";
             }
             if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
-                return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+                return "You can't approve or decline a concession you requested. Another approver needs to decide it.";
             }
         }
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
@@ -1253,7 +1253,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const roleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
         if (!roleID) return 'No finance acknowledgment role is configured (Orders setting AmendmentAcknowledgmentRole), so no one can decide this shift.';
         if (!(await UserHoldsRole(roleID, this.provider(), user, user.ID))) {
-            return 'Only a holder of the finance acknowledgment role can decide a shift under review.';
+            return "You don't have permission to approve or decline this date change. Please request this from Finance.";
         }
         this.decide(this.Status as 'Approved' | 'Rejected', user);
         return null;
