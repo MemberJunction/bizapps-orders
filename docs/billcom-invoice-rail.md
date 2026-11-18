@@ -115,7 +115,7 @@ needs `orders:read`, the others `orders:write`.
 
 | Operation | What it does |
 |---|---|
-| `Orders.IssueExternalInvoice` | Sends one unit. Creates the BILL customer if needed (BILL requires an email), then writes a `Sending` row before asking BILL for the invoice, so a second send fails on `UQ_ExternalInvoice_LiveUnit`; reads the invoice back and archives it if the total does not tie. A transient failure leaves the row `Sending` (`UNCERTAIN`) instead of retrying. `Preview` writes nothing. |
+| `Orders.IssueExternalInvoice` | Sends one unit. Finds the BILL customer by the party's `ExternalCustomer` row, else by an active BILL customer whose `accountNumber` is the party's account number or id (more than one is refused as ambiguous); creates one only when `BillComCreateCustomerOnSend` is on (BILL requires an email). Then writes a `Sending` row before asking BILL for the invoice, so a second send fails on `UQ_ExternalInvoice_LiveUnit`; reads the invoice back and archives it if the total does not tie. A transient failure leaves the row `Sending` (`UNCERTAIN`) instead of retrying. Once sent, raises a "review and send" task for holders of `BillComInvoiceReadyNotifyRole` and posts to `BillComInvoiceReadyWebhookURL` (10-second timeout), each when set; a failed notice is logged and never undoes the send. `Preview` writes nothing. |
 | `Orders.CancelExternalInvoice` | Archives a `Sent` invoice. Refused when money is applied to the unit in Orders (`HAS_PAYMENT`) or BILL shows money not yet polled (`PAYMENT_PENDING_ON_RAIL`). Books nothing. |
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
@@ -167,7 +167,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 | Table | Holds |
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
-| `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. |
+| `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. `scripts/load-billcom-customer-map.mjs` loads these rows for customers already in BILL (dry run unless `--apply`). |
 | `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 

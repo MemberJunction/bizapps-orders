@@ -88,6 +88,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersSpawnRenewalsOperation as OrdersSpawnRenewalsOperationBase,
+    MarkLinePriceStated,
     OrderPricingService,
     RENEWABLE_STATUSES,
     mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
@@ -343,12 +344,13 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         // early. Validated at the boundary like the id above, because a renewal pass silently run
         // for today when the caller named another day places real orders. That covers an invalid
         // `Date` as much as a malformed string (#272).
+        let asOfDay: Date | string | null;
         try {
-            RequireOptionalDay(input.AsOfDate, 'AsOfDate');
+            asOfDay = RequireOptionalDay(input.AsOfDate, 'AsOfDate');
         } catch (e) {
             return { Success: false, Message: String((e as Error).message), Candidates: [], Placed: 0, Skipped: 0 };
         }
-        const asOf = await CalendarDayOrToday(input.AsOfDate, provider, user);
+        const asOf = await CalendarDayOrToday(asOfDay, provider, user);
         const out: SpawnRenewalsOutput = { Success: true, Candidates: [], Placed: 0, Skipped: 0 };
         const candidates = selected
             ? await this.findSelected(provider, selected, out)
@@ -675,6 +677,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // and the ledger shows the sale in the period it belongs to — not on the day the job
             // happened to run. Every member ends on the same day (the group key).
             order.OrderDate = DayAfter(first.TermEndDate);
+            // The pass's as-of day, from which confirm measures which instalments are due now (#963).
+            order.SetRenewalAsOfDay(invoiceDay);
             // A catch-up run (an as-of day before today) invoices the instalment on that day, the day
             // its due date is counted from, so it does not book it today (#831). An as-of day in the
             // future still invoices today: AR is never dated ahead of the day it is raised.
@@ -866,6 +870,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         line.Quantity = priced.Quantity;
         line.UnitPrice = priced.Price.UnitPrice;
         line.DiscountPct = priced.Price.DiscountPct;
+        MarkLinePriceStated(line);
 
         const codes = priced.PromotionCodes.map((c) => c.Code);
         const result = await new OrderPricingService({ Provider: provider, User: user }).Price({
