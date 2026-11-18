@@ -11,7 +11,7 @@
 -- line in OrderLineChoice, which renewals and conditional entitlements already
 -- read, and price rules test them through the Option applicability source.
 --
--- Design: plans/product-options-and-variants.md.
+-- Design: plans/archive/product-options-and-variants.md (the plan, archived once its screens land).
 --
 -- What this file does, in order:
 --   1. ProductOption: an option. CompanyID NULL is a shared option, the only kind
