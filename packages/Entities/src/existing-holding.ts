@@ -121,7 +121,11 @@ export interface ExtendChoiceText {
     Hint: string;
 }
 
-/** Wording for the "extend" answer that says what the server will do with it. */
+/**
+ * Wording for the "extend" answer that says what the server will do with it. A next term reads as
+ * "Renew" (golive #480): that is finance's word for continuing a subscription. It is priced as the
+ * line states, without the renewal increase a spawned renewal order takes.
+ */
 export function ExtendChoiceTextFor(holding: ExistingHolding, purchaseDay: Date): ExtendChoiceText {
     const sub = holding.SubscriptionNumber;
     const status = holding.Status.toLowerCase();
@@ -130,8 +134,8 @@ export function ExtendChoiceTextFor(holding: ExistingHolding, purchaseDay: Date)
         case 'NextTerm': {
             const starts = outcome.StartsOn ? ` (starts ${outcome.StartsOn.toISOString().slice(0, 10)})` : '';
             return {
-                Choice: `Add as next term${starts}`,
-                Hint: `Confirm adds a term to ${sub}, starting the day after its coverage ends.`,
+                Choice: `Renew ${sub}${starts}`,
+                Hint: `Confirm adds this line to ${sub} as its next term, at this line's price.`,
             };
         }
         case 'Reactivate':

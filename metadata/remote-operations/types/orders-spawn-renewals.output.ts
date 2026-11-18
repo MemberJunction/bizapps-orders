@@ -32,10 +32,26 @@ export interface RenewalCandidate {
     /** The product the renewal is placed on: the subscription's own, or its successor. */
     RenewalProductID?: string;
     /**
-     * The renewal's unit price before the increase. When the line that bought the expiring term bought
-     * several terms (a 24-month line on a 12-month type), one term's share of that line's price.
+     * The renewal's unit price before the increase. When the line that bought the expiring term was
+     * longer than the renewal term (a 24-month line renewing for 12), the term's share of that line's
+     * price: renewal months over line months (golive #338, golive #468).
      */
     BasePrice?: number;
+    /**
+     * The prior line's price, before it was cut to the renewal term's share. Set only when the line
+     * that bought the expiring term was longer than the renewal term (golive #468).
+     */
+    PriorUnitPrice?: number;
+    /** The months the prior line covered. Set when it differs from the renewal term's length (golive #468). */
+    PriorLineMonths?: number;
+    /** The months the renewal term covers. Set alongside `PriorLineMonths`. */
+    RenewalTermMonths?: number;
+    /**
+     * Why a person should check this renewal's price before it bills (golive #468). Set when the prior
+     * line was shorter than the renewal term: it renews at the short line's price, unscaled, since
+     * that price may be a part-year price or a full-year price sold over a short first period.
+     */
+    PriceReview?: string;
     /** Where the base price came from: the prior term's price, its list price, or the successor's list. */
     BasePriceSource?: 'PriorPrice' | 'PriorList' | 'SuccessorList';
     /** The increase applied, in percent: 0 when none is set or the new term crosses no anniversary. */

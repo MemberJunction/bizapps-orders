@@ -42,9 +42,10 @@ import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngin
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
 import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.js';
-import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
+import { PriceResolutionError, ResolvePrice, RevenueBandRequiredError } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
+import { IsMarkedPriceStated, IsProductReplacedWithoutPriceEdit } from './linePricePick.js';
 import { AllocateProRata, DropStaleExtendedAmount, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
@@ -151,6 +152,16 @@ export interface OrderPricingContext {
      * Off for the save path, where the extra resolution would buy nothing.
      */
     IncludeDefaultsForStatedLines?: boolean;
+    /**
+     * Leave a line whose revenue band the rep has not picked yet unpriced, with the reason in
+     * `LineErrors`, instead of refusing the whole order (golive #470).
+     *
+     * The order screen prices every line in one pass. An unpicked band on one line used to fail that
+     * pass, so every other line lost its price on screen too, a band already picked included, until
+     * the unpicked line was removed. The screen's passes set this; the save walk does not, and still
+     * refuses an order with a band left to pick.
+     */
+    LeaveUndecidedBandsUnpriced?: boolean;
 }
 
 /**
@@ -175,6 +186,11 @@ export interface OrderPricingResult {
      * prices the product. Absent from the map means the question was not asked.
      */
     EngineDefaults: Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>;
+    /**
+     * Lines left unpriced with the reason, when `LeaveUndecidedBandsUnpriced` let the walk go on past
+     * them. Empty on every walk that refuses instead.
+     */
+    LineErrors: Map<mjBizAppsOrdersOrderLineEntity, string>;
     /** Promotion applications to record, or null when no code or manual discount applied. */
     Promotions: PromotionRunResult | null;
     /** Charge and tax rows to record, or null when the order attracts neither. */
@@ -230,6 +246,7 @@ export class OrderPricingService {
             TaxReasons: new Map<number, string>(),
             PriceComponents: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>(),
             EngineDefaults: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>(),
+            LineErrors: new Map<mjBizAppsOrdersOrderLineEntity, string>(),
             Promotions: null,
             Charges: null,
         };
@@ -627,15 +644,32 @@ export class OrderPricingService {
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price
-        // for a free line and must not be mistaken for silence.
+        // for a free line and must not be mistaken for silence. Changing a saved line's product
+        // without typing a new price clears the old product's stored price so the new product is priced.
         const field = line.GetFieldByName('UnitPrice');
-        const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
+        const productReplaced = IsProductReplacedWithoutPriceEdit(line);
+        const stated =
+            !productReplaced &&
+            (field?.Dirty === true || (line.UnitPrice ?? 0) > 0 || IsMarkedPriceStated(line));
         if (stated) {
             if (this.ctx.IncludeDefaultsForStatedLines) await this.recordDefaultForStatedLine(line);
             return;
         }
+        if (productReplaced) {
+            line.ProductPriceID = null;
+            line.ExtendedAmount = null;
+        }
 
-        const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
+        let resolved: ResolvedPrice | null;
+        try {
+            resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
+        } catch (err) {
+            if (!(err instanceof RevenueBandRequiredError) || !this.ctx.LeaveUndecidedBandsUnpriced) throw err;
+            // The rep has a band to pick on this line. The rest of the order still prices.
+            this.out.LineErrors.set(line, err.message);
+            this.out.EngineDefaults.set(line, null);
+            return;
+        }
 
         if (!resolved) {
             if (await this.refusesUnpricedLines()) {

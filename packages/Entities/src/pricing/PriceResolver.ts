@@ -62,6 +62,7 @@ import {
     ORGANIZATION_REVENUE_SOURCE,
     type OrganizationRevenue,
 } from './organizationRevenue.js';
+import { ParseRevenueBand } from './revenueBands.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -836,6 +837,8 @@ export interface ApplicablePrice {
      * it. Picking one is the rep's call and needs no override grant.
      */
     BandUndecided?: boolean;
+    /** A band's lower revenue edge in USD (inclusive); null for an open bottom edge or a price that is not a band. */
+    RevenueBandMin?: number | null;
 }
 
 export async function ListApplicablePrices(
@@ -847,7 +850,7 @@ export async function ListApplicablePrices(
     const rows = await resolver.CollectApplicable(ctx, provider, user);
     const tiers = await resolver.loadTiers(rows.map((r) => r.ID), provider, user);
     const revenueUnknown = revenueOf(ctx) == null;
-    return rows.map((r) => {
+    const prices = rows.map((r) => {
         const isBand = IsRevenueBandApplicability(r.Applicability);
         const rule: PriceRule = {
             ID: r.ID,
@@ -880,8 +883,25 @@ export async function ListApplicablePrices(
             InheritedFromCategoryID: r.ProductID ? null : r.ProductCategoryID,
             IsRevenueBand: isBand,
             BandUndecided: isBand && revenueUnknown,
+            RevenueBandMin: isBand ? (ParseRevenueBand(r.Applicability)?.Min ?? null) : null,
         };
     });
+    return SortApplicablePrices(prices);
+}
+
+/**
+ * Other named prices first, in the order the catalog gave them, then the revenue bands from the
+ * lowest lower edge up (golive #470), so a band picker reads as a ladder rather than in row order.
+ * An open bottom edge sorts first.
+ */
+export function SortApplicablePrices<T extends Pick<ApplicablePrice, 'IsRevenueBand' | 'RevenueBandMin'>>(prices: readonly T[]): T[] {
+    const others = prices.filter((p) => !p.IsRevenueBand);
+    const bands = prices
+        .map((p, i) => ({ p, i }))
+        .filter(({ p }) => p.IsRevenueBand)
+        .sort((a, b) => (a.p.RevenueBandMin ?? -Infinity) - (b.p.RevenueBandMin ?? -Infinity) || a.i - b.i)
+        .map(({ p }) => p);
+    return [...others, ...bands];
 }
 
 /** Tree-shaking anchor so the default resolver's registration survives bundling. */

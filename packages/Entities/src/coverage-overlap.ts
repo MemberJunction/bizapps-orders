@@ -13,6 +13,7 @@
  * installed, not that nobody needs one, so it gets its own message.
  */
 import { Metadata, type AuthorizationInfo, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { PermissionNotSetUp } from './permission-messages';
 import { UserHasAuthorization } from './pricing/priceOverride';
 
 export const COVERAGE_RUN_ALONGSIDE_AUTH = 'MJ.BizApps.Orders.Coverage.RunAlongside';
@@ -43,15 +44,12 @@ export function RunAlongsideRefusal(
 ): string | null {
     const auths = provider?.Authorizations ?? new Metadata().Authorizations ?? [];
     if (!auths.some((a) => a.Name === COVERAGE_RUN_ALONGSIDE_AUTH)) {
-        return (
-            `The ${COVERAGE_RUN_ALONGSIDE_AUTH} authorization is not installed, so no one can run a band ` +
-            `alongside existing coverage. Sync the BizApps Orders metadata to install it.`
-        );
+        return PermissionNotSetUp('Adding coverage that overlaps an existing subscription', COVERAGE_RUN_ALONGSIDE_AUTH);
     }
     if (!UserCanRunAlongside(user, { Authorizations: auths })) {
         return (
-            `Running a band alongside existing coverage needs the ${COVERAGE_RUN_ALONGSIDE_AUTH} ` +
-            `authorization, held by the Account Director role.`
+            "You don't have permission to add coverage that overlaps an existing subscription. " +
+            'This is limited to the Account Director role.'
         );
     }
     if (CoverageOverlapReasonMissing(line)) {
