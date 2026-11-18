@@ -19,6 +19,7 @@ import {
     Metadata,
     RunView,
     type AuthorizationInfo,
+    type EntityInfo,
     type IMetadataProvider,
     type UserInfo,
 } from '@memberjunction/core';
@@ -110,6 +111,17 @@ const quotedIDs = (ids: readonly string[], what: string): string => {
     return ids.map((id) => `'${id}'`).join(',');
 };
 
+const isPeopleEntity = (entity: EntityInfo | null | undefined): boolean =>
+    !!entity && (entity.Name === PERSON_ENTITY || (entity.ParentChain ?? []).some((parent) => parent.Name === PERSON_ENTITY));
+
+const peopleEntityIDs = (provider: IMetadataProvider, directPersonEntityID: string | undefined): string[] => {
+    const fromEntities = (provider.Entities ?? []).filter(isPeopleEntity).map((e) => e.ID);
+    if (fromEntities.length > 0) return fromEntities;
+    return directPersonEntityID ? [directPersonEntityID] : [];
+};
+
+const bothCases = (ids: readonly string[]): string[] => [...new Set(ids.flatMap((id) => [id.toLowerCase(), id.toUpperCase()]))];
+
 /**
  * The assignees of each approval task, keyed by the task ID in lower case. The tasks app assigns
  * through a person record, whose linked user is the one who decides; an assignment made directly to
@@ -152,6 +164,19 @@ export async function LoadAccessOverrideAssignees(
               ['ID', 'LinkedUserID', 'DisplayName', 'FirstName', 'LastName'],
           )
         : [];
+    const linkedUsersByPersonID = new Map<string, string>();
+    const pEntityIDs = personIDs.length ? peopleEntityIDs(provider, personEntityID) : [];
+    if (pEntityIDs.length) {
+        const linkedUsers = await read<{ ID: string; LinkedEntityRecordID: string | null }>(
+            USER_ENTITY,
+            `LinkedEntityID IN (${quotedIDs(pEntityIDs, 'EntityID')}) AND LinkedEntityRecordID IN (${quotedIDs(bothCases(personIDs), 'PersonID')})`,
+            ['ID', 'LinkedEntityRecordID'],
+        );
+        for (const u of linkedUsers) {
+            const key = u.LinkedEntityRecordID?.toLowerCase();
+            if (key && !linkedUsersByPersonID.has(key)) linkedUsersByPersonID.set(key, u.ID);
+        }
+    }
     const users = userIDs.length ? await read<{ ID: string; Name: string }>(USER_ENTITY, `ID IN (${quotedIDs(userIDs, 'UserID')})`, ['ID', 'Name']) : [];
 
     for (const r of rows) {
@@ -160,7 +185,8 @@ export async function LoadAccessOverrideAssignees(
             const p = persons.find((x) => sameUser(x.ID, r.AssigneeRecordID));
             if (p) {
                 const name = p.DisplayName?.trim() || [p.FirstName, p.LastName].filter(Boolean).join(' ').trim();
-                assignee = { UserID: p.LinkedUserID ?? null, Name: name || 'An unnamed person' };
+                const resolvedUserID = linkedUsersByPersonID.get(p.ID.toLowerCase()) ?? p.LinkedUserID ?? null;
+                assignee = { UserID: resolvedUserID, Name: name || 'An unnamed person' };
             }
         } else if (isUser(r)) {
             const u = users.find((x) => sameUser(x.ID, r.AssigneeRecordID));

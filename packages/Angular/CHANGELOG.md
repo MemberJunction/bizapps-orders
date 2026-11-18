@@ -1,5 +1,14 @@
 # @mj-biz-apps/orders-ng
 
+## 5.50.2
+
+### Patch Changes
+
+- 543e594: The order line prompt for a product the customer already has is reworded as a question (golive #480): "Is this line a renewal of that subscription, or a new one?" The choices are now "Renew <subscription>" and "Create new subscription", each showing the dates it gives the line, and the hint under them says when renewing will run on different dates from the ones entered. Wording only: what confirm does with each answer is unchanged.
+- b17f317: The Orders home shows an "Orders awaiting review" card: the Order Review tasks assigned to the signed-in user or to a role they hold, through the Tasks approval inbox, so finance can review and decide them without opening the Tasks app (bc-aidp-next-golive#442). orders-ng now declares `@mj-biz-apps/tasks-ng` as a peer (`^1.13.0`, the release with role-assigned tasks), and the app manifest requires bizapps-tasks 1.13.0 or later.
+- Updated dependencies [543e594]
+  - @mj-biz-apps/orders-entities@5.50.2
+
 ## 5.50.1
 
 ### Patch Changes
@@ -1184,8 +1193,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                        "FK_EntityFieldValue_EntityField"
+                                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

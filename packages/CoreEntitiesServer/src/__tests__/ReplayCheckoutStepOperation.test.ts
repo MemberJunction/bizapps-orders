@@ -71,7 +71,8 @@ describe('Orders.ReplayCheckoutStep', () => {
         m.HasAuth.mockReturnValue(false);
         const out = await replay();
         expect(out).toMatchObject({ Success: false, Outcome: 'Refused' });
-        expect(out.Message).toContain(CHECKOUT_REPLAY_AUTH);
+        expect(out.Message).toContain('Checkout Operator role');
+        expect(out.Message).not.toContain(CHECKOUT_REPLAY_AUTH);
         expect(m.HasAuth).toHaveBeenCalledWith(CHECKOUT_REPLAY_AUTH, operator, provider);
         expect(m.Find).not.toHaveBeenCalled();
     });

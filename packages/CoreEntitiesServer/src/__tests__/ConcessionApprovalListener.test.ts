@@ -95,7 +95,7 @@ describe('ApplyTaskDecisionToConcessions', () => {
     it('puts a concession that refuses the decision back in front of its approvers, with the reason', async () => {
         approval.LinkedConcessionIDs.mockResolvedValue([CONCESSION_ID]);
         approval.RaiseConcessionApprovalAgain.mockResolvedValue('task-2');
-        const refusal = 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+        const refusal = "You don't have permission to approve or decline this concession. Only its assigned approvers can.";
         const row = concession({ saves: false, refusal });
 
         const results = await ApplyTaskDecisionToConcessions(decision(row, { Code: 'Approved', IsTerminal: true }));

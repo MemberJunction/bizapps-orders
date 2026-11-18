@@ -216,6 +216,23 @@ export async function LoadInstalmentCashFacts(
 }
 
 /**
+ * True when a payment's instrument is account credit: a `PaymentDetail` carrying
+ * `SourceOrderHeaderID`, the order whose credit is being spent (`Orders.ApplyAccountCredit`). Such a
+ * payment moves a receivable between orders and no cash, which is what the allocation needs to know.
+ */
+export async function LoadIsAccountCredit(
+    provider: IRunViewProvider,
+    user: UserInfo,
+    paymentDetailID: string | null | undefined,
+): Promise<boolean> {
+    if (!paymentDetailID) return false;
+    const detail = await readRow<{ SourceOrderHeaderID: string | null }>(
+        provider, user, PAYMENT_DETAIL_ENTITY, paymentDetailID, ['SourceOrderHeaderID'], "the payment's instrument",
+    );
+    return !!detail.SourceOrderHeaderID;
+}
+
+/**
  * The gift card a payment was tendered with, or null when the payment's instrument is not a gift
  * card. A gift card is a `PaymentDetail` carrying `StoredValueAccountID` — the same split
  * `StoredValuePaymentProvider` makes. Account credit (`SourceOrderHeaderID`) and every other tender

@@ -29,7 +29,7 @@
  */
 import type { AuthorizationInfo, UserInfo } from '@memberjunction/core';
 import { FirstOpenDay, IsInClosedBooks } from '@mj-biz-apps/accounting-engine-base';
-import { UserHasAuthorization } from '@mj-biz-apps/orders-entities';
+import { PermissionNotSetUp, UserHasAuthorization } from '@mj-biz-apps/orders-entities';
 import { ComputeCatchUp, type CatchUp } from './RevenueRecognition.js';
 
 export const PROGRESS_SUPERSEDE_AUTH = 'MJ.BizApps.Orders.Progress.Supersede';
@@ -176,15 +176,12 @@ function PriorMonthStart(isoDate: string): string {
  */
 export function SupersedeRefusal(user: UserInfo, authorizations: AuthorizationInfo[]): string | null {
     if (!authorizations.some((a) => a.Name === PROGRESS_SUPERSEDE_AUTH)) {
-        return (
-            `The ${PROGRESS_SUPERSEDE_AUTH} authorization is not installed, so no one can supersede a ` +
-            `progress observation. Sync the BizApps Orders metadata to install it.`
-        );
+        return PermissionNotSetUp('Replacing a posted progress entry', PROGRESS_SUPERSEDE_AUTH);
     }
     if (!UserHasAuthorization(PROGRESS_SUPERSEDE_AUTH, user, { Authorizations: authorizations })) {
         return (
-            `Superseding a posted progress observation needs the ${PROGRESS_SUPERSEDE_AUTH} ` +
-            `authorization, held by the Orders Revenue Supervisor role.`
+            "You don't have permission to replace a posted progress entry. " +
+            'This is limited to the Orders Revenue Supervisor role.'
         );
     }
     return null;

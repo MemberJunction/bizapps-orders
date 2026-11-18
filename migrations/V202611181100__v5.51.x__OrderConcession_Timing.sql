@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202611162200 — Payment timing on a new sale needs approval (golive #268, #1097)
+-- V202611181100 — Payment timing on a new sale needs approval (golive #268, #1097)
 -- =============================================================================
 -- Finance's rule: a new sale is invoiced at confirm and due on receipt, a renewal is
 -- due on the first day of its new term, and agreed instalments follow the order's

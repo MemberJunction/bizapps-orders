@@ -22,7 +22,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     return { ...actual, ResolveLinePriceStanding: (...args: unknown[]) => mockStanding(...args) };
 });
 
-const { FindUnapprovedConcessions } = await import('../ConcessionGate.js');
+const { ApplyShareLimitMixTiers, FindUnapprovedConcessions } = await import('../ConcessionGate.js');
 
 const ORDER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const LINE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3302';
@@ -31,8 +31,11 @@ const user = { ID: 'user-1' } as never;
 
 type Row = Record<string, unknown>;
 
-/** Answers each RunView by entity: concessions, sales authorities, manual discounts and persisted lines. */
-function database(concessions: Row[], lines: Row[], authorities: Row[] = [], adjustments: Row[] = []) {
+/**
+ * Answers each RunView by entity: concessions, sales authorities, manual discounts, mix tiers, products
+ * and persisted lines.
+ */
+function database(concessions: Row[], lines: Row[], authorities: Row[] = [], adjustments: Row[] = [], mixTiers: Row[] = [], products: Row[] = []) {
     mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
         Success: true,
         Results: params.EntityName.endsWith('Order Concessions')
@@ -41,10 +44,14 @@ function database(concessions: Row[], lines: Row[], authorities: Row[] = [], adj
               ? authorities
               : params.EntityName.endsWith('Order Adjustments')
                 ? adjustments
-                : // No PaymentTiming rule: the payment timing check (5) is off here; ConcessionGateTiming.test.ts covers it.
-                  params.EntityName.endsWith('Sales Rules')
-                  ? []
-                  : lines,
+                : params.EntityName.endsWith('Sales Authority Mix Tiers')
+                  ? mixTiers
+                  : params.EntityName.endsWith(': Products')
+                    ? products
+                    : // No PaymentTiming rule: the payment timing check (5) is off here; ConcessionGateTiming.test.ts covers it.
+                      params.EntityName.endsWith('Sales Rules')
+                      ? []
+                      : lines,
     }));
 }
 
@@ -324,7 +331,7 @@ describe('FindUnapprovedConcessions — giveaways and held discounts (golive #32
 describe('FindUnapprovedConcessions — share of the order', () => {
     const AUTHORITY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3310';
     const RULE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
-    const fivePercent = [{ MaxConcessionPctOfContract: 0.05 }];
+    const fivePercent = [{ ID: AUTHORITY_ID, MaxConcessionPctOfContract: 0.05 }];
 
     /** 600 of added seats, approved on the rep's own authority when the order was 12,000. */
     const onAuthority = {
@@ -377,7 +384,7 @@ describe('FindUnapprovedConcessions — share of the order', () => {
         // 8,500 is 42.5%, which no approver saw on this order as it is now.
         const decided = { ...onAuthority, ComputedValue: 5000, AuthorizedBySalesAuthorityID: null, SalesRuleID: RULE_ID, CumulativeShare: 0.5 };
         const grown = { ...onAuthority, ComputedValue: 3500, CumulativeShare: 0.085 };
-        database([decided, grown], [lineAt(20000)], [{ MaxConcessionPctOfContract: 0.2 }]);
+        database([decided, grown], [lineAt(20000)], [{ ID: AUTHORITY_ID, MaxConcessionPctOfContract: 0.2 }]);
 
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
 
@@ -398,6 +405,50 @@ describe('FindUnapprovedConcessions — share of the order', () => {
         database([onAuthority], [lineAt(100)], fivePercent);
 
         expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
+    });
+
+    describe('mix tiers (golive #281)', () => {
+        const TYPE_A = '3f2504e0-4f89-41d3-9a0c-0305e82c3320';
+        const TYPE_B = '3f2504e0-4f89-41d3-9a0c-0305e82c3321';
+        const PRODUCT_A = '3f2504e0-4f89-41d3-9a0c-0305e82c3322';
+        const PRODUCT_B = '3f2504e0-4f89-41d3-9a0c-0305e82c3323';
+        const SECOND_LINE = '3f2504e0-4f89-41d3-9a0c-0305e82c3324';
+        const tenPercentWithTwoTypes = [{ SalesAuthorityID: AUTHORITY_ID, MinProductTypes: 2, MaxConcessionPctOfContract: 0.1 }];
+        const products = [{ ProductTypeID: TYPE_A }, { ProductTypeID: TYPE_B }];
+        /** 600 approved on authority; the order is 8,000 (7.5%), over the 5% base limit, under the 10% tier. */
+        const lineA = { ...lineAt(4000), ProductID: PRODUCT_A };
+        const lineB = { ...lineAt(4000), ID: SECOND_LINE, ProductID: PRODUCT_B };
+
+        it('passes when the order still spans the product types its tier needs', async () => {
+            database([onAuthority], [lineA, lineB], fivePercent, [], tenPercentWithTwoTypes, products);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        });
+
+        it('holds the confirm once a product type is removed and the order falls back to the base limit', async () => {
+            database([onAuthority], [{ ...lineA, LineTotalNet: 8000, UnitPrice: 8000 }], fivePercent, [], tenPercentWithTwoTypes, [products[0]]);
+
+            const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+            expect(problems).toEqual([expect.stringMatching(/7\.5% of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/)]);
+        });
+
+        it('does not count a bundle component as a product type', async () => {
+            const component = { ...lineB, ParentOrderLineID: LINE_ID, LineTotalNet: 0 };
+            database([onAuthority], [{ ...lineA, LineTotalNet: 8000, UnitPrice: 8000 }, component], fivePercent, [], tenPercentWithTwoTypes, [products[0]]);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toHaveLength(1);
+            const productQuery = mockRunView.mock.calls.find((c) => (c[0] as { EntityName: string }).EntityName.endsWith(': Products'));
+            expect((productQuery?.[0] as { ExtraFilter: string }).ExtraFilter).not.toContain(PRODUCT_B);
+        });
+
+        it('keeps the base limit for an authority with no mix tiers, however many product types', async () => {
+            database([onAuthority], [lineA, lineB], fivePercent, [], [], products);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+                expect.stringMatching(/7\.5% of its net total, at or above the 5\.0% limit/),
+            ]);
+        });
     });
 });
 
@@ -477,5 +528,42 @@ describe('FindUnapprovedConcessions — products that always need approval (goli
     it('does not check a confirmed order', async () => {
         catalog({ product: true });
         expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
+    });
+});
+
+/** Recording a concession measures it against the share limit the order earns by its product mix. */
+describe('ApplyShareLimitMixTiers (golive #281)', () => {
+    const AUTHORITY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3330';
+    const PRODUCT_A = '3f2504e0-4f89-41d3-9a0c-0305e82c3331';
+    const PRODUCT_B = '3f2504e0-4f89-41d3-9a0c-0305e82c3332';
+    const authority = { ID: AUTHORITY_ID, MaxDiscountPct: null, MaxConcessionValue: 5000, MaxTermExtensionDays: null, MaxConcessionPctOfContract: 0.05 };
+    const tiers = [
+        { SalesAuthorityID: AUTHORITY_ID, MinProductTypes: 2, MaxConcessionPctOfContract: 0.1 },
+        { SalesAuthorityID: AUTHORITY_ID, MinProductTypes: 3, MaxConcessionPctOfContract: 0.15 },
+    ];
+    const lines = [
+        { ...apiLine, ProductID: PRODUCT_A },
+        { ...apiLine, ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3333', ProductID: PRODUCT_B },
+    ];
+
+    it('raises the limit to the tier the order meets', async () => {
+        database([], lines, [], [], tiers, [{ ProductTypeID: 'type-a' }, { ProductTypeID: 'type-b' }]);
+
+        expect((await ApplyShareLimitMixTiers(authority, ORDER_ID, provider, user))?.MaxConcessionPctOfContract).toBe(0.1);
+    });
+
+    it('counts two products of one type once', async () => {
+        database([], lines, [], [], tiers, [{ ProductTypeID: 'type-a' }, { ProductTypeID: 'TYPE-A' }]);
+
+        expect((await ApplyShareLimitMixTiers(authority, ORDER_ID, provider, user))?.MaxConcessionPctOfContract).toBe(0.05);
+    });
+
+    it('reads nothing for an authority with no share limit', async () => {
+        database([], lines, [], [], tiers);
+
+        expect(await ApplyShareLimitMixTiers({ ...authority, MaxConcessionPctOfContract: null }, ORDER_ID, provider, user)).toMatchObject({
+            MaxConcessionPctOfContract: null,
+        });
+        expect(mockRunView).not.toHaveBeenCalled();
     });
 });
