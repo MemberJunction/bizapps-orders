@@ -68,6 +68,7 @@ import {
     LoadGetFulfillmentQueueOperation,
     LoadGetPriorReturnsOperation,
     LoadCheckCoverageOverlapOperation,
+    LoadCheckOrderLinesEditableOperation,
     LoadConfirmReadinessOperation,
     LoadExplainProductGLAccountsOperation,
     LoadSubscriptionFamilyRules,
@@ -185,6 +186,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadCheckCoverageOverlapOperation(); // 'Orders.CheckCoverageOverlap' — the band-overlap notice, from the rule confirm refuses with
+    LoadCheckOrderLinesEditableOperation(); // 'Orders.CheckOrderLinesEditable' — the editor's read-only state, from the veto the line save refuses with
     LoadConfirmReadinessOperation();     // 'Orders.ConfirmReadiness' — the order form's concession blockers, from the gate confirm refuses with
     LoadExplainProductGLAccountsOperation(); // 'Orders.ExplainProductGLAccounts' — a product's GL accounts per role, from the walk confirm books through (golive#439)
     LoadSubscriptionFamilyRules();       // a product's subscription family must be in the product's company

@@ -22,6 +22,10 @@ function editor(order: { SplitLineIntoSeats: ReturnType<typeof vi.fn> }) {
     const c = Object.create(MJOOrderLinesEditorComponent.prototype) as MJOOrderLinesEditorComponent;
     const calls = { pricing: 0, applicable: 0 };
     Object.assign(c as object, {
+        // Nothing refuses: the read-only state a registered veto sets is line-edit-lock.test.ts's.
+        lineEditRefusals: [],
+        lineEditCheckPending: false,
+        LineEditCheckFailed: false,
         EditMode: true,
         _order: order,
         Catalog: [
