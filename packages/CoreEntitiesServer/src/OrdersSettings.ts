@@ -140,6 +140,20 @@ export const ORDERS_SETTING = {
      * threshold is set.
      */
     RefundApproverRole: 'RefundApproverRole',
+    /**
+     * Whether Orders creates a new customer in Bill.com when sending an invoice for a party that has
+     * neither an `ExternalCustomer` mapping row nor a matching `accountNumber` on the rail.
+     */
+    BillComCreateCustomerOnSend: 'BillComCreateCustomerOnSend',
+    /**
+     * The NAME of the MJ role whose active holders receive an `ACTION_ITEM` task when an invoice is
+     * created in Bill.com and ready for review/dispatch there.
+     */
+    BillComInvoiceReadyNotifyRole: 'BillComInvoiceReadyNotifyRole',
+    /**
+     * Optional webhook URL that receives a JSON POST notification when an invoice is created in Bill.com.
+     */
+    BillComInvoiceReadyWebhookURL: 'BillComInvoiceReadyWebhookURL',
 } as const;
 
 /**
@@ -156,12 +170,13 @@ const DEFAULTS = {
     RenewalChargeRetryDays: [3, 7, 11],
     OrderReviewServiceStartMonths: 13,
     OrderReviewLineTermMonths: 12,
+    BillComCreateCustomerOnSend: true,
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
 function asBoolean(raw: string | undefined, fallback: boolean): boolean {
     if (raw == null) return fallback;
-    const v = raw.trim().toLowerCase();
+    const v = String(raw).trim().toLowerCase();
     if (['false', '0', 'no', 'off'].includes(v)) return false;
     if (['true', '1', 'yes', 'on'].includes(v)) return true;
     return fallback;
@@ -290,8 +305,12 @@ export class OrdersSettings {
 
     /** The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. */
     private static applicationID(): string | undefined {
-        const apps = new Metadata().Applications;
-        return apps?.find((a) => a.Name === ORDERS_APPLICATION_NAME || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders')?.ID;
+        try {
+            const apps = new Metadata().Applications;
+            return apps?.find((a) => a.Name === ORDERS_APPLICATION_NAME || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders')?.ID;
+        } catch {
+            return undefined;
+        }
     }
 
     private static raw(key: string): string | undefined {
@@ -302,8 +321,12 @@ export class OrdersSettings {
         if (map.has(key)) {
             return map.get(key);
         }
-        const appID = this.applicationID();
-        return ApplicationSettingEngine.Instance.GetSetting(key, appID);
+        try {
+            const appID = this.applicationID();
+            return ApplicationSettingEngine.Instance.GetSetting(key, appID);
+        } catch {
+            return undefined;
+        }
     }
 
     /**
@@ -435,6 +458,26 @@ export class OrdersSettings {
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
     public static get TermShiftReviewDays(): number | null {
         return asDaysOrNull(this.raw(ORDERS_SETTING.TermShiftReviewDays));
+    }
+
+    /** Whether Bill.com customer creation on send is enabled when no existing customer matches. */
+    public static get BillComCreateCustomerOnSend(): boolean {
+        return asBoolean(
+            this.raw(ORDERS_SETTING.BillComCreateCustomerOnSend),
+            DEFAULTS.BillComCreateCustomerOnSend,
+        );
+    }
+
+    /** The role notified by task when an external invoice is created in Bill.com, or `null` when unset. */
+    public static get BillComInvoiceReadyNotifyRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.BillComInvoiceReadyNotifyRole)?.trim();
+        return value ? value : null;
+    }
+
+    /** The webhook URL notified when an external invoice is created in Bill.com, or `null` when unset. */
+    public static get BillComInvoiceReadyWebhookURL(): string | null {
+        const value = this.raw(ORDERS_SETTING.BillComInvoiceReadyWebhookURL)?.trim();
+        return value && /^https?:\/\/\S+$/i.test(value) ? value : null;
     }
 
 }

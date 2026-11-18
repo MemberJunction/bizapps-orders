@@ -354,12 +354,14 @@ export const AccountCreditChecks: NamedCheck[] = [
         const after = await orderRow(ctx, target.Order.ID as string);
         AssertEqual(Number(after.Balance), 150, "the target order's balance drops by 100");
 
-        // NO CASH MOVES. The two legs' cash entries offset, which is the whole point: this
-        // re-attributes money already received rather than receiving more.
+        // NO CASH MOVES, AND NOTHING IS POSTED. Inside one company the credit and the order it settles
+        // sit on the same receivable account, so each leg would debit and credit that one account for
+        // the same amount. Such an entry says nothing, and booking it through Cash instead would put
+        // activity on a bank account that no statement will ever show.
         const lines = await allocationLines(ctx, res.PaymentHeaderID as string);
-        AssertEqual(netFor(lines, f.CoA.ID, CASH_CODE), 0, "cash nets to zero across the transfer");
+        AssertEqual(netFor(lines, f.CoA.ID, CASH_CODE), 0, "no cash line exists for the transfer");
         AssertEqual(netFor(lines, f.CoA.ID, AR_CODE), 0, "A/R nets to zero within one company");
-        AssertEqual(entryCount(lines), 2, "one entry per leg");
+        AssertEqual(entryCount(lines), 0, "a credit applied within one company posts no entry");
       }),
   },
   {

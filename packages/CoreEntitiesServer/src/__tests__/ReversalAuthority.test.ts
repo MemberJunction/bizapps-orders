@@ -47,12 +47,12 @@ const exec = (op: object, input: unknown): Run => (provider, user) =>
     (op as { InternalExecute(i: unknown, p: IMetadataProvider, u: UserInfo): Promise<{ Success: boolean; Message?: string }> }).InternalExecute(input, provider, user);
 
 const OPERATIONS: Array<[string, RegExp, Run]> = [
-    ['Orders.CancelSubscription', /^Cancelling a subscription needs/, exec(new CancelSubscriptionOperation(), { SubscriptionID: ID })],
-    ['Orders.RefundPayment', /^Refunding a payment needs/, exec(new RefundPaymentOperation(), { PaymentHeaderID: ID, Amount: 10 })],
-    ['Orders.ApplyAccountCredit', /^Moving an account credit to another order needs/, exec(new ApplyAccountCreditOperation(), { SourceOrderHeaderID: ID, TargetOrderHeaderID: OTHER_ID, Amount: 10 })],
+    ['Orders.CancelSubscription', /^Cancelling a subscription is limited to the Finance role/, exec(new CancelSubscriptionOperation(), { SubscriptionID: ID })],
+    ['Orders.RefundPayment', /^Refunding a payment is limited to the Finance role/, exec(new RefundPaymentOperation(), { PaymentHeaderID: ID, Amount: 10 })],
+    ['Orders.ApplyAccountCredit', /^Moving an account credit to another order is limited to the Finance role/, exec(new ApplyAccountCreditOperation(), { SourceOrderHeaderID: ID, TargetOrderHeaderID: OTHER_ID, Amount: 10 })],
     [
         'Orders.AmendArrangement (a change of amount)',
-        /^Changing an agreed amount needs/,
+        /^Changing an agreed amount is limited to the Finance role/,
         exec(new AmendArrangementOperation(), { SubscriptionTermID: ID, NewAmount: 50, ReasonCategory: 'Other', Reason: 'Early termination' }),
     ],
 ];
@@ -64,7 +64,7 @@ describe('the finance reversal gate', () => {
     });
 
     it('fails closed when the authorization is not installed', () => {
-        expect(ReversalGate('Refunding a payment', catalogOnly(false), finance)).toMatch(/is not installed/);
+        expect(ReversalGate('Refunding a payment', catalogOnly(false), finance)).toMatch(/hasn't been set up/);
     });
 
     it('lets a record of what the gateway already did through, for whoever started it', async () => {
@@ -79,13 +79,14 @@ describe('the finance reversal gate', () => {
             const out = await run(catalogOnly(), accountDirector);
             expect(out.Success).toBe(false);
             expect(out.Message).toMatch(message);
-            expect(out.Message).toContain(ORDER_REVERSE_AUTH);
+            expect(out.Message).toContain('limited to the Finance role');
+            expect(out.Message).not.toContain(ORDER_REVERSE_AUTH);
         });
 
         it('refuses everyone while the authorization is not installed', async () => {
             const out = await run(catalogOnly(false), finance);
             expect(out.Success).toBe(false);
-            expect(out.Message).toMatch(/is not installed/);
+            expect(out.Message).toMatch(/hasn't been set up/);
         });
 
         it('lets a finance user past the gate (the next step reads the provider)', async () => {

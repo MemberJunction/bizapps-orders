@@ -24,7 +24,7 @@ import { BaseEntity, BaseEntityResult, EntitySaveOptions, type IMetadataProvider
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { mjBizAppsOrdersEntitlementAccessOverrideEntity } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsTasksTaskEntity } from '@mj-biz-apps/tasks-entities';
-import { ACCESS_OVERRIDE_AUTH, DecisionRefusalFor, UserMayRequestAccessOverride } from './AccessOverride.js';
+import { AccessOverrideRequestRefusal, DecisionRefusalFor, UserMayRequestAccessOverride } from './AccessOverride.js';
 import { ACCESS_OVERRIDE_ENTITY } from './PaymentGatedAccess.js';
 
 @RegisterClass(BaseEntity, ACCESS_OVERRIDE_ENTITY)
@@ -51,7 +51,7 @@ export class EntitlementAccessOverrideEntityServer extends mjBizAppsOrdersEntitl
                 return `OverrideType must be WaivePaymentHold or DeferCutoff; got '${this.OverrideType}'.`;
             }
             if (!UserMayRequestAccessOverride(this.OverrideType, user, this.metadata)) {
-                return `Requesting a ${this.OverrideType} override requires the ${ACCESS_OVERRIDE_AUTH[this.OverrideType]} authorization.`;
+                return AccessOverrideRequestRefusal(this.OverrideType);
             }
             return null;
         }

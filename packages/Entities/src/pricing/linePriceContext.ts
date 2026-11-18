@@ -14,6 +14,7 @@ import {
     ListApplicablePrices,
     NoApplicablePriceRuleError,
     ResolvePrice,
+    RevenueBandRequiredError,
     type PriceResolutionContext,
     type ResolvedPrice,
 } from './PriceResolver.js';
@@ -99,6 +100,12 @@ export interface LinePriceStanding {
  * with no price does (bc-aidp-next-golive#437): a price entered today for a product sold on an
  * earlier-dated order has nothing to measure a stated price against. Every other refusal still
  * throws, and the pricing pass for a line with no stated price still refuses.
+ *
+ * A revenue band the rep picked because the buyer has no revenue on record is the rules' price
+ * (golive #470): the rules could not choose the band, and the rep's choice stands in for theirs, as
+ * the save-time override gate already reads it (`OrderLineEntity`). So a line on such a band reads as
+ * on its engine price, measured at the band's price. A line on a band product that carries anything
+ * else (a typed amount, a band at a different price) still throws, since nothing can value it.
  */
 export async function ResolveLinePriceStanding(
     line: PricedLineFacts,
@@ -107,7 +114,16 @@ export async function ResolveLinePriceStanding(
 ): Promise<LinePriceStanding | null> {
     const ctx = await BuildLinePriceContext(line, provider, user);
     if (!ctx) return null;
-    const engine = await resolveEngineForStatedPrice(ctx, provider, user);
+    let engine: ResolvedPrice | null;
+    try {
+        engine = await resolveEngineForStatedPrice(ctx, provider, user);
+    } catch (err) {
+        if (!(err instanceof RevenueBandRequiredError)) throw err;
+        const applicable = await ListApplicablePrices(ctx, provider, user);
+        const band = PickedUndecidedBand(line, applicable);
+        if (!band) throw err;
+        return { EngineUnitPrice: band.UnitPrice, IsEnginePrice: true, IsNamedListPick: false };
+    }
     if (engine && isEnginePrice(line, engine)) {
         return { EngineUnitPrice: engine.UnitPrice, IsEnginePrice: true, IsNamedListPick: false };
     }
@@ -117,6 +133,21 @@ export async function ResolveLinePriceStanding(
         IsEnginePrice: false,
         IsNamedListPick: isNamedListPick(line, applicable),
     };
+}
+
+/**
+ * The revenue band a line is on when that band was offered for the rep to pick (the buyer's revenue
+ * is unknown), at the band's own price; null otherwise. The one test both the save-time override gate
+ * and the confirm-time standing apply, so a band accepted on save is accepted on confirm (golive #470).
+ */
+export function PickedUndecidedBand<T extends { ID: string; UnitPrice: number; BandUndecided?: boolean }>(
+    line: Pick<PricedLineFacts, 'UnitPrice' | 'ProductPriceID'>,
+    applicable: readonly T[],
+): T | null {
+    const bands = applicable.filter((p) => p.BandUndecided === true);
+    if (!isNamedListPick(line, bands)) return null;
+    const id = String(line.ProductPriceID ?? '').trim().toLowerCase();
+    return bands.find((p) => p.ID.trim().toLowerCase() === id) ?? null;
 }
 
 async function resolveEngineForStatedPrice(

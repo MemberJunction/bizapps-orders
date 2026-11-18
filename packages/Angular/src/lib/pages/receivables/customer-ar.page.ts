@@ -1,14 +1,14 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule, type RecordOpenedEvent, type ViewGridState } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { AgingBucketOf, EmptyAgingBuckets, MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
+import { AddOrderToAgingBuckets, EmptyAgingBuckets, GroupInstalmentsByOrder, MJOAgingBarComponent, NextDueDayOf, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { PresetViewRef } from '../../data/preset-view';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
-import { GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
+import { GetOpenBalanceOrders, GetOpenInstalments, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 import { Today, type DateCell, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
@@ -372,7 +372,18 @@ export class MJOCustomerARPageComponent implements OnInit {
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
     public OrderEntityInfo: EntityInfo | null = null;
-    public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
+    /**
+     * The shared order grid, with the due column reading the NEXT UNPAID instalment's day
+     * (bc-aidp-next-golive#481). On an aging screen the header's `DueDate` is the wrong day to show
+     * for an instalment order: it never moves as instalments are paid. For an order with no
+     * schedule `NextDueDate` IS `DueDate`, so nothing else changes.
+     */
+    public readonly OrderGridState: ViewGridState = {
+        ...MJO_ORDER_HEADER_GRID_STATE,
+        columnSettings: (MJO_ORDER_HEADER_GRID_STATE.columnSettings ?? []).map((column) =>
+            column.Name === 'DueDate' ? { ...column, Name: 'NextDueDate', DisplayName: 'Next due' } : column,
+        ),
+    };
     public Customers: MJOCustomerSummary[] = [];
     public SelectedKey: string | null = null;
 
@@ -522,7 +533,7 @@ export class MJOCustomerARPageComponent implements OnInit {
             .slice()
             // Undated last: an order with no due date is not "due first", and an empty string
             // sorted ahead of every real date, which put unscheduled work at the top of an aging list.
-            .sort((a, b) => (a.DueDate?.getTime() ?? Infinity) - (b.DueDate?.getTime() ?? Infinity));
+            .sort((a, b) => (NextDueDayOf(a)?.getTime() ?? Infinity) - (NextDueDayOf(b)?.getTime() ?? Infinity));
     }
 
     protected initials(name: string): string {
@@ -534,14 +545,16 @@ export class MJOCustomerARPageComponent implements OnInit {
     }
 
     private ageLabel(row: mjBizAppsOrdersOrderHeaderEntity): string {
-        if (!row.DueDate || (row.Balance ?? 0) <= 0) return 'Current';
-        const late = DaysSince(row.DueDate, Today());
+        const due = NextDueDayOf(row);
+        if (!due || (row.Balance ?? 0) <= 0) return 'Current';
+        const late = DaysSince(due, Today());
         return late > 0 ? `${late}d` : 'Current';
     }
 
     private ageClass(row: mjBizAppsOrdersOrderHeaderEntity): string {
-        if (!row.DueDate || (row.Balance ?? 0) <= 0) return '';
-        const late = DaysSince(row.DueDate, Today());
+        const due = NextDueDayOf(row);
+        if (!due || (row.Balance ?? 0) <= 0) return '';
+        const late = DaysSince(due, Today());
         if (late > 60) return 'mjo-chip--error';
         if (late > 0) return 'mjo-chip--warning';
         return '';
@@ -554,7 +567,8 @@ export class MJOCustomerARPageComponent implements OnInit {
      * order billed to their employer is the employer's receivable.
      */
     private async load(): Promise<void> {
-        const orders = await GetOpenBalanceOrders();
+        const [orders, instalments] = await Promise.all([GetOpenBalanceOrders(), GetOpenInstalments()]);
+        const instalmentsByOrder = GroupInstalmentsByOrder(instalments);
         const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && (o.Balance ?? 0) !== 0);
 
         const byCustomer = new Map<string, MJOCustomerSummary>();
@@ -585,8 +599,9 @@ export class MJOCustomerARPageComponent implements OnInit {
             } else {
                 existing.Open += (order.Balance ?? 0);
                 // The age rule lives beside the bucket type, so this page and the Orders dashboard
-                // cannot drift apart about what "current" means (golive#361).
-                existing.Buckets[AgingBucketOf(order.DueDate, today)] += (order.Balance ?? 0);
+                // cannot drift apart about what "current" means (golive#361), nor about ageing each
+                // instalment on its own due date (golive#481).
+                AddOrderToAgingBuckets(existing.Buckets, order, instalmentsByOrder.get(String(order.ID).toLowerCase()), today);
             }
 
             byCustomer.set(key, existing);

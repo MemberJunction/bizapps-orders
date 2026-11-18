@@ -120,7 +120,7 @@ export async function ResolveChargeException(
     if (!UserCanClearFinanceExceptions(user, provider)) {
         return refuse(
             'NotAuthorized',
-            `Resolving a finance exception clears it, which requires the ${FINANCE_EXCEPTIONS_CLEAR_AUTH} authorization (the Finance role). Nothing was booked.`,
+            "You don't have permission to resolve finance exceptions. This is limited to the Finance role. Nothing was changed.",
         );
     }
 

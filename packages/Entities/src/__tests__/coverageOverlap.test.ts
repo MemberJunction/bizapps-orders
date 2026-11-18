@@ -32,12 +32,12 @@ describe('run alongside existing coverage', () => {
     });
 
     it('fails closed when the authorization is not installed', () => {
-        expect(RunAlongsideRefusal(acked('Renewal date differs'), user, { Authorizations: [] })).toMatch(/is not installed/);
+        expect(RunAlongsideRefusal(acked('Renewal date differs'), user, { Authorizations: [] })).toMatch(/hasn't been set up/);
     });
 
     it('refuses a user without the grant, before asking for a reason', () => {
         held.value = false;
-        expect(RunAlongsideRefusal(acked(null), user, installed)).toMatch(/needs the MJ\.BizApps\.Orders\.Coverage\.RunAlongside authorization/);
+        expect(RunAlongsideRefusal(acked(null), user, installed)).toMatch(/limited to the Account Director role/);
     });
 
     it('refuses a missing reason for a user with the grant', () => {

@@ -15,17 +15,17 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-11-06 · latest migration `V202611062300__v5.44.x__Payment_Received_Date.sql`
+> **Verified against the live database:** 2026-11-16 · latest migration `V202611170400__v5.51.x__SalesAuthority_MixTiers.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
-> **71 tables · 128 internal relationships · 77 cross-app foreign keys ·
-> 207 CHECK constraints · 60 unique indexes** beyond the primary keys ·
-> **14 business triggers** · 72 views.
+> **72 tables · 129 internal relationships · 78 cross-app foreign keys ·
+> 210 CHECK constraints · 61 unique indexes** beyond the primary keys ·
+> **14 business triggers** · 73 views.
 >
-> (71 is the app's own tables. `sys.tables` reports 72 because the migration runner keeps its
+> (72 is the app's own tables. `sys.tables` reports 73 because the migration runner keeps its
 > `flyway_schema_history` in this schema; that table belongs to the migration tool, not to the model.)
 >
-> **CHECK constraint bodies** (§4) were read from the same database, through `OBJECT_DEFINITION` (207/207).
+> **CHECK constraint bodies** (§4) were read from the same database, through `OBJECT_DEFINITION` (210/210).
 >
 > **How to read this.** §1 is the master map: every table, every connection, no columns — an
 > orientation tool, too wide to work from. §2 is the 10 area maps WITH full column lists, small
@@ -45,7 +45,7 @@ belonging to several different companies and still emit journal entries that are
 and balanced — the alternative, a company on the header, makes multi-company orders unrepresentable.
 
 **2 — References point UP the dependency graph, and they are real foreign keys.** Orders depends on
-`common`, `tasks`, `accounting` and MJ core, so it may hold hard FKs into them (77 of them, §3) —
+`common`, `tasks`, `accounting` and MJ core, so it may hold hard FKs into them (78 of them, §3) —
 installs run in dependency order, so the targets always exist. Orders holds NO reference to any app
 that depends on it. Accounting's link back to an order line is a polymorphic
 `LinkedEntityID`/`LinkedRecordID` pair on the journal entry, which is a typed polymorphic link and not
@@ -60,7 +60,7 @@ supply a total that disagrees with what was booked, and a booked figure cannot d
 ## 1. Master map — every table, every connection inside the app
 
 No columns; this is the shape only. **Cross-app foreign keys are deliberately NOT drawn here** — all
-77 of them would join the 128 edges below and hide the app's own structure, which is the one thing
+78 of them would join the 129 edges below and hide the app's own structure, which is the one thing
 this diagram exists to show. They get their own map and full register in §3.
 
 ```mermaid
@@ -178,6 +178,7 @@ erDiagram
     RevenueRecognitionType ||--o{ SubscriptionTerm : "RevenueRecognitionTypeID"
     SalesAuthority ||--o{ OrderAdjustment : "AuthorizedBySalesAuthorityID"
     SalesAuthority ||--o{ OrderConcession : "AuthorizedBySalesAuthorityID"
+    SalesAuthority ||--o{ SalesAuthorityMixTier : "SalesAuthorityID"
     SalesRule ||--o{ OrderConcession : "SalesRuleID"
     StoredValueAccount ||--o{ PaymentDetail : "StoredValueAccountID"
     StoredValueAccount ||--o{ StoredValueTransaction : "StoredValueAccountID"
@@ -411,10 +412,12 @@ tiered and volume models. The walk that reads all this is in §6.
 
 **`Promotion` is separated from `PromotionCode` on purpose**: one promotion can have many codes
 (per-campaign, per-partner, single-use), and `PromotionTarget` scopes what a promotion may apply to.
-`SalesAuthority` and `SalesRule` are the guardrails — who is allowed to give value away, and how much.
+`SalesAuthority` and `SalesRule` are the guardrails — who is allowed to give value away, and how much. A
+`SalesAuthorityMixTier` raises an authority's share limit on an order that spans several product types.
 `OrderConcession` records each concession on an order, whatever form it takes (price, duration, seats,
 scope or payment terms), with its computed value and the approval decision. An order cannot be
-confirmed, nor its documents sent, while a concession on it is `Pending`.
+confirmed, nor its documents sent, while a concession on it is `Pending`. A withdrawn concession stays on
+the order as `Withdrawn`, with who withdrew it and when, and counts toward nothing.
 
 ```mermaid
 erDiagram
@@ -426,6 +429,7 @@ erDiagram
     PromotionType ||--o{ Promotion : "PromotionTypeID"
     ReferralProgram ||--o{ OrderConcession : "ReferralProgramID"
     SalesAuthority ||--o{ OrderConcession : "AuthorizedBySalesAuthorityID"
+    SalesAuthority ||--o{ SalesAuthorityMixTier : "SalesAuthorityID"
     SalesRule ||--o{ OrderConcession : "SalesRuleID"
     ProductPrice {
         uuid ID PK "required"
@@ -555,6 +559,12 @@ erDiagram
         int MaxTermExtensionDays
         decimal_7_4 MaxConcessionPctOfContract
     }
+    SalesAuthorityMixTier {
+        uuid ID PK "required"
+        uuid SalesAuthorityID FK "required"
+        int MinProductTypes UK "required"
+        decimal_7_4 MaxConcessionPctOfContract "required"
+    }
     SalesRule {
         uuid ID PK "required"
         nvarchar_200 Name "required"
@@ -604,6 +614,8 @@ erDiagram
         decimal_18_2 CreditMemoAmount
         nvarchar_50 CreditMemoNumber UK
         bit RefundRequested "required"
+        uuid WithdrawnByUserID FK
+        datetimeoffset WithdrawnAt
     }
     ReferralProgram {
         uuid ID PK "required"
@@ -617,7 +629,7 @@ erDiagram
 
 **Leaves this area:** `OrderConcession.AppliesToPaymentScheduleID` → `OrderHeaderPaymentSchedule`, `OrderConcession.NewPaymentTermsTypeID` → `PaymentTermsType`, `OrderConcession.OrderHeaderID` → `OrderHeader`, `OrderConcession.OrderLineID` → `OrderLine`, `OrderConcession.PriorPaymentTermsTypeID` → `PaymentTermsType`, `OrderConcession.SubscriptionTermID` → `SubscriptionTerm`, `ProductPrice.ProductID` → `Product`, `ProductPrice.ProductCategoryID` → `ProductCategory`, `PromotionTarget.ProductID` → `Product`, `PromotionTarget.ProductCategoryID` → `ProductCategory`.
 
-**Reaches outside the app:** `OrderConcession.DecidedByUserID` → `__mj.User`, `OrderConcession.RequestedByUserID` → `__mj.User`, `PriceListAssignment.OrganizationID` → `__mj_BizAppsCommon.Organization`, `PriceListAssignment.PersonID` → `__mj_BizAppsCommon.Person`, `Promotion.CompanyID` → `__mj.Company`, `PromotionCode.AssignedOrganizationID` → `__mj_BizAppsCommon.Organization`, `PromotionCode.AssignedPersonID` → `__mj_BizAppsCommon.Person`, `ReferralProgram.CompanyID` → `__mj.Company`, `SalesAuthority.SalesRepUserID` → `__mj.User`, `SalesRule.ApprovalRequiredRoleID` → `__mj.Role`.
+**Reaches outside the app:** `OrderConcession.DecidedByUserID` → `__mj.User`, `OrderConcession.RequestedByUserID` → `__mj.User`, `OrderConcession.WithdrawnByUserID` → `__mj.User`, `PriceListAssignment.OrganizationID` → `__mj_BizAppsCommon.Organization`, `PriceListAssignment.PersonID` → `__mj_BizAppsCommon.Person`, `Promotion.CompanyID` → `__mj.Company`, `PromotionCode.AssignedOrganizationID` → `__mj_BizAppsCommon.Organization`, `PromotionCode.AssignedPersonID` → `__mj_BizAppsCommon.Person`, `ReferralProgram.CompanyID` → `__mj.Company`, `SalesAuthority.SalesRepUserID` → `__mj.User`, `SalesRule.ApprovalRequiredRoleID` → `__mj.Role`.
 
 ### 2.3 The order itself
 
@@ -1300,9 +1312,7 @@ code, at confirm and at invoicing. An order with no rows is billed as a whole.
 completion) releases nothing at booking. Each `OrderLineProgressMeasurement` row is an attested
 observation of cumulative percent complete on a date, and `Orders.RecordProgress` posts the catch-up
 to it with its journal entry. A posted row never changes (§5): a correction is a new row that
-supersedes it, and the superseded row's recognition is reversed: on its own date, or on the first
-open day when finance has closed that month. No observation is dated on or before the company's
-`AccountingCompanyProfile.BooksClosedThroughDate`.
+supersedes it, and the superseded row's recognition is reversed.
 
 ```mermaid
 erDiagram
@@ -1535,7 +1545,7 @@ erDiagram
 
 ## 3. Cross-app reference register
 
-77 foreign keys leave this schema. All point UP the dependency graph (rule 2). Nothing here is
+78 foreign keys leave this schema. All point UP the dependency graph (rule 2). Nothing here is
 optional trivia: **these are the references that break silently when an upstream app re-bakes its
 baseline**, because our generated metadata pins upstream entity IDs by GUID.
 
@@ -1574,7 +1584,7 @@ erDiagram
     MJ_User ||--o{ CheckoutSessionStep : "LastReplayedByUserID"
     MJ_User ||--o{ EntitlementAccessOverride : "DecidedByUserID, RequestedByUserID"
     MJ_User ||--o{ ExternalInvoice : "IssuedByUserID"
-    MJ_User ||--o{ OrderConcession : "DecidedByUserID, RequestedByUserID"
+    MJ_User ||--o{ OrderConcession : "DecidedByUserID, RequestedByUserID, WithdrawnByUserID"
     MJ_User ||--o{ OrderHeader : "ConfirmedByUserID, PostedByUserID, SalesRepUserID"
     MJ_User ||--o{ OrderHeaderPaymentSchedule : "InvoicedByUserID"
     MJ_User ||--o{ OrderLineProgressMeasurement : "AttestedByUserID"
@@ -1617,7 +1627,7 @@ erDiagram
 |---|---|---|
 | `__mj.Company` | 16 | `CheckoutWidget.CompanyID`, `ExternalInvoice.CompanyID`, `OrderCompanyPolicy.ID`, `OrderHeader.CompanyID`, `OrderHeaderPaymentSchedule.CompanyID`, `OrderLine.CompanyID`, `PaymentDetail.CompanyID`, `PaymentHeader.ReceivingCompanyID`, `PaymentProvider.CompanyID`, `Product.CompanyID`, `ProductCategory.CompanyID`, `Promotion.CompanyID`, `ReferralProgram.CompanyID`, `StoredValueAccount.IssuingCompanyID`, `Subscription.CompanyID`, `SubscriptionFamily.CompanyID` |
 | `__mj_BizAppsCommon.Person` | 15 | `CheckoutSession.PersonID`, `CustomerPaymentMethod.OwnerPersonID`, `CustomerTaxExemption.PersonID`, `EntitlementGrant.BeneficiaryPersonID`, `EventOrderLine.PersonID`, `ExternalCustomer.BillToPersonID`, `OrderHeader.BillToPersonID`, `OrderHeader.ShipToPersonID`, `OrderLine.ShipToPersonID`, `PaymentHeader.BillToPersonID`, `PaymentIntent.BillToPersonID`, `PriceListAssignment.PersonID`, `PromotionCode.AssignedPersonID`, `StoredValueAccount.BeneficiaryPersonID`, `Subscription.BeneficiaryPersonID` |
-| `__mj.User` | 13 | `CheckoutSessionStep.LastReplayedByUserID`, `EntitlementAccessOverride.DecidedByUserID`, `EntitlementAccessOverride.RequestedByUserID`, `ExternalInvoice.IssuedByUserID`, `OrderConcession.DecidedByUserID`, `OrderConcession.RequestedByUserID`, `OrderHeader.ConfirmedByUserID`, `OrderHeader.PostedByUserID`, `OrderHeader.SalesRepUserID`, `OrderHeaderPaymentSchedule.InvoicedByUserID`, `OrderLineProgressMeasurement.AttestedByUserID`, `PaymentLine.AllocatedByUserID`, `SalesAuthority.SalesRepUserID` |
+| `__mj.User` | 14 | `CheckoutSessionStep.LastReplayedByUserID`, `EntitlementAccessOverride.DecidedByUserID`, `EntitlementAccessOverride.RequestedByUserID`, `ExternalInvoice.IssuedByUserID`, `OrderConcession.DecidedByUserID`, `OrderConcession.RequestedByUserID`, `OrderConcession.WithdrawnByUserID`, `OrderHeader.ConfirmedByUserID`, `OrderHeader.PostedByUserID`, `OrderHeader.SalesRepUserID`, `OrderHeaderPaymentSchedule.InvoicedByUserID`, `OrderLineProgressMeasurement.AttestedByUserID`, `PaymentLine.AllocatedByUserID`, `SalesAuthority.SalesRepUserID` |
 | `__mj_BizAppsCommon.Organization` | 13 | `CustomerPaymentMethod.OwnerOrganizationID`, `CustomerTaxExemption.OrganizationID`, `EntitlementGrant.BeneficiaryOrganizationID`, `ExternalCustomer.BillToOrganizationID`, `OrderHeader.BillToOrganizationID`, `OrderHeader.ShipToOrganizationID`, `OrderLine.ShipToOrganizationID`, `PaymentHeader.BillToOrganizationID`, `PaymentIntent.BillToOrganizationID`, `PriceListAssignment.OrganizationID`, `PromotionCode.AssignedOrganizationID`, `StoredValueAccount.BeneficiaryOrganizationID`, `Subscription.HolderOrganizationID` |
 | `__mj_BizAppsCommon.Address` | 4 | `EventProduct.VenueAddressID`, `OrderHeader.BillToAddressID`, `OrderHeader.ShipToAddressID`, `OrderLine.ShipToAddressID` |
 | `__mj_BizAppsAccounting.Dimension` | 3 | `DimensionDefault.DimensionID`, `OrderLine.DimensionID`, `OrderLineDimension.DimensionID` |
@@ -1668,7 +1678,7 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `OrderCompanyPolicy.StackingMode` | `Sequential` · `Additive` |
 | `OrderConcession.DeliveryForm` | `Price` · `Duration` · `Scope` · `Seats` · `Terms` · `Shift` · `Shorten` |
 | `OrderConcession.ReasonCategory` | `Retention` · `Referral` · `Dispute` · `Other` |
-| `OrderConcession.Status` | `Pending` · `Approved` · `Rejected` |
+| `OrderConcession.Status` | `Pending` · `Approved` · `Rejected` · `Withdrawn` |
 | `OrderHeader.FulfillmentStatus` | `Pending` · `PartiallyFulfilled` · `Fulfilled` · `NotApplicable` · `Returned` |
 | `OrderHeader.OrderType` | `Sale` · `Return` · `Cancellation` · `Amendment` · `AccountCredit` |
 | `OrderHeader.Status` | `Draft` · `Quoted` · `Confirmed` · `Voided` |
@@ -1724,7 +1734,7 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `SubscriptionType.StartMode` | `Immediate` · `Deferred` · `CalendarAnchored` |
 | `SubscriptionType.SubscriberScope` | `Organization` · `Person` · `Either` |
 
-The other 126 CHECK constraints are rules rather than lists: exactly one of two party columns, a
+The other 129 CHECK constraints are rules rather than lists: exactly one of two party columns, a
 window whose end follows its start, a non-negative amount, a column that must hold valid JSON, a
 field required by another field's value. §2 does not show them; `sys.check_constraints` has their
 bodies.
@@ -1742,8 +1752,8 @@ show either, and code that ignores them will fail at runtime rather than at comp
 | `EntitlementAccessOverride` | `trg_EntitlementAccessOverride_Record` | An update cannot rewrite the override's request or decision. What was requested (order, type, reason, last day, requester) never changes (51023); its status moves only from Requested to Approved, Rejected or Withdrawn, and from Approved to Expired (51024); and the approval task and the decision, once recorded, are not rewritten (51025). The trigger fires on UPDATE only, so a row can still be deleted. That the decision came through the approval task is checked in code (`EntitlementAccessOverrideEntityServer`). |
 | `InstalmentLineBilling` | `trg_InstalmentLineBilling_Immutable` | A billing row records what an issued instalment invoice billed a line, and later instalments are sliced against it, so a row cannot be updated or deleted (51032). A correction is an amount change or a reversal order. Purges of committed test orders disable it with the other order guards. |
 | `OrderConcession` | `trg_OrderConcession_RollupTotals` | A concession that carries a `ScheduleReduction` or a `CreditMemoAmount` changes what the order still owes, so adding, changing or removing one recomputes the order's totals through `spRecalcOrderHeaderTotals`. Concessions with neither leave the totals alone. |
-| `OrderHeader` | `trg_OrderHeader_ImmutableAfterConfirm` | Every rule that freezes a confirmed order header. Its status cannot leave Confirmed (51014), and its date, selling company, order type, reversal link and set bill-to party are history (51013); an empty bill-to party may still be filled, which is what claiming a guest order relies on (claim minting is dormant: `CheckoutSessionService` calls the local stand-in in `identityClaimContracts.ts`, which throws). A set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order (51015); reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. Once `ConfirmedAt` is set, `ConfirmedByUserID` cannot change (51017). Its `PaymentTermsTypeID` changes only to match its latest approved `Terms` `OrderConcession`, prior terms to new (51018); matching the latest, not any, keeps an earlier approval from being replayed, and `DueDate` stays writable. The checks run in that order, so a write that breaks two rules is refused with the first. |
-| `OrderHeaderPaymentSchedule` | `trg_OrderHeaderPaymentSchedule_Immutable` | An instalment is frozen once it is past Scheduled. Only a Scheduled row may be deleted (51020); after that its order, company, number, due date, amount and invoice identity cannot change, and it cannot return to Scheduled (51021). `DocumentNumber` and `JournalEntryID` are set once and never cleared or replaced, on any status (51022). That the instalments add up to the lines is checked in code, at confirm and at invoicing, because editing a schedule one row at a time passes through states that do not add up. |
+| `OrderHeader` | `trg_OrderHeader_ImmutableAfterConfirm` | Every rule that freezes a confirmed order header. Its status cannot leave Confirmed (51014), and its date, selling company, order type, reversal link and set bill-to party are history (51013); an empty bill-to party may still be filled, which is what claiming a guest order relies on (claim minting is dormant: `CheckoutSessionService` calls the local stand-in in `identityClaimContracts.ts`, which throws). A set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order (51015); reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. Once `ConfirmedAt` is set, `ConfirmedByUserID` cannot change (51017). Its `PaymentTermsTypeID` changes only to match its latest approved `Terms` `OrderConcession`, prior terms to new (51018); matching the latest, not any, keeps an earlier approval from being replayed, and `DueDate` stays writable. A Confirmed order cannot be deleted (51019); a reversal order undoes it. The checks run in that order, so a write that breaks two rules is refused with the first. |
+| `OrderHeaderPaymentSchedule` | `trg_OrderHeaderPaymentSchedule_Immutable` | An instalment is frozen once it is past Scheduled. Only a Scheduled row may be deleted, and not a company's last non-Canceled row on a Confirmed order (51020); after that its order, company, number, due date, amount and invoice identity cannot change, and it cannot return to Scheduled (51021). `DocumentNumber` and `JournalEntryID` are set once and never cleared or replaced, on any status (51022). That the instalments add up to the lines is checked in code, at confirm and at invoicing, because editing a schedule one row at a time passes through states that do not add up. |
 | `OrderHeaderPaymentSchedule` | `trg_OrderHeaderPaymentSchedule_RollupTotals` | Adding, re-amounting or removing an instalment recomputes the order's instalment rollups (`AmountPaid`, `Balance`, `Status` per row). |
 | `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | Every rule that freezes a confirmed order line. A line of a confirmed order cannot be deleted (51002), and its product, quantity, money and selling company are history (51003). This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. The same set-once address rule as the header holds for a line's own `ShipToAddressID` and `ShipToAddressSnapshot` (51016); the confirm path writes a draft's line snapshots while the header is still Draft for this reason. A set `JournalEntryID` is never cleared or replaced, on any status (51008). `test-harnesses/order-guard-triggers.mjs` and `address-snapshot-triggers.mjs` exercise both triggers. |
 | `OrderLine` | `trg_OrderLine_RollupTotals` | The order's `TotalGross`, `Balance` and `FulfillmentStatus`, and its instalment rollups, are recomputed from the lines by the database, so a client cannot supply a total that disagrees with what was booked. |
@@ -1754,7 +1764,7 @@ show either, and code that ignores them will fail at runtime rather than at comp
 | `PaymentLine` | `trg_PaymentLine_ImmutableAfterCapture` | Once its payment is captured, an applied payment line cannot be deleted (51010), and its amount, order and order line cannot change (51011); the instalment it names (`OrderHeaderPaymentScheduleID`) is not covered. A set `BookedAt` is never cleared or replaced (51012). |
 | `PaymentLine` | `trg_PaymentLine_RollupTotals` | The order's `AmountPaid` and `Balance`, and its instalments', are recomputed from the lines of its captured payments. |
 
-The other 71 triggers are CodeGen's `trgUpdate*` `__mj_UpdatedAt` maintainers, one per table.
+The other 72 triggers are CodeGen's `trgUpdate*` `__mj_UpdatedAt` maintainers, one per table.
 They are not business logic and are omitted above.
 
 ---

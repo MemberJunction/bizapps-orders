@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
     PriceRenewal,
+    PriorLineScaling,
     PriorTermShare,
     RenewalCrossesAnniversary,
+    RenewalPriceStart,
     ResolveRenewalIncrease,
     type RenewalPriceInput,
 } from '../renewal-price.js';
@@ -77,6 +79,70 @@ describe('RenewalCrossesAnniversary', () => {
         expect(
             RenewalCrossesAnniversary(new Date('2026-01-15T00:00:00Z'), '2026-01-15', new Date('2027-01-15T00:00:00Z')),
         ).toBe(true);
+    });
+});
+
+describe('RenewalPriceStart (golive #478)', () => {
+    /** The increase decision as the pricer makes it: anchor, expiring term, its line's first term, renewal start. */
+    const crosses = (anchor: string, termStart: string, lineFirstTermStart: string | null | undefined, renewalStart: string) =>
+        RenewalCrossesAnniversary(anchor, RenewalPriceStart(termStart, lineFirstTermStart), renewalStart);
+
+    it('is the expiring term start when the line bought that one term', () => {
+        expect(RenewalPriceStart('2027-02-06', '2027-02-06')).toBe('2027-02-06');
+        expect(RenewalPriceStart('2027-02-06', null)).toBe('2027-02-06');
+        expect(RenewalPriceStart('2027-02-06', undefined)).toBe('2027-02-06');
+        expect(RenewalPriceStart('2027-02-06', '')).toBe('2027-02-06');
+    });
+
+    it('is the first term start when the line bought several terms', () => {
+        expect(RenewalPriceStart('2026-12-20', '2025-12-20')).toBe('2025-12-20');
+        expect(RenewalPriceStart(new Date('2026-12-20T00:00:00Z'), '2025-12-20')).toBe('2025-12-20');
+    });
+
+    it('never moves later than the expiring term start', () => {
+        expect(RenewalPriceStart('2026-12-20', '2027-01-01')).toBe('2026-12-20');
+    });
+
+    it('applies the increase after a 13-month line booked as a year and a remainder', () => {
+        // One line covering 12/20/2025-2/5/2027: terms start 12/20/2025 and 12/20/2026, renewal 2/6/2027.
+        expect(RenewalCrossesAnniversary('2025-12-20', '2026-12-20', '2027-02-06')).toBe(false); // the old reading
+        expect(crosses('2025-12-20', '2026-12-20', '2025-12-20', '2027-02-06')).toBe(true);
+        // The renewal after that is an ordinary one-term line and still crosses one.
+        expect(crosses('2025-12-20', '2027-02-06', '2027-02-06', '2028-02-06')).toBe(true);
+    });
+
+    it('applies the increase after an annual line with a one-day last term', () => {
+        expect(crosses('2026-01-01', '2027-01-01', '2026-01-01', '2027-01-02')).toBe(true);
+    });
+
+    it('applies it once after 24 months sold as one line', () => {
+        expect(crosses('2026-01-01', '2027-01-01', '2026-01-01', '2028-01-01')).toBe(true);
+    });
+
+    it('applies it after five quarters sold as one line, then waits for the next anniversary', () => {
+        expect(crosses('2026-01-01', '2027-01-01', '2026-01-01', '2027-04-01')).toBe(true);
+        expect(crosses('2026-01-01', '2027-04-01', '2027-04-01', '2027-07-01')).toBe(false);
+        expect(crosses('2026-01-01', '2027-10-01', '2027-10-01', '2028-01-01')).toBe(true);
+    });
+
+    it('changes nothing for a line that bought one term', () => {
+        // Annual: every renewal.
+        expect(crosses('2026-01-15', '2026-01-15', '2026-01-15', '2027-01-15')).toBe(true);
+        expect(crosses('2026-01-15', '2027-01-15', '2027-01-15', '2028-01-15')).toBe(true);
+        // Quarterly: once a year.
+        expect(crosses('2026-01-01', '2026-01-01', '2026-01-01', '2026-04-01')).toBe(false);
+        expect(crosses('2026-01-01', '2026-07-01', '2026-07-01', '2026-10-01')).toBe(false);
+        expect(crosses('2026-01-01', '2026-10-01', '2026-10-01', '2027-01-01')).toBe(true);
+        expect(crosses('2026-01-01', '2027-01-01', '2027-01-01', '2027-04-01')).toBe(false);
+        // Monthly: once a year.
+        expect(crosses('2026-01-15', '2026-11-15', '2026-11-15', '2026-12-15')).toBe(false);
+        expect(crosses('2026-01-15', '2026-12-15', '2026-12-15', '2027-01-15')).toBe(true);
+        expect(crosses('2026-01-15', '2027-01-15', '2027-01-15', '2027-02-15')).toBe(false);
+    });
+
+    it('gives no increase on the first full year after a trial sold as its own line', () => {
+        expect(crosses('2026-01-01', '2026-01-01', '2026-01-01', '2026-04-01')).toBe(false);
+        expect(crosses('2026-01-01', '2026-04-01', '2026-04-01', '2027-04-01')).toBe(true);
     });
 });
 
@@ -225,12 +291,12 @@ describe('a line that bought several terms renews at one term of its price (goli
         expect(p.BasePrice).toBe(11000);
     });
 
-    it('an engine-priced multi-term line carries one term of price already, and renews at it', () => {
-        // The engine charged one 10,000 term for the 24 months, so cutting it would renew at 5,000.
-        const p = priced(24, 10000, { PriorPriceOverridden: false });
+    it('an engine-priced line longer than the term is cut to the term share too (golive #468)', () => {
+        // Converted lines carry the whole contract amount with PriceOverridden false.
+        const p = priced(24, 48000, { PriorPriceOverridden: false });
         expect(p.BaseSource).toBe('PriorPrice');
-        expect(p.BasePrice).toBe(10000);
-        expect(p.UnitPrice).toBe(10000);
+        expect(p.BasePrice).toBe(24000);
+        expect(p.UnitPrice).toBe(24000);
     });
 
     it('a typed one-term discount on a multi-term line lapses to list, as a scaled one does', () => {
@@ -257,5 +323,51 @@ describe('PriceRenewal reports the increase that is set, applied or not', () => 
     it('not applied: the price carries no increase, and the set rate is still reported', () => {
         const p = PriceRenewal({ ...base, ApplyIncrease: false });
         expect(p).toMatchObject({ IncreasePercent: 0, IncreaseSource: 'None', IncreaseSetPercent: 2, IncreaseSetSource: 'Subscription', IncreaseApplied: false, UnitPrice: 1000 });
+    });
+});
+
+describe('PriorLineScaling: a prior line against the renewal term (golive #468)', () => {
+    const renewal = (lineMonths: number, unitPrice: number) =>
+        PriceRenewal(
+            input({
+                PriorUnitPrice: unitPrice,
+                PriorDiscountPct: 0,
+                PriorPriceOverridden: false,
+                PriorListPrice: null,
+                PriorTermShare: PriorLineScaling(lineMonths, 12).Share,
+            }),
+        );
+
+    it('scales a 24-month converted line at 48,000 down to 24,000 for 12 months', () => {
+        const s = PriorLineScaling(24, 12);
+        expect(s).toEqual({ Share: 0.5, LineMonths: 24, TermMonths: 12, ScaledDown: true, ShorterThanTerm: false });
+        expect(renewal(24, 48000).UnitPrice).toBe(24000);
+    });
+
+    it('scales an 18-month line at 54,000 to 36,000 and a 14-month line at 9,180 to 7,868.57', () => {
+        expect(renewal(18, 54000).UnitPrice).toBe(36000);
+        expect(renewal(14, 9180).UnitPrice).toBe(7868.57);
+    });
+
+    it('does not scale a 3-month line up, and flags it for review', () => {
+        const s = PriorLineScaling(3, 12);
+        expect(s.Share).toBe(1);
+        expect(s.ScaledDown).toBe(false);
+        expect(s.ShorterThanTerm).toBe(true);
+        expect(renewal(3, 27300).UnitPrice).toBe(27300);
+    });
+
+    it('reads lengths within the tolerance as equal: neither scaled nor flagged', () => {
+        const s = PriorLineScaling(12.001, 12);
+        expect(s.Share).toBe(1);
+        expect(s.ScaledDown).toBe(false);
+        expect(s.ShorterThanTerm).toBe(false);
+        expect(PriorLineScaling(11.999, 12).ShorterThanTerm).toBe(false);
+    });
+
+    it('is share 1 with nothing flagged when a length is missing', () => {
+        expect(PriorLineScaling(null, 12)).toEqual({ Share: 1, LineMonths: null, TermMonths: 12, ScaledDown: false, ShorterThanTerm: false });
+        expect(PriorLineScaling(24, undefined).ShorterThanTerm).toBe(false);
+        expect(PriorLineScaling(0, 12).Share).toBe(1);
     });
 });

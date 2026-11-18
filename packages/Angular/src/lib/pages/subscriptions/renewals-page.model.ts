@@ -49,8 +49,7 @@ export function MatchesPreset(row: RenewalWorklistRow, preset: RenewalsPreset): 
 
 /**
  * A row somebody should look at before the pass does: a renewal that could not be priced, an
- * expiring term one day long (a data defect: the pass would renew from the wrong day and skip the
- * increase), a term that lapsed with auto-renew on (the pass will not revive it), or a draft
+ * expiring term one day long (a data defect: the pass would renew from the wrong day), a term that lapsed with auto-renew on (the pass will not revive it), or a draft
  * renewal nobody confirmed for a term that has already ended.
  */
 export function NeedsAttention(row: RenewalWorklistRow): boolean {
@@ -64,8 +63,9 @@ export function NeedsAttention(row: RenewalWorklistRow): boolean {
 /**
  * An expiring term that starts and ends on the same day. The cutover load split a line whose legacy
  * dates ran a year inclusive into a twelve-month term plus this one-day remainder, so the renewal
- * would start the day AFTER the anniversary and never cross one: the increase is skipped and the new
- * term sits a day off for good. Flagged so the data gets fixed before the pass renews from it.
+ * would start the day AFTER the anniversary and the new term sits a day off for good. The increase
+ * is still applied: it is measured from the line's first term (golive #478). Flagged so the data
+ * gets fixed before the pass renews from it.
  */
 export function OneDayTerm(row: RenewalWorklistRow): boolean {
     return !!row.TermStartDate && row.TermStartDate === row.TermEndDate;
