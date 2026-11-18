@@ -5,10 +5,11 @@ import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } 
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { PresetViewRef } from '../../data/preset-view';
-import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersApplyAccountCreditOperation, ORDER_REVERSE_AUTH, UserCanReverse, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { CrossesLegalEntities } from '../../panels/allocation-math';
+import { CREDITS_HELD_WHERE, CreditTargetFilter, OwnCreditTargets } from './credit-targets';
 import { LegalEntityForHint } from '../../panels/legal-entity-hint';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -29,6 +30,9 @@ import { GetOrders } from '../../data/orders-queries';
  * the credit order, minus on the target. No new cash entered the business, so
  * zero is the truth rather than a degenerate case — and the
  * payment-equals-its-lines rule is satisfied exactly.
+ *
+ * FINANCE MOVES CREDIT. Without MJ.BizApps.Orders.Order.Reverse (the Finance role) the page lists the
+ * credits and does not offer to apply one; the operation refuses it anyway (bc-aidp-next-golive#454).
  *
  * When the two orders belong to different companies the intercompany legs are
  * REQUIRED rather than convenient: a single Dr A/R / Cr A/R spanning two legal
@@ -138,6 +142,9 @@ import { GetOrders } from '../../data/orders-queries';
                     {{ Busy ? 'Applying…' : 'Apply credit' }}
                 </button>
                 <span class="small muted">No cash changes hands.</span>
+                @if (!MayReverse) {
+                    <span class="small muted">Credits are moved by finance ({{ ReverseAuth }}).</span>
+                }
                 @if (Error) {
                     <span class="small mjo-cr__error">{{ Error }}</span>
                 }
@@ -229,7 +236,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         return this.creditOrdersView.For(this.OrderEntityInfo.ID, () => ({
             EntityID: this.OrderEntityInfo!.ID,
             Entity: this.OrderEntityInfo!.Name,
-            WhereClause: `Balance < 0`,
+            WhereClause: CREDITS_HELD_WHERE,
             ID: 'preset-credit-orders',
             Name: 'Credits Held'
         } as unknown as MJUserViewEntityExtended));
@@ -250,9 +257,13 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Amount = 0;
     public Busy = false;
     public Error: string | null = null;
+    /** Whether the viewer holds the finance reversal authorization (bc-aidp-next-golive#454). */
+    public MayReverse = false;
+    public readonly ReverseAuth = ORDER_REVERSE_AUTH;
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
+        this.MayReverse = UserCanReverse(md.CurrentUser, md);
         this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
         await this.load();
         this.cdr.detectChanges();
@@ -296,7 +307,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public get CanApply(): boolean {
-        return !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
+        return this.MayReverse && !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
     }
 
     public get TotalDisplay(): string {
@@ -320,9 +331,8 @@ export class MJOAccountCreditPageComponent implements OnInit {
     private async applySource(row: mjBizAppsOrdersOrderHeaderEntity): Promise<void> {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
-        // whoever earned it.
-        const customerID = (row['BillToOrganizationID'] as string) ?? undefined;
-        this.Targets = await GetOrders({ Preset: 'unpaid', BillToOrganizationID: customerID });
+        // whoever earned it (the server refuses any other: SameCustomerRefusal).
+        this.Targets = OwnCreditTargets(row, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(row) }));
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
@@ -384,10 +394,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         const first = !this.SourceID ? credits[0] : undefined;
 
         const targets = first
-            ? await GetOrders({
-                  Preset: 'unpaid',
-                  BillToOrganizationID: (first['BillToOrganizationID'] as string) ?? undefined,
-              })
+            ? OwnCreditTargets(first, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(first) }))
             : [];
 
         this.Credits = credits;

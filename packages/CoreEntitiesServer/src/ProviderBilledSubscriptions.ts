@@ -88,8 +88,14 @@ export function ProviderBilledPurchaseVerdict(
     action: 'CreateNew' | 'ExtendExisting' | 'Reactivate' | 'Reject',
     existing: { Status: string; ProviderSubscriptionID?: string | null; SubscriptionNumber?: string | null } | null | undefined,
     isRenewal: boolean,
+    /**
+     * The order books a renewal the gateway already charged (E4, marked by `SanctionGatewayRenewal`).
+     * It may extend or reactivate the subscription the gateway bills, and nothing else may.
+     */
+    gatewayRenewal = false,
 ): ProviderBilledPurchaseVerdictResult {
     if (action === 'CreateNew' || action === 'Reject' || !existing || !IsProviderBilled(existing)) return { Kind: 'Allow' };
+    if (gatewayRenewal && isRenewal && (action === 'ExtendExisting' || action === 'Reactivate')) return { Kind: 'Allow' };
     if (action === 'Reactivate' && !isRenewal && existing.Status === 'Canceled') return { Kind: 'FreshStart' };
     const name = existing.SubscriptionNumber ?? 'The subscription';
     return {

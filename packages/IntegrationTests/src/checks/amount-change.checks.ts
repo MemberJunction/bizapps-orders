@@ -21,6 +21,9 @@
  *   AC11  billed as a whole and partly paid, with a refund asked for: the applied change refunds what the preview
  *         said, not the open balance as well
  *
+ *   AC12  billed as a whole on an order whose lines another app has frozen (a closed deal's): the credit memo
+ *         still lowers the line's BilledToDate
+ *
  * AC7–AC9 also render the customer's credit memo from what the approval recorded, and the invoices it credited
  * re-rendered with the credit (#684).
  *
@@ -40,6 +43,7 @@ import {
 import { BaseRemotableOperation, Metadata } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import { BuildCreditMemoDocuments, BuildInvoiceDocuments, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import { RegisterOrderLineEditVeto } from "@mj-biz-apps/orders-entities";
 import type { mjBizAppsOrdersOrderConcessionEntity, OrderHeaderEntity } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
@@ -531,6 +535,36 @@ export const AmountChangeChecks: NamedCheck[] = [
         }
         AssertEqual(await billedToDate(ctx, lineA), 375, "line A ends billed its lowered 375");
         AssertEqual(await billedToDate(ctx, lineB), 600, "line B ends billed its 600");
+      }),
+  },
+  {
+    Id: "amount-change.AC12",
+    Name: "AC12: on an order whose lines another app has frozen, the credit memo still lowers the line's BilledToDate",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // A deal closed Won freezes its order's lines through the line-edit veto. The memo's write to the
+        // line's BilledToDate is Orders' own bookkeeping. The veto goes on after the order books.
+        await AcknowledgeAmendmentsWith(ctx);
+        const { Term } = await bookWhole(ctx);
+        await grantAuthority(ctx, 100_000, 1);
+        const billedBefore = await billedToDate(ctx, Term.OrderLineID);
+        let asked = 0;
+        RegisterOrderLineEditVeto({
+          MayEdit: async () => {
+            asked++;
+            return "This deal is closed. Set the status back to Open before changing what was sold.";
+          },
+        });
+        try {
+          const out = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 900, ...REASON });
+          Assert(out.Success, `the amount change must apply with the line frozen: ${out.Message}`);
+          AssertEqual(out.Status, "Approved", "inside authority, approved on save");
+          AssertEqual(await billedToDate(ctx, Term.OrderLineID), money(billedBefore - 300), "the line is billed 300 less");
+          AssertEqual(asked, 0, "the veto was never asked: this is not an edit to what was sold");
+        } finally {
+          RegisterOrderLineEditVeto(null);
+        }
       }),
   },
 ];

@@ -23,7 +23,8 @@
  * Only an assignee may decide, never the requester, and an approval after the override's last day is
  * refused ({@link AccessOverrideDecisionRefusal}). The in-app decision refuses before it records
  * anything; a decision made in the Tasks inbox has already closed the task, so the hook closes the
- * override Withdrawn with the reason, and the requester may ask again.
+ * override Withdrawn with the reason, notes the reason on the task's activity feed, and the requester
+ * may ask again.
  *
  * FAILS CLOSED. Without the authorization rows in metadata nobody may request — an exception to a
  * payment rule is not something to hand out because a sync has not run.
@@ -62,6 +63,7 @@ import {
     ACCESS_OVERRIDE_AUTH,
     AccessOverrideDecisionRefusal,
     LoadAccessOverrideAssignees,
+    PermissionNotSetUp,
     ToISODate,
     mjBizAppsOrdersEntitlementAccessOverrideEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -76,10 +78,18 @@ import {
     type AccessOverrideType,
     type GrantTiming,
 } from './EntitlementBehavior.js';
-import { ActiveRoleHolderIDs, PERSON_ENTITY } from './ConcessionApprovalTask.js';
+import {
+    ActiveRoleHolderIDs,
+    CreateTaskAssignment,
+    CreateTaskLink,
+    PERSON_ENTITY,
+    RecordTaskActivity,
+    requireSubclass,
+} from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { ACCESS_OVERRIDE_ENTITY, BusinessDay, ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
+import { ResolvePersonIDsForUsers } from './person-user-link.js';
 import { EscapeText, RequireDate, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 export { ACCESS_OVERRIDE_AUTH };
@@ -109,6 +119,17 @@ const gatedTimings = PAYMENT_GATED_TIMINGS.map((t) => `'${t}'`).join(',');
 
 // ─── authorization ─────────────────────────────────────────────────────────────
 
+/** What a person is asking for with each override type, as it reads in a sentence. */
+const ACCESS_OVERRIDE_REQUEST_LABEL: Record<AccessOverrideType, string> = {
+    WaivePaymentHold: 'a payment hold waiver',
+    DeferCutoff: 'a renewal cutoff deferral',
+};
+
+/** The refusal for a user who holds no authorization to request this type of override. */
+export function AccessOverrideRequestRefusal(type: AccessOverrideType): string {
+    return `You don't have permission to request ${ACCESS_OVERRIDE_REQUEST_LABEL[type]}. Please contact your administrator if you need access.`;
+}
+
 /**
  * Whether `user` may request an override of this type, through its own authorization or the parent.
  * Throws when the authorization rows are not in metadata: see FAILS CLOSED above.
@@ -118,10 +139,7 @@ export function UserMayRequestAccessOverride(type: AccessOverrideType, user: Use
     const auths = provider.Authorizations ?? [];
     const auth = auths.find((a) => a.Name === name);
     if (!auth) {
-        throw new Error(
-            `Authorization '${name}' is not in metadata. Access overrides are refused until the ` +
-                `${ACCESS_OVERRIDE_AUTH.Parent} authorizations are installed and granted to roles.`,
-        );
+        throw new Error(PermissionNotSetUp(`Requesting ${ACCESS_OVERRIDE_REQUEST_LABEL[type]}`, name));
     }
     return new AuthorizationEvaluator().UserCanExecuteWithAncestors(auth, user, auths);
 }
@@ -159,7 +177,7 @@ export async function RequestAccessOverride(
         return { Success: false, Message: `OverrideType must be one of ${OVERRIDE_TYPES.join(', ')}; got '${input.OverrideType}'.` };
     }
     if (!UserMayRequestAccessOverride(input.OverrideType, user, provider)) {
-        return { Success: false, Message: `Requesting a ${input.OverrideType} override requires the ${ACCESS_OVERRIDE_AUTH[input.OverrideType]} authorization.` };
+        return { Success: false, Message: AccessOverrideRequestRefusal(input.OverrideType) };
     }
     const reason = (input.Reason ?? '').trim();
     if (!reason) return { Success: false, Message: 'An access override must state a reason.' };
@@ -354,7 +372,26 @@ export async function ApplyAccessOverrideDecision(
         }
         const changes = status === 'Approved' ? await ReconcilePaymentGatedGrants([override.OrderHeaderID], provider, user) : [];
         await db.CommitTransaction();
-        if (refusal) return { Success: false, Status: override.Status, Message: override.DecisionNotes ?? refusal };
+        if (refusal) {
+            // The task is already closed as completed, so whoever decided it believes it took effect.
+            // The reason goes on the task's activity feed, where the tasks app shows it with the task
+            // (#875), and the requester gets a follow-up task. After the commit, and logged rather than
+            // thrown: a note or task that fails to save must not leave the override Requested behind a
+            // closed task.
+            try {
+                await RecordTaskActivity(taskID, AccessOverrideNotAppliedNote(outcome === 'Approved', refusal), { Provider: provider, User: user });
+            } catch (err) {
+                LogError(`Access override ${override.ID} closed Withdrawn, but the reason could not be noted on task ${taskID}: ${(err as Error).message}`);
+            }
+            if (override.DecisionNotes) {
+                try {
+                    await notifyRequesterOfWithdrawnOverride(override, override.DecisionNotes, provider, user);
+                } catch (err) {
+                    LogError(`Access override ${override.ID} closed Withdrawn, but the requester's follow-up task could not be created: ${(err as Error).message}`);
+                }
+            }
+            return { Success: false, Status: override.Status, Message: override.DecisionNotes ?? refusal };
+        }
         return {
             Success: true,
             Status: override.Status,
@@ -365,6 +402,17 @@ export async function ApplyAccessOverrideDecision(
         await rollback(db, `access override decision on task ${taskID}`);
         throw err;
     }
+}
+
+/**
+ * The note left on an approval task whose decision the override refused, after the Tasks inbox had
+ * already closed the task. Says what happened to the request and what to do next.
+ */
+export function AccessOverrideNotAppliedNote(approving: boolean, refusal: string): string {
+    return (
+        `The ${approving ? 'approval' : 'rejection'} was not applied to the access override, which is now Withdrawn: ` +
+        `${refusal} The requester may ask for the override again.`
+    );
 }
 
 // ─── approvers ─────────────────────────────────────────────────────────────────
@@ -452,15 +500,11 @@ async function resolveApprovers(
     });
     if ('Refusal' in decided) return decided;
 
-    const persons = await read<{ ID: string; LinkedUserID: string }>(
-        PERSON_ENTITY,
-        `Status = 'Active' AND LinkedUserID IN (${RequireUUIDs(decided.UserIDs, 'UserID').map((id) => `'${id}'`).join(',')})`,
-        ['ID', 'LinkedUserID'],
-    );
+    const persons = await ResolvePersonIDsForUsers(RequireUUIDs(decided.UserIDs, 'UserID'), provider, user, { ActiveOnly: true });
     const personIDs: string[] = [];
     for (const userID of decided.UserIDs) {
-        const person = persons.find((p) => UUIDsEqual(p.LinkedUserID, userID));
-        if (person) personIDs.push(person.ID);
+        const personID = persons.get(userID.toLowerCase());
+        if (personID) personIDs.push(personID);
         else LogError(`Access override approver ${userID} has no active person record linked to their user and was not assigned.`);
     }
     if (personIDs.length === 0) {
@@ -496,6 +540,62 @@ async function findOpenOverride(
     );
     if (!res.Success) throw new Error(`Could not read access overrides: ${res.ErrorMessage}`);
     return res.Results?.[0] ?? null;
+}
+
+async function notifyRequesterOfWithdrawnOverride(
+    override: mjBizAppsOrdersEntitlementAccessOverrideEntity,
+    note: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    const ctx = { Provider: provider, User: user };
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const typeRes = await rv.RunView<{ ID: string }>(
+        { EntityName: TASK_TYPES_ENTITY, ExtraFilter: `Code = 'ACTION_ITEM'`, Fields: ['ID'], MaxRows: 1, ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    const typeID = typeRes.Results?.[0]?.ID;
+    if (!typeID) return;
+
+    const orderRes = await rv.RunView<{ OrderNumber: string }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(override.OrderHeaderID, 'OrderHeaderID')}'`,
+            Fields: ['OrderNumber'],
+            MaxRows: 1,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    const orderNumber = orderRes.Results?.[0]?.OrderNumber ?? override.OrderHeaderID;
+
+    const task = await provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASKS_ENTITY, user);
+    requireSubclass(task, TASKS_ENTITY);
+    task.NewRecord();
+    task.TypeID = typeID;
+    task.Name = `Access override on order ${orderNumber} closed without taking effect`;
+    task.Description = `${note} Request a new access override if the exception is still needed.`;
+    task.Priority = 'High';
+    task.Status = 'Open';
+    if (!(await task.Save())) {
+        throw new Error(`Failed to create follow-up task for withdrawn access override ${override.ID}: ${task.LatestResult?.CompleteMessage}`);
+    }
+
+    const orderEntityID = provider.EntityByName(ORDER_HEADER_ENTITY)?.ID;
+    const overrideEntityID = provider.EntityByName(ACCESS_OVERRIDE_ENTITY)?.ID;
+    if (orderEntityID) await CreateTaskLink(task.ID, orderEntityID, override.OrderHeaderID, `Order ${orderNumber}`, ctx);
+    if (overrideEntityID) await CreateTaskLink(task.ID, overrideEntityID, override.ID, `${override.OverrideType} access override`, ctx);
+
+    const personEntityID = provider.EntityByName(PERSON_ENTITY)?.ID;
+    if (personEntityID && override.RequestedByUserID) {
+        const persons = await ResolvePersonIDsForUsers([override.RequestedByUserID], provider, user, { ActiveOnly: true });
+        const requesterPersonID = persons.get(override.RequestedByUserID.toLowerCase());
+        if (requesterPersonID) {
+            await CreateTaskAssignment(task.ID, personEntityID, requesterPersonID, ctx);
+        }
+    }
 }
 
 async function resolveTaskTypeID(provider: IMetadataProvider, user: UserInfo): Promise<string> {

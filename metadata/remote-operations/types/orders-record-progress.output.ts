@@ -17,11 +17,14 @@ export interface OrdersRecordProgressOutput {
     LineNumber?: number;
     MeasurementDate?: string;
     PercentComplete?: number;
-    /** The line's LineTotalNet — the amount the percent applies to. */
+    /** The size of the line's LineTotalNet — the amount the percent applies to. */
     LineAmount?: number;
-    /** Revenue recognised on the line before this observation. */
+    /**
+     * Revenue recognised on the line before this observation, as a magnitude: positive on a
+     * reversal (negative-quantity) line too, whose own RecognizedToDate is negative.
+     */
     RecognizedToDateBefore?: number;
-    /** LineAmount × PercentComplete, to the cent. */
+    /** LineAmount × PercentComplete, to the cent. A magnitude, like RecognizedToDateBefore. */
     RecognizedToDateAfter?: number;
     /** After − Before. Negative on a backward slide; zero means no entry was written. */
     RecognitionAmount?: number;
@@ -47,16 +50,15 @@ export interface OrdersRecordProgressOutput {
     ReversalAmount?: number;
     /**
      * On a supersede that reverses anything: the date the reversal is booked on. The replaced
-     * observation's own date while that month has no Posted batch for the line's company; otherwise
-     * day 1 of the first later month with none, so a correction never books into a closed period.
-     * Null otherwise.
+     * observation's own date, or the first open day when that date is on or before the line's
+     * company's books-closed-through date, so a correction never books into a month finance has
+     * closed. Null otherwise.
      */
     ReversalDate?: string | null;
     /**
-     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
-     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
-     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
-     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     * The date this observation's catch-up entry is booked on: always `MeasurementDate`, which is
+     * refused when it is on or before the line's company's books-closed-through date. Null when there
+     * is no catch-up.
      */
     CatchUpDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */

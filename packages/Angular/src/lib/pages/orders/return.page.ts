@@ -29,6 +29,17 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 /** The reason a return opens with, and the one it returns to when the origin changes. */
 const DEFAULT_RETURN_REASON = 'Damaged in transit';
 
+/** How an order reads in the origin picker: order number and bill-to customer name (#836). */
+export function ReturnOrderPickerLabel(order: {
+    OrderNumber?: string | null;
+    BillToOrganization?: string | null;
+    BillToPerson?: string | null;
+}): string {
+    const number = String(order.OrderNumber ?? '').trim();
+    const customer = String(order.BillToOrganization ?? order.BillToPerson ?? '').trim();
+    return customer ? `${number} · ${customer}` : number;
+}
+
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
     LineID: string;
@@ -97,6 +108,19 @@ interface MJOReturnLine {
             </mj-alert>
         }
 
+        @if (BookedReturn) {
+            <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="mjo-rt__note"
+                      data-testid="return-booked">
+                <strong>Return {{ BookedReturn.OrderNumber }} booked.</strong>
+                @if (BookedReturn.ID) {
+                    <button type="button" mjButton variant="flat" size="sm" (click)="OpenBookedReturn()">
+                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                        Open {{ BookedReturn.OrderNumber }}
+                    </button>
+                }
+            </mj-alert>
+        }
+
         @if (Origin) {
             <div class="mj-card mjo-rt__origin">
                 <div class="mj-card-pad mjo-rt__origin-row">
@@ -118,7 +142,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="OrderNumber"
+                            TextField="PickerLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -128,6 +152,13 @@ interface MJOReturnLine {
                     </div>
                 }
             </div>
+
+            @if (NothingLeftToReturn) {
+                <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
+                          data-testid="return-nothing-left">
+                    Everything on this order has been returned. Choose another order to start a return.
+                </mj-alert>
+            }
 
             <div class="mjo-rt__split">
                 <div class="mjo-rt__left">
@@ -266,7 +297,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="OrderNumber"
+                            TextField="PickerLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -383,7 +414,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      * Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is
      * "journal entries exist and the receivable is real". A Draft or Quoted order has no money to
      * give back, and `ReversalResolver` skips Draft and Voided on the server, so offering one would
-     * be offering a choice the server refuses.
+     * be offering a choice the server refuses. Return orders themselves are left out too (the
+     * `returnable` preset, #835): a return cannot be returned.
      *
      * Filtered server-side rather than fetched-and-filtered: `MJOGetOrdersOptions` records a real
      * performance bug from doing the latter, and a returns picker on a long-lived instance is
@@ -418,8 +450,13 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
     /** Emitted AFTER the return is booked, carrying the new order's id. */
     @Output() ReturnCreated = new EventEmitter<string | null>();
 
+    /** Emitted when the user clicks to open the newly booked return order (#834). */
+    @Output() OrderOpened = new EventEmitter<{ ID: string }>();
+
     public Busy = false;
     public Error: string | null = null;
+    /** Confirmation banner for the most recently booked return order (#834). */
+    public BookedReturn: { ID: string | null; OrderNumber: string } | null = null;
 
     public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
@@ -449,8 +486,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      *
      * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
      * and nothing else. Without this the page would load an order only when it happened to be
-     * constructed with one already set, and silently keep showing the previous origin otherwise —
-     * the shape `order-document.page.ts` still has.
+     * constructed with one already set, and silently keep showing the previous origin otherwise.
+     * `order-document.page.ts` follows the same pattern.
      */
     public async ngOnChanges(changes: SimpleChanges): Promise<void> {
         if (changes['OriginOrderID'] && !changes['OriginOrderID'].firstChange) {
@@ -461,7 +498,17 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        const orders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
+        for (const o of orders) {
+            if (o && typeof o === 'object' && !('PickerLabel' in o)) {
+                Object.defineProperty(o, 'PickerLabel', {
+                    get: () => ReturnOrderPickerLabel(o),
+                    enumerable: false,
+                    configurable: true,
+                });
+            }
+        }
+        this.PickerOrders = orders;
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -502,6 +549,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         this.Notice = discarding
             ? 'Quantities from the previous order were cleared — they belong to its lines, not this one.'
             : null;
+        this.BookedReturn = null;
         this.Error = null;
         this.selectedOriginID = orderID;
         this.PickerOpen = false;
@@ -617,6 +665,14 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         return out;
     }
 
+    /**
+     * Every line of the loaded order has already come back in full (#835). The confirm button is
+     * disabled then, and without saying why the page read as broken.
+     */
+    public get NothingLeftToReturn(): boolean {
+        return this.Lines.length > 0 && this.Lines.every((line) => this.remaining(line) === 0);
+    }
+
     /** What may still come back — prior returns count against it. */
     public remaining(line: MJOReturnLine): number {
         return Math.max(0, line.Bought - line.AlreadyReturned);
@@ -679,12 +735,22 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             // live after a success — and the second attempt exceeds the server's already-returned
             // cap and is refused, which before this PR went into an `Error` nobody rendered.
             this.Lines = this.Lines.map((l) => ({ ...l, AlreadyReturned: l.AlreadyReturned + l.Returning, Returning: 0 }));
+            this.BookedReturn = {
+                ID: draft.ID ?? null,
+                OrderNumber: draft.OrderNumber?.trim() || 'new return order',
+            };
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
         } finally {
             this.Busy = false;
             this.cdr.detectChanges();
+        }
+    }
+
+    public OpenBookedReturn(): void {
+        if (this.BookedReturn?.ID) {
+            this.OrderOpened.emit({ ID: this.BookedReturn.ID });
         }
     }
 

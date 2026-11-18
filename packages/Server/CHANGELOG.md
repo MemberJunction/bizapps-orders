@@ -1,5 +1,232 @@
 # @mj-biz-apps/orders-server
 
+## 5.50.2
+
+### Patch Changes
+
+- Updated dependencies [543e594]
+  - @mj-biz-apps/orders-entities@5.50.2
+  - @mj-biz-apps/orders-actions@5.50.2
+  - @mj-biz-apps/orders-core-entities-server@5.50.2
+
+## 5.50.1
+
+### Patch Changes
+
+- Updated dependencies [c8eedb2]
+  - @mj-biz-apps/orders-entities@5.50.1
+  - @mj-biz-apps/orders-core-entities-server@5.50.1
+  - @mj-biz-apps/orders-actions@5.50.1
+
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+### Patch Changes
+
+- Updated dependencies [f950cc2]
+  - @mj-biz-apps/orders-entities@5.50.0
+  - @mj-biz-apps/orders-core-entities-server@5.50.0
+  - @mj-biz-apps/orders-actions@5.50.0
+
+## 5.49.0
+
+### Minor Changes
+
+- d5579c3: A Subscriptions tab with a Renewals page. Every subscription whose coverage ends inside a chosen window (30 days to 12 months ahead, plus terms that ended in the last 30 days without renewing), soonest first, with the customer, account, company, product, start and end dates, status, the auto-renew switch, the order that bought the current term and its price, and the renewal: the renewal order where one exists (number, date, status, price, booked or still a draft), otherwise the price a renewal would be placed at and the day the nightly pass will place it. Tick rows and create their renewal orders: the page previews through the renewal pass, shows what will be placed and skipped, and asks whether to leave the orders as drafts (the default) or confirmed and invoiced at once. It warns when a sibling from the same original order was left out.
+
+  "Change product" corrects the product on the ticked subscriptions through the new `Orders.ChangeSubscriptionProduct` (the subscription is what the customer has now; booked orders and deals keep what was sold; a different subscription type is refused unless the dialog's "also move" is ticked). The next renewal carries the corrected product at the current price plus increase. A subscription with a renewal order pending is refused, naming the order, since confirming that order would move the subscription back onto its line's product; the dialog says so before the save.
+
+  `Orders.SpawnRenewals` now places ONE renewal order per customer per renewal date: subscriptions with the same selling company, holder and beneficiary, expiring term end, placement and renewal card go on one order with a line each (`RenewalGroupKey`), inside one transaction; a group whose order fails is retried one member at a time, so one subscription that cannot be booked holds back only itself. A product added mid-term joins only when co-terminated; a line carrying promotion codes renews alone. `MaxCount` and `Placed` count orders; each candidate reports its `OrderGroup`. The scheduled pass produces fewer, combined orders for customers who bought several products together. Company and Product dropdowns (`mjo-multi-select`, new) narrow the list to what is in the window, with counts; the increase sits under every renewal price (projected, or actual against the current price once placed); and Export downloads the rows shown as Excel or CSV in one click through MJ's export service. Every row can be ticked: "Create renewal orders" acts on the ticked rows that can renew, "Auto-renew" turns the switch on or off for all of them, and "Update increase %" sets `RenewalIncreasePercent`, both through the new `Orders.SetRenewalSettings`, which writes subscriptions only and never an order (the dialog warns when a chosen subscription has a renewal draft pending, which keeps its price). A term with auto-renew off that has already ended shows as "Ended" (new `RenewalWorklistState`), not "Will end". The side panel shows each subscription's own rate or what it inherits, with the same dialog for one. Dates on the page are MM/DD/YYYY (`FormatDate` gains a `Numeric` option).
+
+  A new subscription with no rate of its own takes the negotiated annual increase from the contract behind its birth order (`SubscriptionEntityServer` on create, through order line → order → deal → contract; `ContractIncrease.ts`). The lookup is optional: nothing happens on a host without the Sales and Contracts apps, and a failed lookup is logged and never blocks a confirm.
+
+  New read-only operation `Orders.GetRenewalWorklist`. `Orders.SpawnRenewals` takes `SubscriptionIDs` (place renewals for the subscriptions a person chose, whatever the lead window or the switch say, with every ineligible choice reported) and `PlaceAs` (`Confirmed` or `Draft`); its pricing moved to a shared `RenewalPricer` so the page's projection and the pass's order are one figure. The scheduled pass itself is unchanged. The subscription register moved from the Receivables rail to the new tab, and `mjo-worklist-table` gained row ticking (`Selectable`, `SelectedKeys`, `SelectionChanged`).
+
+  The Orders application's `DefaultNavItems` gain the Subscriptions tab (`metadata/applications/.orders-application.json`); like every metadata change this reaches a host through the release's metadata sync migration, not through this package alone.
+
+### Patch Changes
+
+- Updated dependencies [b3089be]
+- Updated dependencies [d5579c3]
+  - @mj-biz-apps/orders-entities@5.49.0
+  - @mj-biz-apps/orders-core-entities-server@5.49.0
+  - @mj-biz-apps/orders-actions@5.49.0
+
+## 5.48.0
+
+### Patch Changes
+
+- Updated dependencies [c2060b4]
+- Updated dependencies [f6c0da6]
+  - @mj-biz-apps/orders-entities@5.48.0
+  - @mj-biz-apps/orders-actions@5.48.0
+  - @mj-biz-apps/orders-core-entities-server@5.48.0
+
+## 5.47.1
+
+### Patch Changes
+
+- Updated dependencies [d790722]
+  - @mj-biz-apps/orders-entities@5.47.1
+  - @mj-biz-apps/orders-actions@5.47.1
+  - @mj-biz-apps/orders-core-entities-server@5.47.1
+
+## 5.47.0
+
+### Patch Changes
+
+- Updated dependencies [c0ea095]
+  - @mj-biz-apps/orders-entities@5.47.0
+  - @mj-biz-apps/orders-core-entities-server@5.47.0
+  - @mj-biz-apps/orders-actions@5.47.0
+
+## 5.46.0
+
+### Patch Changes
+
+- Updated dependencies [6426e7b]
+- Updated dependencies [bde9dcc]
+  - @mj-biz-apps/orders-core-entities-server@5.46.0
+  - @mj-biz-apps/orders-entities@5.46.0
+  - @mj-biz-apps/orders-actions@5.46.0
+
+## 5.45.0
+
+### Patch Changes
+
+- Updated dependencies [90b45a9]
+- Updated dependencies [38ecc01]
+  - @mj-biz-apps/orders-core-entities-server@5.45.0
+  - @mj-biz-apps/orders-entities@5.45.0
+  - @mj-biz-apps/orders-actions@5.45.0
+
+## 5.44.0
+
+### Minor Changes
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+- de11edd: Progress attestation follows finance's books-closed-through date instead of posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` reads the line's company's `AccountingCompanyProfile.BooksClosedThroughDate` once per call and refuses a measurement date on or before it, on preview and post and on a supersede, with the message "This month has already been closed by finance. Please contact them to proceed." If that date cannot be read, the attestation is refused; a line with no company, no profile or no date has nothing closed. A supersede's reversal is dated on the replaced observation's own date, or on the first open day when finance has closed that month, and the message says why it moved. The replacement's catch-up always posts on the date entered, so `CatchUpDate` equals `MeasurementDate` whenever there is a catch-up. The supersede no longer reads journal entry batches. The attestation screen's supersede text matches. It needs accounting 0.24.0, the first release with `BooksClosedThroughDate` and the shared closed-books rule, so the accounting peer ranges and the `mj-app.json` dependency now start at 0.24.0.
+
+### Patch Changes
+
+- Updated dependencies [3f9d524]
+- Updated dependencies [4480151]
+- Updated dependencies [a4dba56]
+- Updated dependencies [5c9cdd5]
+- Updated dependencies [a48a6e2]
+- Updated dependencies [a17a7bf]
+- Updated dependencies [fbf3ad4]
+- Updated dependencies [d2a22a0]
+- Updated dependencies [7b693a7]
+- Updated dependencies [cc62ad9]
+- Updated dependencies [de11edd]
+  - @mj-biz-apps/orders-entities@5.44.0
+  - @mj-biz-apps/orders-core-entities-server@5.44.0
+  - @mj-biz-apps/orders-actions@5.44.0
+
+## 5.43.0
+
+### Patch Changes
+
+- Updated dependencies [d45e6ae]
+- Updated dependencies [534b368]
+  - @mj-biz-apps/orders-entities@5.43.0
+  - @mj-biz-apps/orders-actions@5.43.0
+  - @mj-biz-apps/orders-core-entities-server@5.43.0
+
+## 5.42.0
+
+### Patch Changes
+
+- Updated dependencies [5529725]
+- Updated dependencies [72787da]
+  - @mj-biz-apps/orders-entities@5.42.0
+  - @mj-biz-apps/orders-core-entities-server@5.42.0
+  - @mj-biz-apps/orders-actions@5.42.0
+
+## 5.41.0
+
+### Patch Changes
+
+- Updated dependencies [0caaeb0]
+- Updated dependencies [0045f58]
+  - @mj-biz-apps/orders-entities@5.41.0
+  - @mj-biz-apps/orders-core-entities-server@5.41.0
+  - @mj-biz-apps/orders-actions@5.41.0
+
+## 5.40.0
+
+### Minor Changes
+
+- 78b298a: The order form now lists, under "Before this can be confirmed", each concession that still needs approval before confirm will go through: a concession awaiting a decision, or a line priced or discounted below catalog with no approved concession behind it. Confirm stays off until the list is empty. Before, Confirm looked available and the server then refused it. The list comes from a new read-only remote operation, `Orders.ConfirmReadiness`, which runs the same check confirm runs.
+- ce26b74: Orders now hears what a gateway that bills a subscription did, and books it (option E, E3 + E4 + E6).
+
+  - **The sync.** `SyncProviderSubscription` reads the gateway subscription and its invoices since the latest term
+    began, plans with the pure `PlanProviderSubscriptionSync`, and brings Orders in line, reporting every difference.
+    Events only trigger a re-read; the gateway's records are the truth.
+  - **Renewals booked (E4).** A renewal the gateway charged becomes a confirmed renewal order on the subscription's own
+    product at what was charged, its payment captured keyed by the gateway charge (only for a period Orders has not
+    booked: an imported subscriber's current year is never booked again; a taxed renewal goes to a person), `PaymentSucceeded` and
+    `RenewalOrderSpawned` events, and the next term; any refund the gateway already made is booked after the capture.
+    Only this order may renew a gateway-billed subscription (`SanctionGatewayRenewal`); a cancelled one is reactivated,
+    keeping its gateway id, with a Task for support. A $0 renewal is booked at the last price, 100% off.
+  - **A gateway refund of a renewal (D20)** is a money-only credit order applied to the renewal (`Orders.ApplyAccountCredit`),
+    so the renewal owes nothing, full refund or partial; access is unchanged; a Task per credit. The refund door and a
+    cancel decide under one subscription lock and never credit one refund twice. **A cancel follows the same per-term
+    figure for every renewal the gateway charged and has refunded any of** (what it refunded less what Orders already
+    credited, applied to the renewal), on every path: a recorded gateway end, the term D19 skips, an `Immediate` cancel
+    and a backdated request alike; the type's refund rule no longer credits such a renewal on top of the gateway's refund.
+    A renewal the gateway refunded nothing of, and every term Orders billed, follow the type's rule as before. A $0
+    renewal (100% off) is never read as refunded in full.
+  - **Spending a return's credit.** An order's applied total may go below zero by the credit the order itself carries
+    (a return or cancellation), never by cash; `Orders.ApplyAccountCredit` now settles only the credit's own customer's
+    orders, only between CONFIRMED orders (a Draft, Quoted or Voided order holds no credit and owes nothing), and locks
+    both orders, so one credit is spent once. The Account Credit page lists the same (orders-ng: Credits Held and the
+    targets leave out Draft, Quoted and Voided orders).
+  - **End of term on a subscription the gateway still bills (D19)** ends with the latest booked term the gateway had
+    charged by the request day and has not refunded in full: a cancel on the renewal day keeps the paid year; a
+    request dated before the renewal (recorded later) and a fully refunded renewal keep the term covering the request,
+    the refunded term reversing what the gateway refunded. Terms ridden past are stamped Completed at their own end.
+  - **Failures and the end state.** Each failed attempt is a `PaymentFailed` event; no order until paid; access is kept
+    to the end of the gateway's next retry day (capped at 45 days past coverage). A portal cancel turns automatic renewal
+    off (and back on when withdrawn); a subscription the gateway ended is cancelled in Orders.
+  - **The webhook endpoint check** (at every server start, and the hourly job) now judges the subscription event kinds
+    too, so an endpoint that predates this release reports `Drift` with the ten kinds it does not send.
+  - **The webhook** routes the driver's subscription event kinds to the sync (500 on failure so the gateway redelivers);
+    a gateway subscription no Orders subscription records is classified (`not_ours`, `unknown_subscription` with one
+    Task); the third failed delivery for one subscription raises an urgent `GatewaySyncFailed` Task. The account's
+    `BillsSubscriptions` switch gates new hand-overs only; subscriptions the gateway already bills are always followed.
+  - **New actions:** `Orders.SyncProviderSubscriptions` (nightly job, ships Disabled and in Preview) and
+    `Orders.LinkProviderSubscription` (checked link of an existing subscription, then a sync: the account must be the
+    subscription's company's, the gateway subscription must not name another Orders subscription, an existing
+    provider is never overwritten, a customer e-mail that differs refuses and one that cannot be compared needs a person's `CustomerConfirmed`,
+    and an older price is linked with `AllowPriceOfAnotherProduct`).
+  - **Entity (orders-entities):** `Linking` now covers a NEW subscription created already carrying a gateway id (the
+    same write and the same guess as a saved one gaining it), so that too is refused from any form or API unless a
+    server door sanctioned it.
+  - **Driver:** `HandledSubscriptionEventKinds`, `ListProviderSubscriptionInvoices` and a richer
+    `DescribeProviderSubscription` (price, quantity, customer, e-mail, metadata, `EndedAt`); Stripe implements them.
+
+  No migration. Integration checks SR75–SR98-OT (subscription-renewal) and AC-OT1 (account-credit).
+
+### Patch Changes
+
+- Updated dependencies [fb48fbb]
+- Updated dependencies [78b298a]
+- Updated dependencies [135f01f]
+- Updated dependencies [1f58444]
+- Updated dependencies [ce26b74]
+- Updated dependencies [367a402]
+- Updated dependencies [8bc53d1]
+  - @mj-biz-apps/orders-entities@5.40.0
+  - @mj-biz-apps/orders-core-entities-server@5.40.0
+  - @mj-biz-apps/orders-actions@5.40.0
+
 ## 5.39.0
 
 ### Minor Changes
@@ -963,8 +1190,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                              "FK_EntityFieldValue_EntityField"
+                                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

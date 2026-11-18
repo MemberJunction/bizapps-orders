@@ -569,13 +569,19 @@ mjo-section-shell .mj-select:focus {
 
    The one base property worth keeping is the SIZE: MJ's `--mj-text-sm` is 14px, and a dense
    worklist reads better a step down. That is a deliberate deviation, so it is written as a token
-   rather than as 13px. */
-.mj-table { font-size: var(--mj-text-xs); }
+   rather than as 13px.
+
+   SCOPED TO THE ORDERS SECTIONS (#904). The shell loads this sheet with ViewEncapsulation.None, so
+   it stays in the document once any Orders section renders; unscoped, these rules restyled every
+   `.mj-table` in Explorer, MJ's and other apps' included. Every Orders `.mj-table` renders inside
+   `<mjo-section-shell>`. `:where()` adds the scope without adding specificity, so the
+   `.mj-table--compact` padding and the `.mj-doc table.mj-table` header still win as before. */
+:where(mjo-section-shell) .mj-table { font-size: var(--mj-text-xs); }
 
 /* Additive, not a restatement: MJ's header has no sticky behaviour, and a worklist that scrolls
    inside a card needs one — losing the column names on row 20 is what makes a long queue
    unreadable. */
-.mj-table thead th {
+:where(mjo-section-shell) .mj-table thead th {
   text-align: left; font-size: var(--mj-text-xs); font-weight: var(--mj-font-bold);
   letter-spacing: .06em; text-transform: uppercase; color: var(--mj-text-muted);
   padding: var(--mj-space-2) var(--mj-space-3);
@@ -583,10 +589,10 @@ mjo-section-shell .mj-select:focus {
   background: var(--mj-bg-surface); position: sticky; top: 0; z-index: 1;
   white-space: nowrap;
 }
-.mj-table thead th.num, .mj-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.mj-table thead th .sortable { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
-.mj-table thead th .sortable i { font-size: var(--mj-text-xs); opacity: .5; }
-.mj-table tbody td {
+:where(mjo-section-shell) .mj-table thead th.num, :where(mjo-section-shell) .mj-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+:where(mjo-section-shell) .mj-table thead th .sortable { cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+:where(mjo-section-shell) .mj-table thead th .sortable i { font-size: var(--mj-text-xs); opacity: .5; }
+:where(mjo-section-shell) .mj-table tbody td {
   padding: var(--mj-space-3); border-bottom: 1px solid var(--mj-border-subtle);
   vertical-align: middle;
 }
@@ -595,14 +601,14 @@ mjo-section-shell .mj-select:focus {
    EVERY table highlighted on hover — including read-only ones — which is a
    promise of interactivity the row cannot keep. A highlight is the same
    affordance as a lift: offer it only where a click does something. */
-.mj-table tbody tr.is-clickable:hover { background: var(--mj-bg-surface-hover); }
-.mj-table tbody tr.is-selected { background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent); }
-.mj-table tbody tr.is-clickable { cursor: pointer; }
-.mj-table tbody tr.is-total { background: var(--mj-bg-surface-card); font-weight: var(--mj-font-semibold); }
-.mj-table tbody tr.is-total td { border-bottom: none; border-top: 2px solid var(--mj-border-strong); }
-.mj-table .primary { font-weight: var(--mj-font-semibold); }
-.mj-table .secondary { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
-.mj-table-wrap {
+:where(mjo-section-shell) .mj-table tbody tr.is-clickable:hover { background: var(--mj-bg-surface-hover); }
+:where(mjo-section-shell) .mj-table tbody tr.is-selected { background: color-mix(in srgb, var(--mj-brand-primary) 8%, transparent); }
+:where(mjo-section-shell) .mj-table tbody tr.is-clickable { cursor: pointer; }
+:where(mjo-section-shell) .mj-table tbody tr.is-total { background: var(--mj-bg-surface-card); font-weight: var(--mj-font-semibold); }
+:where(mjo-section-shell) .mj-table tbody tr.is-total td { border-bottom: none; border-top: 2px solid var(--mj-border-strong); }
+:where(mjo-section-shell) .mj-table .primary { font-weight: var(--mj-font-semibold); }
+:where(mjo-section-shell) .mj-table .secondary { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
+:where(mjo-section-shell) .mj-table-wrap {
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
   border-radius: var(--mj-radius-md); overflow: auto;
 }

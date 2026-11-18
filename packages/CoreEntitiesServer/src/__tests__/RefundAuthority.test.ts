@@ -85,7 +85,7 @@ describe('RefundAuthorityRefusal', () => {
     });
 
     it('refuses a caller without the role at or below the threshold', () => {
-        expect(RefundAuthorityRefusal(facts({ CallerHoldsApproverRole: false }))).toMatch(/needs the 'Refund Approver' role/);
+        expect(RefundAuthorityRefusal(facts({ CallerHoldsApproverRole: false }))).toMatch(/issued by the Refund Approver role/);
     });
 
     it('refuses a role holder above the threshold', () => {
@@ -105,7 +105,7 @@ describe('RefundAuthorityRefusal', () => {
     });
 
     it('with no approver role configured, only the company approver may refund', () => {
-        expect(RefundAuthorityRefusal(facts({ ApproverRoleName: null }))).toMatch(/no refund approver role is configured/);
+        expect(RefundAuthorityRefusal(facts({ ApproverRoleName: null }))).toBe("You don't have permission to issue this refund. Only the receiving company's CFO approver can.");
         expect(RefundAuthorityRefusal(facts({ ApproverRoleName: null, CallerUserID: CFO }))).toBeNull();
     });
 
@@ -170,7 +170,7 @@ describe('CheckRefundAuthority', () => {
     });
 
     it('refuses someone without it', async () => {
-        await expect(CheckRefundAuthority(request, provider, user(CALLER))).resolves.toMatch(/needs the 'Refund Approver' role/);
+        await expect(CheckRefundAuthority(request, provider, user(CALLER))).resolves.toMatch(/issued by the Refund Approver role/);
     });
 
     it('reads the approver of the receiving company', async () => {
@@ -209,7 +209,7 @@ describe('CheckRefundAuthority', () => {
     it('does not let a deactivated approver refund as the approver', async () => {
         h.activeUsers = [CALLER, SYSTEM];
         await expect(CheckRefundAuthority({ ...request, RefundedTotalAfter: 9000 }, provider, user(CFO))).resolves.toMatch(/has no approver/);
-        await expect(CheckRefundAuthority(request, provider, user(CFO))).resolves.toMatch(/needs the 'Refund Approver' role/);
+        await expect(CheckRefundAuthority(request, provider, user(CFO))).resolves.toMatch(/issued by the Refund Approver role/);
     });
 
     it('reads no user when the company names no approver', async () => {

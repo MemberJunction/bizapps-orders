@@ -21,7 +21,7 @@
  *   CALLERS: packages/Server — the scheduled Action and the check at server start
  */
 import { LogError, LogStatus, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
-import type { GatewayWebhookEndpoint } from './BasePaymentProvider.js';
+import type { BasePaymentProvider, GatewayWebhookEndpoint } from './BasePaymentProvider.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import { RequireUUID } from './sql-guards.js';
 
@@ -99,6 +99,16 @@ export function CheckWebhookEndpointDrift(input: {
 }
 
 /**
+ * Every event kind a driver acts on: its payment kinds AND its subscription kinds (E3), de-duplicated.
+ * The two lists are kept apart on the driver because the handler routes them differently; the endpoint
+ * must send both, so the check judges the union. Checking only `HandledEventKinds` let an endpoint that
+ * predates E3 report OK while no `invoice.*` or `customer.subscription.*` event ever arrived (#989 review).
+ */
+export function WebhookKindsToCheck(driver: Pick<BasePaymentProvider, 'HandledEventKinds' | 'HandledSubscriptionEventKinds'>): string[] {
+    return [...new Set([...driver.HandledEventKinds, ...(driver.HandledSubscriptionEventKinds ?? [])])];
+}
+
+/**
  * Check every active, live, webhook-capable provider, or only `paymentProviderID` when given.
  * Logs an error for each result that is not OK or Skipped. Never throws for one provider's failure.
  */
@@ -141,7 +151,7 @@ export async function CheckPaymentWebhookEndpoints(
                 ...base,
                 ...CheckWebhookEndpointDrift({
                     PaymentProviderID: row.ID,
-                    HandledKinds: driver.HandledEventKinds,
+                    HandledKinds: WebhookKindsToCheck(driver),
                     Endpoints: listed.Endpoints ?? [],
                 }),
             });

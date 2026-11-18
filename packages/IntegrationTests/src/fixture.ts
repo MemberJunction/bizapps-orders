@@ -1056,14 +1056,24 @@ export function NewReviewMarker(now: Date = new Date()): string {
     return `${REVIEW_MARKER_PREFIX}${now.getTime().toString(36).toUpperCase()}`;
 }
 
-/** The order guards a purge of committed orders has to lift; both purges disable and re-enable them. */
+/**
+ * The order guards a purge of committed orders has to lift; both purges disable and re-enable them.
+ * review-purge.test.ts reads the guard triggers from the migrations and fails when one that refuses a
+ * DELETE these purges run is missing. trg_PaymentDetail_Immutable is not here: it fires on UPDATE
+ * only, and the one PaymentDetail column a purge updates, SourceCustomerPaymentMethodID, is not guarded.
+ */
 const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+    // A confirmed reversal's ReversesOrderHeaderID is cleared before the delete (a committed credit order, D20).
+    `${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
     `${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
     `${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
-    `${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
+    // A Posted progress observation refuses deletion (51030); a progress-measured line has some.
+    `${ORDERS_SCHEMA}.trg_OrderLineProgressMeasurement_Immutable ON ${ORDERS_SCHEMA}.OrderLineProgressMeasurement`,
     // An Invoiced instalment refuses deletion; a renewal paid through the link has one (#950).
     `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
+    // Billing rows refuse deletion; an issued instalment always leaves some.
+    `${ORDERS_SCHEMA}.trg_InstalmentLineBilling_Immutable ON ${ORDERS_SCHEMA}.InstalmentLineBilling`,
 ];
 
 /**
@@ -1164,7 +1174,7 @@ DELETE FROM ${O}.SubscriptionEvent
 DELETE FROM ${O}.ExternalPayment WHERE PaymentHeaderID IN (${ids('@payments')});
 DELETE FROM ${O}.PaymentLine WHERE OrderHeaderID IN (${ids('@orders')}) OR PaymentHeaderID IN (${ids('@payments')});
 UPDATE ${O}.OrderHeader SET InitialPaymentDetailID = NULL WHERE ID IN (${ids('@orders')});
-UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL WHERE ID IN (${ids('@payments')});
+UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL, ReversalSource = NULL WHERE ID IN (${ids('@payments')});
 DELETE FROM ${O}.PaymentHeader WHERE ID IN (${ids('@payments')});
 DELETE FROM ${O}.CustomerPaymentMethod WHERE PaymentDetailID IN (${ids('@details')});
 DELETE FROM ${O}.PaymentDetail WHERE ID IN (${ids('@details')});
@@ -1341,6 +1351,8 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         // so teardown had only ever been asked to delete rows that were not there, and it "worked"
         // by having nothing to do.
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
@@ -1474,6 +1486,8 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         // silently, and every check that proves a correction is refused would pass having proved
         // the opposite.
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,

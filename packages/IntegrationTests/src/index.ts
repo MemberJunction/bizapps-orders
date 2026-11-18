@@ -25,6 +25,7 @@
  *   payment-ledger             the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
  *   intercompany               cash on a multi-company order lands on the books of the company that owns each line
  *   events                     event products and one-time deferred revenue
+ *   orders-isa                 IS-A (Table-Per-Type) against the database: Event Products, Event Order Lines
  *   line-subscriber            per-line ship-to and BenefitModel dedupe scope (D61/D62)
  *   account-credit             the allocation invariant, over-payment, credit as tender (D68)
  *   pricing                    price resolution, the resolver walk, and the dry run (D69)
@@ -107,6 +108,7 @@ export * from './checks/payments-rollups.checks.js';
 export * from './checks/payment-ledger.checks.js';
 export * from './checks/intercompany.checks.js';
 export * from './checks/events.checks.js';
+export * from './checks/orders-isa.checks.js';
 export * from './checks/account-credit.checks.js';
 export * from './checks/pricing.checks.js';
 export * from './checks/promotions.checks.js';

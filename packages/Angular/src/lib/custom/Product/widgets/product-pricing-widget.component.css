@@ -129,12 +129,21 @@
 .mjo-channel-bar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.1));
     border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.1));
     padding: 0 12px;
     flex-wrap: wrap;
     gap: 8px;
+}
+
+.mjo-channel-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--mj-text-muted, #94a3b8);
+    padding-right: 4px;
 }
 
 .mjo-channel-list {
@@ -384,6 +393,11 @@
     gap: 6px;
 }
 
+.mjo-quick-add-hint {
+    font-size: 11.5px;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
 .mjo-field-group {
     display: flex;
     align-items: center;
@@ -410,11 +424,12 @@
 }
 
 .mjo-input-price {
-    width: 85px;
+    width: 110px;
     padding: 5px 8px;
     font-size: 12.5px;
     font-family: var(--mj-font-family-mono);
     font-weight: 700;
+    text-align: right;
     border-radius: 6px;
     border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.15));
     background: var(--mj-bg-surface, rgba(0, 0, 0, 0.2));
@@ -668,7 +683,7 @@
     position: fixed;
     inset: 0;
     background: rgba(2, 6, 23, 0.55);
-    z-index: 40;
+    z-index: 1000;
 }
 
 .mjo-quote-drawer {
@@ -676,11 +691,15 @@
     top: 0;
     right: 0;
     height: 100vh;
-    width: min(420px, 100vw);
+    width: min(440px, 100vw);
+    box-sizing: border-box;
+    overflow-y: auto;
     background: var(--mj-bg-page, #0f172a);
     border-left: 1px solid var(--mj-border-default, #334155);
-    z-index: 50;
-    padding: 20px 18px;
+    z-index: 1001;
+    padding: 28px 28px 32px;
+    font-size: 14px;
+    line-height: 1.5;
     box-shadow: -16px 0 40px rgba(0, 0, 0, 0.35);
 }
 
@@ -688,30 +707,83 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
 }
 
 .mjo-quote-drawer h3 {
     margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.mjo-quote-close {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    justify-content: center;
     font-size: 16px;
 }
 
 .mjo-quote-lede {
     color: var(--mj-text-muted, #94a3b8);
+    font-size: 14px;
+    margin: 0 0 24px;
+}
+
+.mjo-quote-form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 20px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.12));
+}
+
+.mjo-quote-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.mjo-quote-field--wide {
+    grid-column: 1 / -1;
+}
+
+.mjo-quote-field > span {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+.mjo-quote-field > small {
     font-size: 12.5px;
-    margin: 0 0 16px;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+.mjo-quote-field .mjo-input-select,
+.mjo-quote-field .mjo-input-num {
+    width: 100%;
+    box-sizing: border-box;
+    text-align: left;
+    font-size: 14px;
+    padding: 8px 10px;
+}
+
+.mjo-quote-result {
+    padding: 24px 0 8px;
 }
 
 .mjo-quote-amt {
-    font-size: 28px;
+    font-size: 34px;
     font-weight: 700;
     letter-spacing: -0.02em;
-    margin: 16px 0 6px;
+    margin: 0 0 6px;
 }
 
 .mjo-quote-why {
-    font-size: 13px;
+    font-size: 14px;
     color: var(--mj-text-muted, #94a3b8);
+    margin: 0;
 }
 
 .mjo-offer.inherited {
@@ -782,4 +854,239 @@
     padding-top: 4px;
     font-size: 13px;
     color: var(--mj-text-secondary, #cbd5e1);
+}
+
+/* ---- View switch (cards / revenue bands / grid) ---- */
+.mjo-view-switch {
+    display: inline-flex;
+    border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.12));
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.mjo-view-switch button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+    font-weight: 600;
+    background: transparent;
+    border: none;
+    border-right: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.12));
+    color: var(--mj-text-muted, #94a3b8);
+    cursor: pointer;
+}
+
+.mjo-view-switch button:last-child {
+    border-right: none;
+}
+
+.mjo-view-switch button:hover {
+    color: var(--mj-brand-primary, #0284c7);
+}
+
+.mjo-view-switch button.active {
+    background: var(--mj-brand-primary, #0284c7);
+    color: #fff;
+}
+
+/* ---- Price status (retired / ends) ---- */
+.mjo-offer-status {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    white-space: nowrap;
+    background: rgba(22, 163, 74, 0.12);
+    color: var(--mj-status-success-text, #86efac);
+}
+
+.mjo-offer-status.retired {
+    background: rgba(148, 163, 184, 0.18);
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+.mjo-offer.retired .mjo-offer-amt,
+.mjo-offer.retired .mjo-offer-name {
+    opacity: 0.6;
+    text-decoration: line-through;
+}
+
+.mjo-offer-lifecycle {
+    align-items: flex-end;
+    border-top: 1px dashed var(--mj-border-default, rgba(255, 255, 255, 0.1));
+    margin-top: 10px;
+}
+
+/* ---- Revenue band editor ---- */
+.mjo-bands {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 14px 16px 16px;
+}
+
+.mjo-bands-lede {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+.mjo-band-table-wrap {
+    overflow-x: auto;
+}
+
+.mjo-band-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.mjo-band-table th {
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted, #94a3b8);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.12));
+}
+
+.mjo-band-table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.08));
+    vertical-align: middle;
+}
+
+.mjo-band-table th.num,
+.mjo-band-table td.num {
+    text-align: right;
+    font-family: var(--mj-font-family-mono);
+}
+
+.mjo-band-table tr.retired td {
+    opacity: 0.6;
+}
+
+.mjo-band-name {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mjo-band-title {
+    font-weight: 600;
+    color: var(--mj-text-primary, #0f172a);
+}
+
+.mjo-band-range {
+    font-size: 11.5px;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+.mjo-band-amount {
+    font-weight: 700;
+    color: var(--mj-brand-primary, #0284c7);
+}
+
+.mjo-band-actions {
+    white-space: nowrap;
+    text-align: right;
+}
+
+.mjo-band-actions .mjo-btn-subtle + .mjo-btn-subtle {
+    margin-left: 6px;
+}
+
+.mjo-btn-icon {
+    padding: 6px 8px;
+}
+
+.mjo-input-num--wide {
+    width: 90px;
+}
+
+.mjo-input-text--wide {
+    width: min(420px, 100%);
+}
+
+.mjo-field-group--grow {
+    flex: 1 1 320px;
+}
+
+.mjo-ladder-issues,
+.mjo-ladder-ok {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    padding: 8px 12px;
+    border-radius: 6px;
+}
+
+.mjo-ladder-issues {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #fbbf24;
+}
+
+.mjo-ladder-issue {
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: rgba(245, 158, 11, 0.18);
+}
+
+.mjo-ladder-ok {
+    background: rgba(22, 163, 74, 0.1);
+    border: 1px solid rgba(22, 163, 74, 0.25);
+    color: var(--mj-status-success-text, #86efac);
+}
+
+.mjo-band-setup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border: 1px dashed var(--mj-border-default, rgba(255, 255, 255, 0.15));
+    border-radius: 8px;
+}
+
+/* ---- When editor header ---- */
+.mjo-when-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.mjo-when-allfields {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--mj-text-muted, #94a3b8);
+    cursor: pointer;
+}
+
+/* ---- Quote drawer additions ---- */
+.mjo-quote-skipped-title {
+    margin-top: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+.mjo-quote-skipped {
+    margin: 8px 0 0;
+    padding-left: 18px;
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--mj-text-muted, #94a3b8);
 }

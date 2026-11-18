@@ -41,7 +41,7 @@
  *           · MJ: Record Changes · MJ_BizApps_Common: People · Order Concessions · Order Lines
  *           · the registered deal link
  */
-import { LogError, LogStatus, RunView } from '@memberjunction/core';
+import { LogError, LogErrorEx, LogStatus, RunView } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 // Imported for its side effect: it registers the tasks entities' generated subclasses.
 import '@mj-biz-apps/tasks-entities';
@@ -97,6 +97,7 @@ import { BusinessDay } from './PaymentGatedAccess.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const ROLE_ENTITY = 'MJ: Roles';
+const USER_ROLE_ENTITY = 'MJ: User Roles';
 const RECORD_CHANGE_ENTITY = 'MJ: Record Changes';
 const LOG_PREFIX = '[BizAppsOrders] Order review:';
 
@@ -247,6 +248,63 @@ export async function CheckOrderReviewAtConfirm(order: ReviewOrderInput, ctx: Ap
     }
 }
 
+/** Set once the missing deal link has been logged, so a host without sales warns once, not per confirm. */
+let warnedNoDealLink = false;
+
+/**
+ * Called by the save that confirms an order (golive #390). An order no deal created may be confirmed
+ * only by a holder of a role the `NoDealConfirmRoles` setting names; the orders review exempts stay
+ * exempt. Off while the setting is empty, and off (with one warning) on a host where nothing registered
+ * the order-to-deal link, since every order would then read as having no deal. Null lets it through.
+ */
+export async function CheckNoDealConfirm(order: ReviewOrderInput, ctx: ApprovalTaskContext): Promise<string | null> {
+    await OrdersSettings.Load(ctx.Provider, ctx.User);
+    const label = `Order ${order.OrderNumber ?? ''}`.trim();
+    let allowed: string[];
+    try {
+        allowed = OrdersSettings.NoDealConfirmRoles;
+    } catch (err) {
+        return `${label} was not confirmed: the Orders setting NoDealConfirmRoles could not be read. ${messageOf(err)}`;
+    }
+    if (allowed.length === 0) return null;
+    const link = HostOrderDealLink();
+    if (!link) {
+        if (!warnedNoDealLink) {
+            LogErrorEx({
+                message: `${LOG_PREFIX} the Orders setting NoDealConfirmRoles is set but no order-to-deal link is registered, so it is not applied.`,
+                severity: 'warning',
+            });
+        }
+        warnedNoDealLink = true;
+        return null;
+    }
+    if (OrderReviewExemption(scopeOf(order))) return null;
+    try {
+        if (await ResolveOrderDeal(link, order.OrderHeaderID, ctx.User)) return null;
+        const held = await heldRoleNames(ctx);
+        if (allowed.some((role) => held.has(role.toLowerCase()))) return null;
+    } catch (err) {
+        return `${label} was not confirmed: whether you may confirm an order with no deal could not be decided. ${messageOf(err)}`;
+    }
+    const names = allowed.length === 1 ? allowed[0] : `${allowed.slice(0, -1).join(', ')} or ${allowed[allowed.length - 1]}`;
+    return `${label} was not confirmed. Only ${names} can confirm an order that has no deal. Link it to a deal, or ask someone in one of those roles to confirm it.`;
+}
+
+/** The names of the roles the saving user holds, lower-cased, read fresh so a role just granted counts. */
+async function heldRoleNames(ctx: ApprovalTaskContext): Promise<Set<string>> {
+    const res = await RunView.FromMetadataProvider(ctx.Provider).RunView<{ Role: string }>(
+        { EntityName: USER_ROLE_ENTITY, ExtraFilter: `UserID = '${RequireUUID(ctx.User.ID, 'UserID')}'`, Fields: ['Role'], ResultType: 'simple', BypassCache: true },
+        ctx.User,
+    );
+    if (!res?.Success) throw new Error(`Your roles could not be read: ${res?.ErrorMessage ?? 'no result'}`);
+    return new Set((res.Results ?? []).map((r) => String(r.Role ?? '').trim().toLowerCase()));
+}
+
+/** Test hook: forget that the missing deal link was logged. */
+export function ResetNoDealLinkWarning(): void {
+    warnedNoDealLink = false;
+}
+
 // ─── Triggers ─────────────────────────────────────────────────────────────────────────────────────
 
 /** The confirm-time triggers the order hits, with what they read loaded. */
@@ -368,6 +426,42 @@ export async function LatestReviewTask(
 
 function isClosed(status: string): boolean {
     return status === 'Completed' || status === 'Cancelled';
+}
+
+/** The newest open review task linked to `orderHeaderID` that already has at least one Person assignee (#916). */
+async function openAssignedReviewTask(
+    orderHeaderID: string,
+    typeID: string,
+    ctx: ApprovalTaskContext,
+): Promise<{ Task: { ID: string; Name: string; Status: string }; AssigneePersonIDs: string[] } | null> {
+    if (!ctx.Provider.EntityByName(TASK_LINK_ENTITY)) return null;
+    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
+    const links = await view<{ TaskID: string }>(ctx, {
+        EntityName: TASK_LINK_ENTITY,
+        ExtraFilter: `EntityID = '${entityID(ORDER_HEADER_ENTITY, ctx)}' AND RecordID = '${orderID}'`,
+        Fields: ['TaskID'],
+        ResultType: 'simple',
+    });
+    if (links.length === 0) return null;
+    const tasks = await view<{ ID: string; Name: string; Status: string }>(ctx, {
+        EntityName: TASK_ENTITY,
+        ExtraFilter:
+            `ID IN (${RequireUUIDs(links.map((l) => l.TaskID), 'TaskID').map((id) => `'${id}'`).join(', ')}) ` +
+            `AND TypeID = '${RequireUUID(typeID, 'TypeID')}'`,
+        Fields: ['ID', 'Name', 'Status'],
+        OrderBy: '__mj_CreatedAt DESC',
+        ResultType: 'simple',
+    });
+    const open = tasks.filter((t) => !isClosed(t.Status));
+    if (open.length === 0) return null;
+    const assignees = await personAssignees(open.map((t) => t.ID), ctx);
+    for (const candidate of open) {
+        const assigned = assignees.get(candidate.ID.toLowerCase()) ?? [];
+        if (assigned.length > 0) {
+            return { Task: candidate, AssigneePersonIDs: assigned };
+        }
+    }
+    return null;
 }
 
 /** Each task's Person assignees, by lower-cased task ID. */
@@ -619,6 +713,29 @@ export async function RaiseOrderReview(
     }
     if (withoutPerson.length > 0) {
         LogStatus(`${LOG_PREFIX} ${withoutPerson.length} holder(s) of '${routed.Role}' have no active Person and were not assigned: ${withoutPerson.join(', ')}`);
+    }
+
+    const existing = await openAssignedReviewTask(order.OrderHeaderID, typeID, ctx);
+    if (existing) {
+        const personEntityID = entityID(PERSON_ENTITY, ctx);
+        const existingSet = new Set(existing.AssigneePersonIDs.map((id) => id.toLowerCase()));
+        for (const personID of personIDs) {
+            if (!existingSet.has(personID.toLowerCase())) {
+                await CreateTaskAssignment(existing.Task.ID, personEntityID, personID, ctx);
+            }
+        }
+        await RecordTaskActivity(
+            existing.Task.ID,
+            `Order review updated: ${reasons.join('; ')}.`,
+            ctx,
+        );
+        return {
+            TaskID: existing.Task.ID,
+            TaskName: existing.Task.Name,
+            Role: routed.Role,
+            Escalated: routed.Escalated,
+            AssigneeCount: new Set([...existingSet, ...personIDs.map((id) => id.toLowerCase())]).size,
+        };
     }
 
     const task = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASK_ENTITY, ctx.User);

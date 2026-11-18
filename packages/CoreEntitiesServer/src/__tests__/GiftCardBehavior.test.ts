@@ -17,6 +17,7 @@ import {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
     type GiftCardLineFacts,
     type GiftCardOrderFacts,
 } from '../GiftCardBehavior.js';
@@ -177,6 +178,32 @@ describe('PlanGiftCardIssuance — who the card is for (D27)', () => {
         expect(new Set(plan.Cards.map((c) => c.BeneficiaryPersonID))).toEqual(
             new Set(['recipient-person']),
         );
+    });
+});
+
+describe('GiftCardReturnRefusal (#830)', () => {
+    it('lets a return of an unspent card credit its price', () => {
+        expect(GiftCardReturnRefusal(-90, [90], -1, 'Order line 1')).toBeNull();
+    });
+
+    it('lets a discounted card return credit what was paid, which is below its balance', () => {
+        expect(GiftCardReturnRefusal(-90, [100], -1, 'Order line 1')).toBeNull();
+    });
+
+    it('refuses a partly spent card returned for its full price, and names what is left', () => {
+        const refusal = GiftCardReturnRefusal(-90, [30], -1, 'Order line 1');
+        expect(refusal).toMatch(/hold 30\.00 between them but credits 90\.00/);
+        expect(refusal).toMatch(/state the line's amount as 30\.00 or less/);
+    });
+
+    it('allows the same return stated at the remaining balance', () => {
+        expect(GiftCardReturnRefusal(-30, [30], -1, 'Order line 1')).toBeNull();
+    });
+
+    it('refuses a spent card, which is never voided, returned at all', () => {
+        const refusal = GiftCardReturnRefusal(-90, [], -1, 'Order line 2');
+        expect(refusal).toMatch(/1 of the returned cards is already spent or voided/);
+        expect(refusal).toMatch(/cannot be returned for a credit/);
     });
 });
 

@@ -504,7 +504,7 @@ async function q(pool, query) {
  *
  * The immutability triggers and the cross-app FKs deliberately refuse to let booked history be
  * deleted — which is exactly the behaviour we want in production, and exactly what makes a test
- * fixture hard to remove. So teardown disables the two orders triggers for the duration, unwinds
+ * fixture hard to remove. So teardown disables the orders immutability triggers for the duration, unwinds
  * in FK order, and re-enables them. Nothing here is a product code path.
  */
 async function teardown(pool, seed) {
@@ -512,6 +512,9 @@ async function teardown(pool, seed) {
     const orderScope = `SELECT ID FROM ${ORDERS}.OrderHeader WHERE CompanyID IN (${companies})`;
     const stmts = [
         `DISABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
+        // 51019 / 51020: a Confirmed header and its last schedule row refuse DELETE.
+        `DISABLE TRIGGER ${ORDERS}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS}.OrderHeader`,
+        `DISABLE TRIGGER ${ORDERS}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS}.OrderHeaderPaymentSchedule`,
         `DISABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
         `UPDATE ${ORDERS}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orderScope})`,
         `DELETE jel FROM ${ACCT}.JournalEntryLine jel JOIN ${ACCT}.JournalEntry je ON je.ID=jel.JournalEntryID WHERE je.CompanyID IN (${companies})`,
@@ -533,6 +536,8 @@ async function teardown(pool, seed) {
         `DELETE FROM ${ACCT}.AccountingCompanyProfile WHERE ID IN (${companies})`,
         `DELETE FROM __mj.Company WHERE ID IN (${companies})`,
         `ENABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
+        `ENABLE TRIGGER ${ORDERS}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS}.OrderHeader`,
+        `ENABLE TRIGGER ${ORDERS}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS}.OrderHeaderPaymentSchedule`,
         `ENABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
     ];
     for (const s of stmts) {

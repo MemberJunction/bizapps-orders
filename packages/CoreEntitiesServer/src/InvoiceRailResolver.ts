@@ -96,6 +96,9 @@ export async function FindInvoiceRailProviderID(companyID: string, provider: IMe
         },
         user,
     );
+    // Read as "no rail", a failure would let document sending add Orders' own invoice beside the
+    // rail's (#901). Throwing makes LoadExternallyInvoiced throw too, which stops the send.
+    if (!types.Success) throw new Error(`Could not read payment provider types for company ${companyID}: ${types.ErrorMessage}`);
     const typeIDs = (types.Results ?? []).map((t) => `'${RequireUUID(t.ID, 'PaymentProviderTypeID')}'`);
     if (!typeIDs.length) return null;
 
@@ -108,6 +111,7 @@ export async function FindInvoiceRailProviderID(companyID: string, provider: IMe
         },
         user,
     );
+    if (!rows.Success) throw new Error(`Could not read the payment providers of company ${companyID}: ${rows.ErrorMessage}`);
     const found = rows.Results ?? [];
     if (!found.length) return null;
     if (found.length > 1) {

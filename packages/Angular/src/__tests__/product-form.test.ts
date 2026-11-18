@@ -11,7 +11,7 @@ import {
     ShouldConfirmEventRevRec,
 } from '../lib/custom/Product/product-save-guard-form.component';
 import { OrdersEngine } from '@mj-biz-apps/orders-entities';
-import { LoadProductLookupNames } from '../lib/panels/product-lookup-names';
+import { LoadProductLookupNames, ProductLookupNamesTracker } from '../lib/panels/product-lookup-names';
 import { BizAppsProductPricingWidgetComponent } from '../lib/custom/Product/widgets/product-pricing-widget.component';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
 import '../public-api';
@@ -266,6 +266,8 @@ describe('Product lookup names (walkthrough Pin 28)', () => {
                 Type: 'Event',
                 Category: 'Conferences',
                 RevRec: 'All Back End (On Completion)',
+                RevRecID: 'rr-allbackend',
+                RevRecFromType: false,
                 Successor: '—',
             });
         } finally {
@@ -303,7 +305,7 @@ describe('Product header follows lookup edits (bc-aidp-next-golive#277)', () => 
         try {
             const panel = Object.create(ProductHeaderPanel.prototype) as ProductHeaderPanel;
             const record = { ProductTypeID: null, ProductCategoryID: null, RevenueRecognitionTypeID: null, SuccessorProductID: null };
-            Object.assign(panel, { Record: record, Lookups: { Type: '—', Category: '—', RevRec: '—', Successor: '—' } });
+            Object.assign(panel, { Record: record, lookups: new ProductLookupNamesTracker() });
             await panel.ngOnInit();
             expect(panel.RevRec).toBe('—');
 

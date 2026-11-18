@@ -3,7 +3,7 @@
  */
 import '@angular/compiler';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
+import { IsPerPersonCheckoutField, MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
 
 // Setup window polyfill for Node.js test runner
 if (typeof globalThis.window === 'undefined') {
@@ -142,6 +142,53 @@ describe('MJCheckoutWidgetComponent', () => {
         });
     });
 
+    describe('notice banner (#819)', () => {
+        it('shows a notice only while no error shows', () => {
+            component.noticeMessage = 'The total is 107.50, including 7.50 sales tax. Review it and press Pay again.';
+            expect(component.displayNoticeMessage()).toContain('107.50');
+            component.errorMessage = 'Your card was declined.';
+            expect(component.displayNoticeMessage()).toBeNull();
+            expect(component.displayErrorMessage()).toBe('Your card was declined.');
+        });
+    });
+
+    describe('copy primary info to all (#780)', () => {
+        it('leaves per-person custom fields alone and copies shared detail', () => {
+            component.config = {
+                isEvent: true,
+                extensionFields: [
+                    { name: 'attendeeEmail', label: 'Attendee email', type: 'text' },
+                    { name: 'badgeName', label: 'Badge name', type: 'text' },
+                    { name: 'studentId', label: 'Student ID', type: 'text' },
+                    { name: 'dietaryPreferences', label: 'Dietary needs', type: 'text' },
+                    { name: 'seatSection', label: 'Seat section', type: 'text', perPerson: true },
+                ],
+            } as CheckoutWidgetConfig;
+            component.onQuantityChange(2);
+            for (const [field, value] of Object.entries({
+                attendeeEmail: 'a@example.com', badgeName: 'Al', studentId: 'S1', dietaryPreferences: 'Vegan', seatSection: 'B',
+            })) {
+                component.updateUnitField(0, field, value);
+            }
+
+            component.copyPrimaryToAll();
+
+            const second = component.units()[1];
+            expect(second['dietaryPreferences']).toBe('Vegan');
+            expect(second['attendeeEmail']).toBe('');
+            expect(second['badgeName']).toBe('');
+            expect(second['studentId']).toBe('');
+            expect(second['seatSection']).toBe('');
+        });
+
+        it('lets a field definition override the name rule', () => {
+            expect(IsPerPersonCheckoutField('companyName', [{ name: 'companyName', perPerson: false }])).toBe(false);
+            expect(IsPerPersonCheckoutField('companyName', [])).toBe(true);
+            expect(IsPerPersonCheckoutField('company', [])).toBe(false);
+            expect(IsPerPersonCheckoutField('FirstName', [])).toBe(true);
+        });
+    });
+
     describe('custom JS lifecycle hooks and validation', () => {
         it('executes onValidate hook and blocks submission if hook returns false or error message', () => {
             window.MJCheckoutHooks = {
@@ -160,6 +207,37 @@ describe('MJCheckoutWidgetComponent', () => {
 
             expect(emitSpy).not.toHaveBeenCalled();
             expect(component.displayErrorMessage()).toBe('Domain @competitor.com is not allowed.');
+        });
+
+        it('keeps each widget’s customUI.js hooks to that widget, and drops them on destroy (#779)', () => {
+            const first = new MJCheckoutWidgetComponent();
+            first.config = { unitPrice: 0, customJS: 'window.MJCheckoutHooks = { onValidate: () => "first" };' } as CheckoutWidgetConfig;
+            first.ngOnInit();
+            const second = new MJCheckoutWidgetComponent();
+            second.config = { unitPrice: 0, customJS: 'widgetContext.hooks.onValidate = () => "second";' } as CheckoutWidgetConfig;
+            second.ngOnInit();
+
+            // A legacy page-wide assignment is moved to its widget; the page-wide object is untouched.
+            expect(window.MJCheckoutHooks).toBeUndefined();
+            expect(first.executeLifecycleHook('onValidate', {})).toBe('first');
+            expect(second.executeLifecycleHook('onValidate', {})).toBe('second');
+
+            first.ngOnDestroy();
+            expect(first.executeLifecycleHook('onValidate', {})).toBeUndefined();
+            expect(second.executeLifecycleHook('onValidate', {})).toBe('second');
+        });
+
+        it('falls back to the host page’s own hooks and leaves them in place', () => {
+            const hostHook = vi.fn().mockReturnValue('host');
+            window.MJCheckoutHooks = { onValidate: hostHook };
+            const widget = new MJCheckoutWidgetComponent();
+            widget.config = { unitPrice: 0, customJS: 'window.MJCheckoutHooks.onQuantityChange = () => "mine";' } as CheckoutWidgetConfig;
+            widget.ngOnInit();
+
+            expect(window.MJCheckoutHooks).toEqual({ onValidate: hostHook });
+            expect(widget.executeLifecycleHook('onValidate', {})).toBe('host');
+            expect(widget.executeLifecycleHook('onQuantityChange', {})).toBe('mine');
+            expect(new MJCheckoutWidgetComponent().executeLifecycleHook('onQuantityChange', {})).toBeUndefined();
         });
 
         it('executes onBeforeSubmit hook to enrich payload before emission', () => {

@@ -12,6 +12,7 @@ import {
     SendNowDetail,
     SendQueuedNote,
     type SendJobState,
+    OrdersPollExternalPaymentsOperation,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
@@ -74,7 +75,8 @@ const SECTION_KEY = 'externalInvoices';
  * registers the button next to Confirm order, so it sits where the eye already goes; the panel keeps
  * the rows, the warning that blocks a send, and the acts on one selected invoice. The button shows on
  * every order the rail applies to and is greyed out, with the reason as its tooltip, until the order
- * is confirmed and saved.
+ * is confirmed and saved. It is not shown at all on an order with nothing left to bill — paid in full
+ * or free — because invoicing one is never the next step (bc-aidp-next-golive#457).
  *
  * IT HIDES ITSELF when no company on the order has an active rail, so the overwhelming majority of
  * orders — the ones invoiced natively — look exactly as they did before this feature existed.
@@ -174,6 +176,11 @@ const SECTION_KEY = 'externalInvoices';
                 }
 
                 <div class="row mjo-xi__actions">
+                    @if (CanCheckPayments) {
+                        <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="CheckPayments()">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Check for payments now
+                        </button>
+                    }
                     @if (Cancellable) {
                         <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="Cancel()">
                             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel in {{ ProviderName }}
@@ -321,11 +328,11 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      * A voided order is never invoiced, so it gets no button rather than one that waits forever.
      */
     public get SendShown(): boolean {
-        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule, this.Record?.Balance);
     }
 
     public get Sendable(): boolean {
-        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule, this.Record?.Balance);
     }
 
     /** What the scheduled send will do with an order nothing has sent yet; empty when the job could not be read. */
@@ -348,6 +355,15 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /** A send that was never confirmed, which only a person with the rail open can resolve. */
     public get Resolvable(): boolean {
         return CanResolveInFlight(this.Selected, this.Visible);
+    }
+
+    /** Whether this order has a Sent invoice on the rail and an open balance waiting on payment. */
+    public get CanCheckPayments(): boolean {
+        return (
+            this.Visible &&
+            Number(this.Record?.Balance ?? 0) > 0 &&
+            this.Rows.some((r) => r.Status === 'Sent')
+        );
     }
 
     /** Selecting a different row drops a half-typed reference: it was meant for the row it was typed against. */
@@ -510,16 +526,52 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         try {
             const result = await new OrdersCancelExternalInvoiceOperation().Execute({
                 ExternalInvoiceID: row.ID,
-                Reason: `Cancelled from the order form for ${this.Record.OrderNumber}.`,
+                Reason: `Canceled from the order form for ${this.Record.OrderNumber}.`,
             });
             const out = result.Output;
             if (!result.Success || !out?.Success) {
-                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be cancelled.' };
+                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be canceled.' };
                 return;
             }
-            this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was cancelled.' };
+            this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was canceled.' };
             this.Selected = null;
             await this.load();
+        } finally {
+            this.Busy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Poll the rail for payments now, so a payment just made in the rail shows on the order without switching screens. */
+    public async CheckPayments(): Promise<void> {
+        if (this.Busy || !this.CanCheckPayments) return;
+        // The poll is not scoped to this order, so it asks first, as the invoicing queue does.
+        if (!(await this.confirm.Confirm({
+            title: 'Check the rail for payments now?',
+            message: 'This reads every payment the rail reported since the last poll, for all orders on it, not only this one, and records each cleared one as cash against its order.',
+            detail: 'The scheduled poll would do this on its own at its next run.',
+            type: 'warning',
+            confirmText: 'Check and record',
+            cancelText: 'Not yet',
+        }))) return;
+        this.Busy = true;
+        this.Notice = null;
+        this.cdr.detectChanges();
+        try {
+            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: false });
+            const out = result.Output;
+            if (!result.Success || !out) {
+                this.Notice = { Tone: 'error', Text: result.ErrorMessage?.trim() || 'The payment check could not run.' };
+                return;
+            }
+            this.Notice = {
+                Tone: out.Success ? 'success' : 'warning',
+                Text: out.Message ?? `${out.Captured} payment(s) recorded.`,
+            };
+            await this.load();
+            if (typeof (this.FormComponent as { RefreshRecord?: () => Promise<boolean> } | null)?.RefreshRecord === 'function') {
+                await (this.FormComponent as unknown as { RefreshRecord(): Promise<boolean> }).RefreshRecord();
+            }
         } finally {
             this.Busy = false;
             this.cdr.detectChanges();

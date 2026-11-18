@@ -203,7 +203,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             const existing = await rv.RunView<{ ID: string }>(
                 {
                     EntityName: PAYMENT_HEADER_ENTITY,
-                    ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                    ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                     ResultType: 'simple',
                 },
                 user,
@@ -359,7 +359,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 const again = await rv.RunView<{ ID: string }>(
                     {
                         EntityName: PAYMENT_HEADER_ENTITY,
-                        ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                        ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                         ResultType: 'simple',
                     },
                     user,

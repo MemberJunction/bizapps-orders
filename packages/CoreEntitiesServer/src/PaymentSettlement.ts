@@ -48,6 +48,7 @@ import {
     mjBizAppsOrdersPaymentHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { DecideSettlement, type SettlementAction } from './PaymentProviderBehavior.js';
+import { RequireUUID } from './sql-guards.js';
 import type { WebhookEvent } from './BasePaymentProvider.js';
 import {
     BuildUnapplyLines,
@@ -90,7 +91,11 @@ export async function SettlePaymentForEvent(
     user: UserInfo,
 ): Promise<SettlementOutcome> {
     const payment = await loadPaymentForIntent(provider, user, paymentIntentID);
-    const alreadyReversed = payment ? await hasReversal(provider, user, payment.ID) : false;
+    // A SELLER REFUND IS NOT A RETURN (#828). Only an earlier bank return settles a returned debit; a
+    // partial refund leaves the rest of the cash in the ledger, and that remainder is what the bank's
+    // return takes back. A payment refunded in full has nothing left to return.
+    const returnPlan = payment ? PlanBankReturn(payment.Amount, await loadReversals(provider, user, payment.ID)) : null;
+    const alreadyReversed = returnPlan ? returnPlan.AlreadyReturned || returnPlan.ReturnAmount <= 0 : false;
 
     // WHETHER THIS PAYMENT PUT CASH IN THE LEDGER IS A QUESTION ABOUT ITS ALLOCATIONS, NOT ITS HEADER.
     //
@@ -134,7 +139,7 @@ export async function SettlePaymentForEvent(
             return base;
 
         case 'Reverse': {
-            const reversalID = await reverse(provider, user, payment!, event);
+            const reversalID = await reverse(provider, user, payment!, returnPlan!.ReturnAmount, event);
             LogStatus(
                 `Payment ${payment!.PaymentNumber} was returned by the bank and has been reversed ` +
                     `from event ${event.EventID}.`,
@@ -222,20 +227,56 @@ async function hasBookedAllocations(
     return (result?.Results?.length ?? 0) > 0;
 }
 
-/** True when a reversing payment already points at this one. */
-async function hasReversal(provider: IMetadataProvider, user: UserInfo, paymentID: string): Promise<boolean> {
+/** A reversing payment already written against the one being settled. */
+export interface ExistingReversal {
+    Amount: number;
+    ReversalSource: string | null;
+}
+
+export interface BankReturnPlan {
+    /** True when a bank return is already recorded, so this event changes nothing. */
+    AlreadyReturned: boolean;
+    /** What the return takes back: the captured amount less what seller refunds already gave back. */
+    ReturnAmount: number;
+}
+
+/**
+ * What a bank return of this payment reverses, given the reversals already written against it (#828).
+ *
+ * Only a `BankReturn` reversal means the return is already booked. A `Refund` is the seller giving
+ * part of the money back; the bank's return then takes back what is left, so a 1,200 debit refunded
+ * 400 is returned for 800. Counting the refund as "already reversed" left the 800 in the ledger and
+ * payment-gated access standing on cash the bank had taken back.
+ */
+export function PlanBankReturn(capturedAmount: number, reversals: ExistingReversal[]): BankReturnPlan {
+    const money = (v: number): number => Math.round((v + Number.EPSILON * Math.sign(v)) * 100) / 100;
+    const alreadyReturned = reversals.some((r) => r.ReversalSource === 'BankReturn');
+    const refunded = reversals
+        .filter((r) => r.ReversalSource !== 'BankReturn')
+        .reduce((sum, r) => sum + Math.abs(Number(r.Amount ?? 0)), 0);
+    const returnAmount = Math.max(0, money(Math.abs(Number(capturedAmount ?? 0)) - refunded));
+    return { AlreadyReturned: alreadyReturned, ReturnAmount: returnAmount };
+}
+
+/** The reversing payments already pointing at this one. */
+async function loadReversals(provider: IMetadataProvider, user: UserInfo, paymentID: string): Promise<ExistingReversal[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const result = await rv.RunView<{ ID: string }>(
+    const result = await rv.RunView<ExistingReversal>(
         {
             EntityName: PAYMENT_HEADER_ENTITY,
-            ExtraFilter: `ReversesPaymentHeaderID='${paymentID}' AND Status='Refunded'`,
-            Fields: ['ID'],
+            ExtraFilter: `ReversesPaymentHeaderID='${RequireUUID(paymentID, 'PaymentHeaderID')}' AND Status='Refunded'`,
+            Fields: ['Amount', 'ReversalSource'],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
-    return (result?.Results?.length ?? 0) > 0;
+    if (!result?.Success) {
+        // Guessing "no reversals" here would return the full amount on top of a refund; throw so the
+        // gateway redelivers.
+        throw new Error(`Could not read the reversals of payment ${paymentID}: ${result?.ErrorMessage ?? 'no result'}`);
+    }
+    return result.Results ?? [];
 }
 
 // ─── Writes ────────────────────────────────────────────────────────────────────────────────────
@@ -307,16 +348,17 @@ async function markFailed(
 /**
  * Captured → reversed by a new payment, because the bank took the money back.
  *
- * THE FULL AMOUNT, ALWAYS. A return is not a partial refund — the bank does not return part of a
- * debit — so the reversal mirrors what was booked rather than anything on the event. Reading the
- * amount off the event would be worse than useless here: a `charge.failed` payload reports the
- * charge's amount, which is the same number when all is well and a silent under-reversal when it is
- * not.
+ * WHAT WAS BOOKED AND NOT ALREADY REFUNDED. The bank does not return part of a debit, so the reversal
+ * mirrors what is still in the ledger ({@link PlanBankReturn}) rather than anything on the event.
+ * Reading the amount off the event would be worse than useless here: a `charge.failed` payload
+ * reports the charge's amount, which is the same number when all is well and a silent under-reversal
+ * when it is not. A seller refund already written is subtracted, since its cash is already out (#828).
  */
 async function reverse(
     provider: IMetadataProvider,
     user: UserInfo,
     payment: SettlingPayment,
+    returnAmount: number,
     event: WebhookEvent,
 ): Promise<string> {
     const applications = await LoadAppliedAllocations(provider, user, payment.ID);
@@ -327,7 +369,7 @@ async function reverse(
         );
     }
 
-    const amount = Math.round(Math.abs(Number(payment.Amount ?? 0)) * 100) / 100;
+    const amount = returnAmount;
     const reason = event.FailureReason
         ? `Bank debit returned: ${event.FailureReason}`
         : 'Bank debit returned by the customer’s bank';

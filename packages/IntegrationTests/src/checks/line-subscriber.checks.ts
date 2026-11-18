@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS19).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS20).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -33,6 +33,8 @@
  *   LS18 a subscription sold to start in the future counts as held: the deal line's lookup and the
  *        close's unanswered-line check both find it (golive #339)
  *   LS19 a paused subscription counts as held; a canceled one does not
+ *   LS20 a product that inherits its subscription type from its product type is a subscription to
+ *        the close's unanswered-line check, as it is at confirm (golive #339)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -890,6 +892,51 @@ LineSubscriberChecks.push({
       await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET Status = 'Canceled' WHERE ID = '${sub.ID}'`);
       const canceled = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
       Assert(!canceled || !SameID(canceled.SubscriptionID, sub.ID), "a canceled subscription is not held");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS20",
+  Name: "LS20: a product inheriting its subscription type is asked about at close",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+
+      // Move the product's subscription type onto its product type, as a catalog loaded outside the
+      // entity layer leaves it: the product names none and inherits the type's default.
+      const product = await TxOne<{ ProductTypeID: string; SubscriptionTypeID: string }>(
+        ctx,
+        `SELECT ProductTypeID, SubscriptionTypeID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.SubRolling}'`,
+      );
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Product SET SubscriptionTypeID = NULL WHERE ID = '${f.Products.SubRolling}'`);
+      await TxQuery(
+        ctx,
+        `UPDATE ${ORDERS_SCHEMA}.ProductType SET DefaultSubscriptionTypeID = '${product.SubscriptionTypeID}' WHERE ID = '${product.ProductTypeID}'`,
+      );
+
+      const rv = ctx.Provider as unknown as IRunViewProvider;
+      const order = {
+        ShipToOrganizationID: null,
+        ShipToPersonID: null,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: null,
+      };
+      const unanswered = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
+      AssertEqual(unanswered.length, 1, "the close finds the unanswered line for an inheriting product");
+      Assert(SameID(unanswered[0].Holding.SubscriptionID, sub.ID), `and names ${sub.SubscriptionNumber}`);
+
+      // With no default on the product type either, the product is a one-time sale and is not asked.
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.ProductType SET DefaultSubscriptionTypeID = NULL WHERE ID = '${product.ProductTypeID}'`);
+      const oneTime = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
+      AssertEqual(oneTime.length, 0, "a product with no subscription type anywhere is not asked");
     }),
 });
 

@@ -19,9 +19,11 @@ import { SubscriptionTermHeaderPanel } from './subscription-term-header.panel';
 import { SubscriptionTermRevRecPanel } from './subscription-term-revrec.panel';
 import { OrderAccessOverridesPanel } from './order-access-overrides.panel';
 import { ProductHeaderPanel } from './product-header.panel';
+import { MJOProductRevRecFieldComponent } from './product-rev-rec-field.component';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductDetailsPanel,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductSubscriptionsPanel,
@@ -77,10 +79,12 @@ const PANELS = [
     SubscriptionTermRevRecPanel,
     OrderAccessOverridesPanel,
     ProductHeaderPanel,
+    MJOProductRevRecFieldComponent,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductDetailsPanel,
     ProductSubscriptionsPanel,
     PriceListHeaderPanel,
     PriceListSimulatorPanel,

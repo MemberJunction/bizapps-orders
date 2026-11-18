@@ -113,6 +113,18 @@ describe('the fallback host page redirect (#295)', () => {
 });
 });
 
+describe('per-unit details on the fallback page (#876)', () => {
+    it('draws one set of fields per unit and sends them as the line’s unit payloads', () => {
+        const html = renderCheckoutHostPage({ slug: 'summit', apiRoot: '/checkout', cspNonce: 'n' });
+        expect(html).toContain("config.unitMode === 'perUnit' || config.isEvent === true");
+        expect(html).toContain("set.className = 'mj-co__unit'");
+        expect(html).toContain("qtyInput.addEventListener('input', renderUnits)");
+        expect(html).toContain('Fields: units[0] || {}, Units: units');
+        // The buyer's e-mail is read by id, since a unit can carry a field named email too.
+        expect(html).toContain("document.getElementById('mj-co-email')");
+    });
+});
+
 describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
     it('lets the Turnstile script and challenge frame load', () => {
         const csp = checkoutHostSecurityHeaders('n')['Content-Security-Policy'];

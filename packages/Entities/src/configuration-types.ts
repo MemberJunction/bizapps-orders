@@ -164,6 +164,11 @@ export interface CheckoutWidgetConfiguration {
         required?: boolean;
         placeholder?: string;
         options?: Array<string | { label: string; value: string | number }>;
+        /**
+         * True when the field identifies one attendee, so the widget's "Copy primary info to all"
+         * leaves it alone; false to copy it. Unset, the widget decides from the field name.
+         */
+        perPerson?: boolean;
     }>;
     /**
      * Questions the buyer answers before paying, such as "How did you hear about us?". Not

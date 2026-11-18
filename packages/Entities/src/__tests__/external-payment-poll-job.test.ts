@@ -6,7 +6,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     return { ...actual, RunView: class { RunView = mocks.runView; } };
 });
 
-import { ClassifyPollJob, ClassifyPollJobGroups, ClassifyPollJobs, ClassifyPollJobsFor, LoadPollJobState, PollJobProviderID } from '../external-payment-poll-job';
+import { ClassifyPollJob, ClassifyPollJobGroups, ClassifyPollJobs, ClassifyPollJobsFor, LoadPollJobState, PollJobProviderID, PollJobRecipients } from '../external-payment-poll-job';
 
 const PREVIEW = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13';
 const PROVIDER = 'B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B12';
@@ -101,5 +101,30 @@ describe('LoadPollJobState', () => {
     it('throws when the view fails, so no caller reads a failed read as "no job"', async () => {
         mocks.runView.mockResolvedValueOnce({ Success: false, ErrorMessage: 'denied' });
         await expect(LoadPollJobState()).rejects.toThrow(/denied/);
+    });
+});
+
+describe('PollJobRecipients', () => {
+    const U1 = 'aaaaaaaa-1111-4111-8111-111111111111';
+    const U2 = 'bbbbbbbb-1111-4111-8111-111111111111';
+    it("names each governing job's notify user, else its owner, once each", () => {
+        const jobs = [
+            { ...live, NotifyUserID: U1, OwnerUserID: U2 },
+            { ...previewing, NotifyUserID: null, OwnerUserID: U1.toLowerCase() },
+            { ...live, NotifyUserID: null, OwnerUserID: U2 },
+        ];
+        expect(PollJobRecipients(jobs, A)).toEqual([U1, U2]);
+    });
+    it("uses only the provider's own jobs when it has any", () => {
+        const jobs = [
+            { Status: 'Active', Configuration: config('false', A), NotifyUserID: U1 },
+            { ...live, NotifyUserID: U2 },
+        ];
+        expect(PollJobRecipients(jobs, A)).toEqual([U1]);
+        expect(PollJobRecipients(jobs, B)).toEqual([U2]);
+    });
+    it('is empty when no governing job names anybody', () => {
+        expect(PollJobRecipients([{ ...live, NotifyUserID: null, OwnerUserID: null }], A)).toEqual([]);
+        expect(PollJobRecipients([], A)).toEqual([]);
     });
 });

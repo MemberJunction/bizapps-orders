@@ -92,6 +92,26 @@ describe('CatalogOptionFrom', () => {
         expect(option.SubscriptionTypeID).toBe('subtype-annual');
     });
 
+    it("falls back to the product type's default subscription type, as confirm does (#903)", () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-6',
+                Name: 'Legacy Membership',
+                SKU: 'MEM-LEGACY',
+                ProductType: 'Membership',
+                ProductTypeID: 'type-membership',
+                Company: 'Meridian',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: null,
+            },
+            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-rolling' },
+            0,
+        );
+
+        expect(option.SubscriptionTypeID).toBe('subtype-rolling');
+    });
+
     it('shows no list price when the product has no base price row', () => {
         const option = CatalogOptionFrom(
             {
