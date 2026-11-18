@@ -277,7 +277,7 @@ describe('Group 05 — the guards are wired into Validate and Save', () => {
         for (const gate of ['passesOrderReviewOnChange', 'passesConcessionGate', 'passesNoDealConfirmGate', 'passesOrderReviewGate']) {
             define(gate, async () => true);
         }
-        for (const step of ['ApplySavePartyDefaults', 'loadPersistedRenewalMarks', 'resolveDueDate']) define(step, async () => undefined);
+        for (const step of ['ApplySavePartyDefaults', 'loadPersistedRenewalMarks', 'resolveDueDate', 'refuseUnansweredHeldLines']) define(step, async () => undefined);
         define('willBookOnThisSave', () => true);
         define('IsSaved', true);
         define('Lines', { IsLoaded: true });
