@@ -20,13 +20,13 @@ describe('reversing booked money', () => {
     });
 
     it('fails closed when the authorization is not installed', () => {
-        expect(ReversalRefusal('Refunding a payment', user, { Authorizations: [] })).toMatch(/is not installed/);
+        expect(ReversalRefusal('Refunding a payment', user, { Authorizations: [] })).toMatch(/^Refunding a payment isn't available yet because its permission hasn't been set up/);
     });
 
     it('refuses a user without the grant, naming the action and the Finance role', () => {
         held.value = false;
         const refusal = ReversalRefusal('Refunding a payment', user, installed);
-        expect(refusal).toMatch(/^Refunding a payment needs the MJ\.BizApps\.Orders\.Order\.Reverse authorization/);
+        expect(refusal).toMatch(/^Refunding a payment is limited to the Finance role/);
         expect(refusal).toMatch(/Finance role/);
     });
 

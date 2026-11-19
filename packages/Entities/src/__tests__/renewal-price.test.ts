@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     PriceRenewal,
+    PriorLineScaling,
     PriorTermShare,
     RenewalCrossesAnniversary,
     RenewalPriceStart,
@@ -290,12 +291,12 @@ describe('a line that bought several terms renews at one term of its price (goli
         expect(p.BasePrice).toBe(11000);
     });
 
-    it('an engine-priced multi-term line carries one term of price already, and renews at it', () => {
-        // The engine charged one 10,000 term for the 24 months, so cutting it would renew at 5,000.
-        const p = priced(24, 10000, { PriorPriceOverridden: false });
+    it('an engine-priced line longer than the term is cut to the term share too (golive #468)', () => {
+        // Converted lines carry the whole contract amount with PriceOverridden false.
+        const p = priced(24, 48000, { PriorPriceOverridden: false });
         expect(p.BaseSource).toBe('PriorPrice');
-        expect(p.BasePrice).toBe(10000);
-        expect(p.UnitPrice).toBe(10000);
+        expect(p.BasePrice).toBe(24000);
+        expect(p.UnitPrice).toBe(24000);
     });
 
     it('a typed one-term discount on a multi-term line lapses to list, as a scaled one does', () => {
@@ -322,5 +323,51 @@ describe('PriceRenewal reports the increase that is set, applied or not', () => 
     it('not applied: the price carries no increase, and the set rate is still reported', () => {
         const p = PriceRenewal({ ...base, ApplyIncrease: false });
         expect(p).toMatchObject({ IncreasePercent: 0, IncreaseSource: 'None', IncreaseSetPercent: 2, IncreaseSetSource: 'Subscription', IncreaseApplied: false, UnitPrice: 1000 });
+    });
+});
+
+describe('PriorLineScaling: a prior line against the renewal term (golive #468)', () => {
+    const renewal = (lineMonths: number, unitPrice: number) =>
+        PriceRenewal(
+            input({
+                PriorUnitPrice: unitPrice,
+                PriorDiscountPct: 0,
+                PriorPriceOverridden: false,
+                PriorListPrice: null,
+                PriorTermShare: PriorLineScaling(lineMonths, 12).Share,
+            }),
+        );
+
+    it('scales a 24-month converted line at 48,000 down to 24,000 for 12 months', () => {
+        const s = PriorLineScaling(24, 12);
+        expect(s).toEqual({ Share: 0.5, LineMonths: 24, TermMonths: 12, ScaledDown: true, ShorterThanTerm: false });
+        expect(renewal(24, 48000).UnitPrice).toBe(24000);
+    });
+
+    it('scales an 18-month line at 54,000 to 36,000 and a 14-month line at 9,180 to 7,868.57', () => {
+        expect(renewal(18, 54000).UnitPrice).toBe(36000);
+        expect(renewal(14, 9180).UnitPrice).toBe(7868.57);
+    });
+
+    it('does not scale a 3-month line up, and flags it for review', () => {
+        const s = PriorLineScaling(3, 12);
+        expect(s.Share).toBe(1);
+        expect(s.ScaledDown).toBe(false);
+        expect(s.ShorterThanTerm).toBe(true);
+        expect(renewal(3, 27300).UnitPrice).toBe(27300);
+    });
+
+    it('reads lengths within the tolerance as equal: neither scaled nor flagged', () => {
+        const s = PriorLineScaling(12.001, 12);
+        expect(s.Share).toBe(1);
+        expect(s.ScaledDown).toBe(false);
+        expect(s.ShorterThanTerm).toBe(false);
+        expect(PriorLineScaling(11.999, 12).ShorterThanTerm).toBe(false);
+    });
+
+    it('is share 1 with nothing flagged when a length is missing', () => {
+        expect(PriorLineScaling(null, 12)).toEqual({ Share: 1, LineMonths: null, TermMonths: 12, ScaledDown: false, ShorterThanTerm: false });
+        expect(PriorLineScaling(24, undefined).ShorterThanTerm).toBe(false);
+        expect(PriorLineScaling(0, 12).Share).toBe(1);
     });
 });

@@ -351,6 +351,29 @@
     width: 100%;
 }
 
+.mjo-ol-picker__company-only {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.mjo-search .mjo-ol-picker__company-only input {
+    width: auto;
+    margin: 0;
+    cursor: inherit;
+}
+
+.mjo-ol-picker__company-only.is-disabled {
+    color: var(--mj-text-muted);
+    cursor: not-allowed;
+}
+
 .mj-typeahead-list {
     display: none;
     position: absolute;

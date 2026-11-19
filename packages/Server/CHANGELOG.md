@@ -1,5 +1,26 @@
 # @mj-biz-apps/orders-server
 
+## 5.51.0
+
+### Patch Changes
+
+- 645dfa3: Checkout element: `capture-cookies` attribute, the embedding page URL and its referrer host, kept on the checkout session as `MetadataJSON.Tracking` for outbound consumers. The page URL keeps only its origin, path and tracking parameters (`utm_*` and ad click ids).
+- Updated dependencies [35d4f3c]
+- Updated dependencies [05d15e9]
+- Updated dependencies [645dfa3]
+- Updated dependencies [3caa683]
+- Updated dependencies [aacb117]
+- Updated dependencies [dab3dc1]
+- Updated dependencies [b416a08]
+- Updated dependencies [f93cf40]
+- Updated dependencies [546f9be]
+- Updated dependencies [5162834]
+- Updated dependencies [9a4efdd]
+- Updated dependencies [c5d9e02]
+  - @mj-biz-apps/orders-core-entities-server@5.51.0
+  - @mj-biz-apps/orders-entities@5.51.0
+  - @mj-biz-apps/orders-actions@5.51.0
+
 ## 5.50.2
 
 ### Patch Changes
@@ -1190,8 +1211,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                          "FK_EntityFieldValue_EntityField"
+                                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
