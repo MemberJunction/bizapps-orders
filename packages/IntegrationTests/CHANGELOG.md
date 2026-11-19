@@ -1,5 +1,29 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.51.0
+
+### Minor Changes
+
+- 3caa683: Confirm no longer moves a subscription line to the next term without anyone deciding it. A direct order is refused while a line for a product its subscriber already holds has not chosen between renewing that subscription and "Create new subscription" (checkout and provider-payment orders keep the subscription type's rule). When a line's stated start does move to the next term, confirm refuses the order if its payment schedule still falls due before that term starts, naming the line, both periods and the instalments, instead of invoicing them early. The order line card warns about those instalments as soon as the renew choice is made, testing every moved line against the gross of the lines on screen. `orders-entities` exports `FindInstalmentsBeforeMovedTerms`, `DescribeInstalmentsBeforeMovedTerm`, `ExplainInstalmentsBeforeMovedTerms` and `ExplainUnansweredHeldLines`.
+
+### Patch Changes
+
+- Updated dependencies [35d4f3c]
+- Updated dependencies [05d15e9]
+- Updated dependencies [645dfa3]
+- Updated dependencies [3caa683]
+- Updated dependencies [aacb117]
+- Updated dependencies [dab3dc1]
+- Updated dependencies [b416a08]
+- Updated dependencies [f93cf40]
+- Updated dependencies [546f9be]
+- Updated dependencies [5162834]
+- Updated dependencies [9a4efdd]
+- Updated dependencies [c5d9e02]
+  - @mj-biz-apps/orders-core-entities-server@5.51.0
+  - @mj-biz-apps/orders-entities@5.51.0
+  - @mj-biz-apps/orders-server@5.51.0
+
 ## 5.50.2
 
 ### Patch Changes
