@@ -11,6 +11,8 @@
 //      keeps a line's packages on its own MJ minor for consumers.
 //   2. dependencies / devDependencies on @memberjunction/* (root package.json included) are an
 //      exact version inside the line (X.Y.z, at or above the floor) or the line range itself.
+//      In 1, 2 and 4, a spec on a 0.x version is skipped: those scope packages (the Skyway
+//      migration engine, the connectors) are versioned on their own, not with MJ.
 //   3. Every @memberjunction/* version pnpm-lock.yaml resolves is inside the line, so nothing this
 //      repo builds or tests against has moved to a newer MJ (or an Edge prerelease). 0.x packages
 //      in the scope (the Skyway migration engine) are versioned on their own, not with MJ, and
@@ -54,6 +56,11 @@ export function CompareVersions(a, b) {
   return 0;
 }
 
+/** True when a spec names a 0.x version: a scope package versioned on its own, not with MJ. */
+export function OwnVersioned(spec) {
+  return /^0\./.test(/\d+\.\d+\.\d+/.exec(String(spec))?.[0] ?? '');
+}
+
 /** True when `version` is an exact release inside the line: same minor, at or above the floor. */
 export function InLine(version, line) {
   const v = SEMVER.exec(version);
@@ -88,6 +95,9 @@ export function CheckManifest(json, line, fix = false) {
         continue;
       }
       const value = String(spec).trim();
+      if (OwnVersioned(value)) {
+        continue;
+      }
       const ok = section === 'peerDependencies'
         ? value === range
         : value === range || InLine(value.replace(/^=/, ''), line);
@@ -118,7 +128,7 @@ export function CheckPackageOverrides(json, line, fix = false) {
   const problems = [];
   for (const [where, map] of [['pnpm.overrides', json.pnpm?.overrides], ['overrides', json.overrides]]) {
     for (const [name, spec] of Object.entries(map ?? {})) {
-      if (!name.startsWith(MJ_SCOPE) || typeof spec !== 'string' || overrideOk(spec.trim(), line)) {
+      if (!name.startsWith(MJ_SCOPE) || typeof spec !== 'string' || OwnVersioned(spec) || overrideOk(spec.trim(), line)) {
         continue;
       }
       problems.push(overrideProblem(where, name, spec.trim(), line));
@@ -144,7 +154,7 @@ export function CheckWorkspaceOverrides(text, line, fix = false) {
       continue;
     }
     const m = inOverrides ? WORKSPACE_OVERRIDE.exec(raw) : null;
-    if (!m || overrideOk(m[5].trim(), line)) {
+    if (!m || OwnVersioned(m[5]) || overrideOk(m[5].trim(), line)) {
       continue;
     }
     problems.push(overrideProblem('overrides', m[3], m[5].trim(), line));
