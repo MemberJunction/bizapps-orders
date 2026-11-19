@@ -115,6 +115,16 @@ test('MJ line pin: overrides in pnpm-workspace.yaml and package.json', () => {
   assert.equal(pkg.pnpm.overrides.lodash, '^4');
 });
 
+test('MJ line pin: 0.x scope packages are versioned on their own and skipped', () => {
+  const l = { key: '6.2', mjVersion: '6.2.1' };
+  const json = { dependencies: { '@memberjunction/connector-bill-com': '0.3.2' }, devDependencies: { '@memberjunction/skyway-core': '^0.7.1' }, peerDependencies: { '@memberjunction/core': '^6.2.1' } };
+  assert.equal(CheckManifest(json, l, true).length, 1, 'only the MJ peer');
+  assert.equal(json.dependencies['@memberjunction/connector-bill-com'], '0.3.2');
+  assert.equal(json.devDependencies['@memberjunction/skyway-core'], '^0.7.1');
+  assert.deepEqual(CheckPackageOverrides({ pnpm: { overrides: { '@memberjunction/skyway-core': '0.7.1' } } }, l), []);
+  assert.deepEqual(CheckWorkspaceOverrides("overrides:\n  '@memberjunction/skyway-core': '^0.7.1'\n", l).problems, []);
+});
+
 for (const script of ['check-line-migrations.mjs', 'check-backport.mjs', 'check-dependency-model.mjs']) {
   test(`${script} --self-test`, () => {
     const run = spawnSync(process.execPath, [join(HERE, '..', script), '--self-test'], { encoding: 'utf8' });
