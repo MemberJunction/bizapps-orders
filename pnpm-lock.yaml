@@ -304,7 +304,7 @@ importers:
         specifier: 0.24.0
         version: 0.24.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)(@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1))
       '@mj-biz-apps/accounting-entities':
-        specifier: '>=0.24.0'
+        specifier: '>=0.24.0 <1.0.0'
         version: 0.24.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)(@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1))
       '@mj-biz-apps/accounting-ng':
         specifier: 0.24.0
@@ -448,13 +448,13 @@ importers:
         version: link:../Server
     devDependencies:
       '@mj-biz-apps/accounting-engine-base':
-        specifier: '>=0.24.0'
+        specifier: '>=0.24.0 <1.0.0'
         version: 0.24.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)(@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1))
       '@mj-biz-apps/accounting-server':
-        specifier: '>=0.24.0'
+        specifier: '>=0.24.0 <1.0.0'
         version: 0.24.0(d434b1ba71366e7e63982ddcf2122e7f)
       '@mj-biz-apps/common-entities':
-        specifier: '>=5.56.0'
+        specifier: '>=5.56.0 <6.0.0'
         version: 5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)
       '@types/node':
         specifier: ^22.10.2
@@ -10743,6 +10743,23 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
+  '@hyperframes/core@0.8.134(@types/node@22.20.1)':
+    dependencies:
+      '@chenglou/pretext': 0.0.5
+      '@hyperframes/lint': 0.8.134
+      '@hyperframes/parsers': 0.8.134
+      '@hyperframes/studio-server': 0.8.134(@types/node@22.20.1)
+      bpm-detective: 2.0.5
+      linkedom: 0.18.15
+      postcss: 8.5.26
+      wawoff2: 2.0.1
+    optionalDependencies:
+      esbuild: 0.25.12
+    transitivePeerDependencies:
+      - '@types/node'
+      - canvas
+    optional: true
+
   '@hyperframes/core@0.8.134(@types/node@24.10.11)':
     dependencies:
       '@chenglou/pretext': 0.0.5
@@ -10760,10 +10777,63 @@ snapshots:
       - canvas
     optional: true
 
+  '@hyperframes/core@0.8.134(@types/node@25.9.5)':
+    dependencies:
+      '@chenglou/pretext': 0.0.5
+      '@hyperframes/lint': 0.8.134
+      '@hyperframes/parsers': 0.8.134
+      '@hyperframes/studio-server': 0.8.134(@types/node@25.9.5)
+      bpm-detective: 2.0.5
+      linkedom: 0.18.15
+      postcss: 8.5.26
+      wawoff2: 2.0.1
+    optionalDependencies:
+      esbuild: 0.25.12
+    transitivePeerDependencies:
+      - '@types/node'
+      - canvas
+    optional: true
+
+  '@hyperframes/engine@0.8.134(@types/node@22.20.1)':
+    dependencies:
+      '@hono/node-server': 2.1.0(hono@4.13.1)
+      '@hyperframes/core': 0.8.134(@types/node@22.20.1)
+      '@hyperframes/parsers': 0.8.134
+      hono: 4.13.1
+      linkedom: 0.18.15
+      puppeteer: 25.16.0
+      puppeteer-core: 25.16.0
+    transitivePeerDependencies:
+      - '@types/node'
+      - bufferutil
+      - canvas
+      - proxy-agent
+      - utf-8-validate
+      - yauzl
+    optional: true
+
   '@hyperframes/engine@0.8.134(@types/node@24.10.11)':
     dependencies:
       '@hono/node-server': 2.1.0(hono@4.13.1)
       '@hyperframes/core': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/parsers': 0.8.134
+      hono: 4.13.1
+      linkedom: 0.18.15
+      puppeteer: 25.16.0
+      puppeteer-core: 25.16.0
+    transitivePeerDependencies:
+      - '@types/node'
+      - bufferutil
+      - canvas
+      - proxy-agent
+      - utf-8-validate
+      - yauzl
+    optional: true
+
+  '@hyperframes/engine@0.8.134(@types/node@25.9.5)':
+    dependencies:
+      '@hono/node-server': 2.1.0(hono@4.13.1)
+      '@hyperframes/core': 0.8.134(@types/node@25.9.5)
       '@hyperframes/parsers': 0.8.134
       hono: 4.13.1
       linkedom: 0.18.15
@@ -10806,8 +10876,8 @@ snapshots:
   '@hyperframes/producer@0.8.134(@types/node@22.20.1)':
     dependencies:
       '@hono/node-server': 2.1.0(hono@4.13.1)
-      '@hyperframes/core': 0.8.134(@types/node@24.10.11)
-      '@hyperframes/engine': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/core': 0.8.134(@types/node@22.20.1)
+      '@hyperframes/engine': 0.8.134(@types/node@22.20.1)
       '@hyperframes/lint': 0.8.134
       '@hyperframes/parsers': 0.8.134
       '@hyperframes/studio-server': 0.8.134(@types/node@22.20.1)
@@ -10850,8 +10920,8 @@ snapshots:
   '@hyperframes/producer@0.8.134(@types/node@25.9.5)':
     dependencies:
       '@hono/node-server': 2.1.0(hono@4.13.1)
-      '@hyperframes/core': 0.8.134(@types/node@24.10.11)
-      '@hyperframes/engine': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/core': 0.8.134(@types/node@25.9.5)
+      '@hyperframes/engine': 0.8.134(@types/node@25.9.5)
       '@hyperframes/lint': 0.8.134
       '@hyperframes/parsers': 0.8.134
       '@hyperframes/studio-server': 0.8.134(@types/node@25.9.5)
@@ -10871,7 +10941,7 @@ snapshots:
 
   '@hyperframes/studio-server@0.8.134(@types/node@22.20.1)':
     dependencies:
-      '@hyperframes/core': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/core': 0.8.134(@types/node@22.20.1)
       '@hyperframes/parsers': 0.8.134
       hono: 4.13.1
       linkedom: 0.18.15
@@ -10899,7 +10969,7 @@ snapshots:
 
   '@hyperframes/studio-server@0.8.134(@types/node@25.9.5)':
     dependencies:
-      '@hyperframes/core': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/core': 0.8.134(@types/node@25.9.5)
       '@hyperframes/parsers': 0.8.134
       hono: 4.13.1
       linkedom: 0.18.15
@@ -27285,8 +27355,8 @@ snapshots:
 
   '@memberjunction/video-studio-render-worker@6.2.1(@types/node@22.20.1)':
     dependencies:
-      '@hyperframes/core': 0.8.134(@types/node@24.10.11)
-      '@hyperframes/engine': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/core': 0.8.134(@types/node@22.20.1)
+      '@hyperframes/engine': 0.8.134(@types/node@22.20.1)
       '@hyperframes/lint': 0.8.134
       '@hyperframes/parsers': 0.8.134
       '@hyperframes/producer': 0.8.134(@types/node@22.20.1)
@@ -27325,8 +27395,8 @@ snapshots:
 
   '@memberjunction/video-studio-render-worker@6.2.1(@types/node@25.9.5)':
     dependencies:
-      '@hyperframes/core': 0.8.134(@types/node@24.10.11)
-      '@hyperframes/engine': 0.8.134(@types/node@24.10.11)
+      '@hyperframes/core': 0.8.134(@types/node@25.9.5)
+      '@hyperframes/engine': 0.8.134(@types/node@25.9.5)
       '@hyperframes/lint': 0.8.134
       '@hyperframes/parsers': 0.8.134
       '@hyperframes/producer': 0.8.134(@types/node@25.9.5)

@@ -9,7 +9,7 @@ on:
   # and metadata/ as well as packages/, so a filtered push let a merge that touched only those
   # land on `next` without a post-merge run.
   push:
-    branches: [next]
+    branches: [next, 'lts/**']
   pull_request:
     # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened),
     # and the job below skips while the PR is a draft — without it, marking a PR ready
@@ -19,7 +19,7 @@ on:
     # `main`, and a workflow filtered out at the `on:` level creates no check run at all —
     # a required context would then sit Pending forever. The release PR is also the one
     # merge that most needs a build: it is what publishes to npm.
-    branches: [next, main]
+    branches: [next, main, 'lts/**']
 
 concurrency:
   group: build-${{ github.ref }}
