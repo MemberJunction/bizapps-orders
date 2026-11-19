@@ -18,6 +18,18 @@ import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@membe
 import { GetOrders } from '../../data/orders-queries';
 
 /**
+ * The order a credit is applied to unless someone picks another: the order a return's credit came
+ * from, when it still owes something, else the first unpaid order (golive #379).
+ */
+export function DefaultCreditTarget(
+    source: mjBizAppsOrdersOrderHeaderEntity,
+    targets: mjBizAppsOrdersOrderHeaderEntity[],
+): mjBizAppsOrdersOrderHeaderEntity | undefined {
+    const origin = source.ReversesOrderHeaderID?.toLowerCase();
+    return targets.find((t) => !!origin && t.ID.toLowerCase() === origin) ?? targets[0];
+}
+
+/**
  * `mjo-account-credit-page` — spend a credit a customer is holding.
  *
  * A CREDIT IS AN ORDER WITH A NEGATIVE BALANCE. There is no credit table, no
@@ -333,9 +345,10 @@ export class MJOAccountCreditPageComponent implements OnInit {
         // Only this customer's open orders can receive it — a credit belongs to
         // whoever earned it (the server refuses any other: SameCustomerRefusal).
         this.Targets = OwnCreditTargets(row, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(row) }));
-        this.TargetID = this.Targets[0]?.ID ?? null;
+        const target = DefaultCreditTarget(row, this.Targets);
+        this.TargetID = target?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
-        this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
+        this.Amount = Math.min(this.Available, target?.Balance ?? 0);
         this.cdr.detectChanges();
     }
 
@@ -401,8 +414,9 @@ export class MJOAccountCreditPageComponent implements OnInit {
         if (first) {
             this.SourceID = first.ID;
             this.Targets = targets;
-            this.TargetID = targets[0]?.ID ?? null;
-            this.Amount = Math.min(this.Available, targets[0]?.Balance ?? 0);
+            const target = DefaultCreditTarget(first, targets);
+            this.TargetID = target?.ID ?? null;
+            this.Amount = Math.min(this.Available, target?.Balance ?? 0);
         }
         this.cdr.detectChanges();
     }

@@ -28,8 +28,8 @@ import {
     type OrdersCancelExternalInvoiceOutput,
 } from '@mj-biz-apps/orders-entities';
 
-import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY, PAYMENT_LINE_ENTITY } from './entity-names.js';
-import { DecideCancel, money } from './ExternalInvoiceBehavior.js';
+import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY } from './entity-names.js';
+import { DecideCancel } from './ExternalInvoiceBehavior.js';
 import { ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { PaidOnBillingUnit, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
@@ -111,9 +111,16 @@ export function LoadCancelExternalInvoiceOperation(): void {
     void CancelExternalInvoiceOperation;
 }
 
-/** Sum of captured allocations against the unit: the instalment when named, else the whole order. */
+/**
+ * Sum of captured allocations against the unit: the instalment when named, else the whole order.
+ *
+ * LESS THE ORDER'S OWN RETURN CREDIT (golive #379). Confirming a return applies its credit to the
+ * order it reverses, as an `AccountCredit` payment; counted here, the return would itself make the
+ * origin's invoice uncancellable, at exactly the moment it should be withdrawn. No money reached the
+ * customer's invoice that way. Cash, and credit from any other order, still counts.
+ */
 export async function paidOnUnit(row: ExternalInvoiceRow, provider: IMetadataProvider, user: UserInfo): Promise<number> {
-    return PaidOnBillingUnit(String(row.OrderHeaderID), row.OrderHeaderPaymentScheduleID ? String(row.OrderHeaderPaymentScheduleID) : null, provider, user);
+    return PaidOnBillingUnit(String(row.OrderHeaderID), row.OrderHeaderPaymentScheduleID ? String(row.OrderHeaderPaymentScheduleID) : null, provider, user, true);
 }
 
 async function clearHeaderDocumentNumber(provider: IMetadataProvider, user: UserInfo, orderID: string, documentNumber: string): Promise<void> {

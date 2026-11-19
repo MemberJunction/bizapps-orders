@@ -1,0 +1,12 @@
+---
+"@mj-biz-apps/orders-core-entities-server": patch
+"@mj-biz-apps/orders-ng": patch
+---
+
+A full return now closes out the order it reverses (golive #379).
+
+- Confirming a return applies its credit to the original order, up to what that order still owes, through `Orders.ApplyAccountCredit`. A returned unpaid order and its return both end at a zero balance, and the original leaves the Bill.com send queue. A paid original gets nothing applied; the credit stays on the return for the refund. A reversal of lines from several orders settles each order only from the lines that reverse it. The credit is applied as the system user and past the finance gate on moving credit, so a person who may book a return needs no rights on payments and no `MJ.BizApps.Orders.Order.Reverse` authorization for it; spending the credit on any other order still needs both. The credit for a gateway refund of a renewal is left to the gateway-refund flow, which applies it itself.
+- When the whole order has come back, the return page offers to cancel each invoice the original still has open on Bill.com. `Orders.CancelExternalInvoice` no longer counts the original's own return credit as money paid, so the netting does not block that cancel.
+- A fully returned subscription line cancels its term, effective the return's date, and cancels the subscription once no other term keeps it open. A partial return leaves both alone.
+- A subscription line returned across several lines of one return, or by a prorated quantity, counts as fully returned.
+- Account credits default the target to the order a return reverses, when it is among that customer's unpaid orders.

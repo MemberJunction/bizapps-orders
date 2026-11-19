@@ -712,7 +712,9 @@ export const ContractReversalChecks: NamedCheck[] = [
                 const header = async () =>
                     TxOne<{ TotalGross: number; Balance: number }>(ctx, `SELECT TotalGross, Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`);
                 AssertEqual(Number((await header())!.TotalGross), 10800, 'the origin keeps its booked lines');
-                AssertEqual(Number((await header())!.Balance), 8640, 'and owes what its instalments bill: 10,800 less 2,160');
+                // The instalments now bill 8,640 (10,800 less 2,160), and the return's 360 memo is applied to
+                // the origin as the return confirms, so the origin owes 8,280 and the return holds nothing.
+                AssertEqual(Number((await header())!.Balance), 8280, 'and owes what its instalments bill, less the memo applied to it: 8,640 less 360');
                 const returnBalance = await TxOne<{ CreditMemoAmount: number; Balance: number }>(
                     ctx,
                     `SELECT ol.CreditMemoAmount, oh.Balance
@@ -720,7 +722,7 @@ export const ContractReversalChecks: NamedCheck[] = [
                       WHERE oh.ID='${back.Order.ID}'`,
                 );
                 AssertEqual(Number(returnBalance!.CreditMemoAmount), 360, 'the returning line records the memo it booked');
-                AssertEqual(Number(returnBalance!.Balance), -360, 'and the return owes back the memo, not the 4,320 its line is worth');
+                AssertEqual(Number(returnBalance!.Balance), 0, 'and the return holds no credit: its memo, not the 4,320 its line is worth, settled the origin');
 
                 const third = await issue(ctx, ids[2]);
                 Assert(third.Success, `instalment 3 must invoice against the lowered schedule: ${third.Message ?? ''}`);
