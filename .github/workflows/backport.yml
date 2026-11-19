@@ -1,0 +1,74 @@
+name: Backport merged pull request
+
+# Changes land on `next` first, then reach each release line by label (guides/RELEASE_LINES.md).
+# Put `backport lts/6.2` on a PR into `next`, before or after it merges; once it is merged, this
+# opens the cherry-pick PR against `lts/6.2`. A conflict becomes a draft PR that a person finishes
+# (and labels `backport-adjusted`, see `lines: on next first`). Same action and settings as MJ's
+# own backport workflow.
+#
+# Only PRs merged INTO `next` are backported: a line must never receive work that skipped `next`.
+#
+# Merge commits on the source branch are SKIPPED (merge_commits: skip): merging next into a
+# feature branch is routine, and with `fail` the action refuses the whole backport. So a change
+# that exists only in a merge commit's conflict resolution will NOT reach the line; keep real
+# payload in ordinary commits.
+#
+# The PR is opened with the App token, not GITHUB_TOKEN: a PR opened with GITHUB_TOKEN starts its
+# checks in `action_required`, so the line's required checks would never run without a click.
+
+on:
+  pull_request_target:
+    types: [closed, labeled]
+
+permissions:
+  contents: read
+
+jobs:
+  backport:
+    name: Open backport pull request
+    if: >-
+      github.repository_owner == 'MemberJunction'
+      && github.event.pull_request.merged == true
+      && github.event.pull_request.base.ref == 'next'
+      && contains(join(github.event.pull_request.labels.*.name, ','), 'backport lts/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      # pull_request_target checks out the BASE branch (`next`), never the PR's code, which is what
+      # makes running with a write token safe here. fetch-depth 0: the action cherry-picks by SHA.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+
+      - name: Create backport pull requests
+        id: backport
+        uses: korthout/backport-action@8560fb503c275d433c56f05a2f64850093baa9f7 # v4.7.0
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          # Only `backport lts/<MJ major>.<minor>`. Narrow on purpose: this job holds a write token,
+          # so a looser pattern would let any label push cherry-picks to any branch. A label for a
+          # line that does not exist fails `lines: backport or edge-only` on the source PR.
+          label_pattern: ^backport (lts\/[0-9]+\.[0-9]+)$
+          merge_commits: skip
+          pull_title: "[${target_branch}] ${pull_title}"
+          pull_description: |-
+            Backport of #${pull_number} to `${target_branch}`, opened automatically by the `backport ${target_branch}` label.
+
+            Every commit carries `(cherry picked from commit …)`, which `lines: on next first` checks against `next`. If you resolve a conflict with a commit of your own, add the `backport-adjusted` label. Line rules: an open line takes next's migrations in next's order; an LTS line takes code fixes and patch changesets only.
+
+      # The action reports failures as a PR comment but exits 0; without this a failed backport
+      # leaves a green run, and a fix everyone believes is on the line never arrives.
+      - name: Fail the run if any backport did not land
+        if: steps.backport.outputs.was_successful == 'false'
+        env:
+          BY_TARGET: ${{ steps.backport.outputs.was_successful_by_target }}
+        run: |
+          echo "::error::Backport failed for at least one target (${BY_TARGET}) — see the comment on the source PR. The label did NOT deliver this change to the line."
+          exit 1

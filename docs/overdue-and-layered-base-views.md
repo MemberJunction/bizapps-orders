@@ -36,14 +36,26 @@ is past due, which is the same as its earliest one being past due. For an order 
 `NextDueDate` is `DueDate`, so it reads as it always did.
 
 **Aging splits by instalment.** Overdue is a yes or no for the order; aging says how much of the
-balance is how late. The Customer A/R page and the Orders dashboard both age through
-`AddOrderToAgingBuckets` (`packages/Angular/src/lib/panels/aging-bar.component.ts`): each unpaid
-instalment lands in the bucket of its own due date, and whatever part of the order's balance no
-instalment accounts for ages on the header's `DueDate`. So one late instalment puts that instalment
-past due and leaves the rest in Current. The instalments are the ones `NextDueDate` counts, read by
-`GetOpenInstalments`. The dashboard's Overdue amount is the sum of the past-due buckets, not the
-whole balance of every overdue order, so it and the aging bar are the same money. Both screens sort
-and label by `NextDueDate` (`NextDueDayOf`), not the header date.
+balance is how late. The Orders dashboard ages through `AddOrderToAgingBuckets`
+(`packages/Angular/src/lib/panels/aging-bar.component.ts`): each unpaid instalment lands in the
+bucket of its own due date, and whatever part of the order's balance no instalment accounts for ages
+on the header's `DueDate`. So one late instalment puts that instalment past due and leaves the rest
+in Current. The instalments are the ones `NextDueDate` counts, read by `GetOpenInstalments`. The
+dashboard's Overdue amount is the sum of the past-due buckets, not the whole balance of every overdue
+order, so it and its aging bar are the same money. It sorts and labels by `NextDueDate`
+(`NextDueDayOf`), not the header date.
+
+**Customer A/R keeps invoiced and not-yet-invoiced apart** (bc-aidp-next-golive#481). An order billed
+in instalments carries its whole unpaid value in `Balance`, but only the instalments that have been
+issued are receivable. On that page a `Scheduled` instalment is a separate figure ("Scheduled, not yet
+invoiced") and is never aged, even when its date has passed: it has no invoice behind it, so it cannot
+be late. Receivable is the invoiced part, split into Current and the three past-due buckets. The
+derivation is `OpenItemsOf` and `BuildCustomers` in
+`packages/Angular/src/lib/pages/receivables/customer-ar-page.model.ts`, fed by
+`GetOpenInstalmentDetails`, which reads the same rows as `GetOpenInstalments` with their `Status`. The
+page's bucket boundaries still come from `AgingBucketOf`, so "current" means the same on both screens.
+The Orders dashboard and the overdue list have not made this split: they count a scheduled
+instalment's balance as owed and age it, so their past-due totals can be higher than Customer A/R's.
 
 **Today is the business day:** `bt.Today` from bizapps-common's `fnBusinessToday()`, the calendar day
 in the zone the business books in. `CAST(GETUTCDATE() AS date)` is already tomorrow for the whole
