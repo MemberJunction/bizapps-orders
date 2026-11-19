@@ -1,4 +1,6 @@
 ---
+"@mj-biz-apps/orders-ng": patch
+"@mj-biz-apps/orders-core-entities-server": patch
 "@mj-biz-apps/orders-server": patch
 ---
 
