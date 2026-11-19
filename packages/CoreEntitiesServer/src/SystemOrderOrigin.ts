@@ -12,8 +12,12 @@
  * carries one. A new order may still be saved as `Direct` (or with no Origin, which the column
  * defaults to `Direct`), since that claims no exemption.
  *
+ * A history import running in this process (loading orders a previous system raised) marks its orders
+ * `Migration` the same way, through the package export: such an order records an invoice already raised
+ * and collected elsewhere, so it is not reviewed.
+ *
  * CONNECTS TO:
- *   CALLERS: CheckoutSessionService · CreateOrderFromProviderPaymentOperation (mark)
+ *   CALLERS: CheckoutSessionService · CreateOrderFromProviderPaymentOperation · history imports (mark)
  *            OrderEntityServer.Save (check)
  *   RULES:   @mj-biz-apps/orders-entities order-review.ts (SYSTEM_ORDER_ORIGINS)
  */

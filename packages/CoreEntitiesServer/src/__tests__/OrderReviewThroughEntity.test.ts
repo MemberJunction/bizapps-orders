@@ -279,6 +279,8 @@ describe('OriginWriteRefusal', () => {
 
     it('refuses any other write unless a system process made it', () => {
         expect(OriginWriteRefusal({ ...facts, IsSaved: false, Origin: 'x', StoredOrigin: null })).toMatch(/cannot be created with Origin 'x'/);
+        expect(OriginWriteRefusal({ ...facts, IsSaved: false, Origin: 'Migration', StoredOrigin: null })).toMatch(/cannot be created with Origin 'Migration'/);
+        expect(OriginWriteRefusal({ ...facts, IsSaved: false, Origin: 'Migration', StoredOrigin: null, MarkedBySystem: true })).toBeNull();
         expect(OriginWriteRefusal({ ...facts, Origin: 'Widget' })).toMatch(/cannot be changed/);
         expect(OriginWriteRefusal({ ...facts, Origin: 'Direct', StoredOrigin: 'Widget' })).toMatch(/cannot be changed/);
         expect(OriginWriteRefusal({ ...facts, Origin: 'Widget', MarkedBySystem: true })).toBeNull();
