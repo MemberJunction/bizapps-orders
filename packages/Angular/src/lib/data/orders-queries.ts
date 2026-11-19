@@ -513,7 +513,8 @@ export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardO
 export type MJOOpenInstalmentRow = Pick<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, 'OrderHeaderID' | 'DueDate' | 'Balance'>;
 
 /**
- * Every unpaid instalment, for the aging screens (bc-aidp-next-golive#481).
+ * Every unpaid instalment, for the Orders dashboard's aging (bc-aidp-next-golive#481). Customer A/R
+ * reads the same rows with their invoice facts through {@link GetOpenInstalmentDetails}.
  *
  * The rows are the ones `vwOrderHeaders.NextDueDate` reads, from the same `UnpaidInstalmentClauses`
  * (`overdue.ts`): live rows that still owe something. A second definition here would let the aging
@@ -536,16 +537,130 @@ export async function GetOpenInstalments(user?: UserInfo): Promise<MJOOpenInstal
 }
 
 /**
- * Settled/confirmed orders with a non-zero balance (open receivables or customer credit balances)
- * for the Customer AR screen. Filters server-side instead of fetching every historical paid order.
+ * An uncapped `'simple'` read that THROWS when the read fails.
+ *
+ * `runRows` logs a failure and hands back an empty list, which is right for a tile that can show a
+ * dash. It is wrong for a page that totals what it is given: "the read failed" and "nobody owes
+ * anything" would render the same, and after a refresh the failed read would empty a page that was
+ * correct a moment ago. The Customer A/R page keeps what it has when this throws.
  */
-export async function GetOpenBalanceOrders(user?: UserInfo): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
-    return run<mjBizAppsOrdersOrderHeaderEntity>(
+async function requireRows<T>(entityName: string, filters: string[], orderBy: string, user: UserInfo | undefined, fields: string[]): Promise<T[]> {
+    const result = await new RunView().RunView<T>(
+        { EntityName: entityName, ExtraFilter: filters.filter(Boolean).join(' AND '), OrderBy: orderBy, IgnoreMaxRows: true, Fields: fields, ResultType: 'simple' },
+        user ?? currentUser(),
+    );
+    if (!result.Success) throw new Error(result.ErrorMessage || `"${entityName}" could not be read.`);
+    return result.Results ?? [];
+}
+
+/** The entity-object counterpart of {@link requireRows}: a capped read that throws when it fails. */
+async function requireEntities<T>(entityName: string, filters: string[], orderBy: string, maxRows: number, user: UserInfo | undefined): Promise<T[]> {
+    const result = await new RunView().RunView<T>(
+        { EntityName: entityName, ExtraFilter: filters.filter(Boolean).join(' AND '), OrderBy: orderBy, MaxRows: maxRows, ResultType: 'entity_object' },
+        user ?? currentUser(),
+    );
+    if (!result.Success) throw new Error(result.ErrorMessage || `"${entityName}" could not be read.`);
+    return result.Results ?? [];
+}
+
+/**
+ * The invoicing service each company sends its invoices through, by company id (lower case): the
+ * provider type's name, for example "Bill.com". A company with no active one is absent.
+ *
+ * For wording only ("this sends the invoice through …"). A failure returns an empty map: the order
+ * bills the same way whether or not the screen can name the service.
+ */
+export async function GetInvoiceServiceByCompany(user?: UserInfo): Promise<Map<string, string>> {
+    const services = new Map<string, string>();
+    try {
+        const codes = INVOICE_SERVICE_TYPE_CODES.map((code) => `'${code}'`).join(',');
+        const types = await runRows<{ ID: string; Name: string }>(PAYMENT_PROVIDER_TYPE_ENTITY, [`Code IN (${codes})`], 'Name', 0, user, ['ID', 'Name']);
+        const typeIDs = uuidList(types.map((t) => t.ID));
+        if (!typeIDs) return services;
+        const nameOf = new Map(types.map((t) => [String(t.ID).toLowerCase(), t.Name]));
+        const providers = await runRows<{ CompanyID: string; PaymentProviderTypeID: string }>(
+            MJO_ENTITIES.PaymentProvider,
+            ['IsActive = 1', `PaymentProviderTypeID IN (${typeIDs})`],
+            'Name',
+            0,
+            user,
+            ['CompanyID', 'PaymentProviderTypeID'],
+        );
+        for (const p of providers) {
+            const name = nameOf.get(String(p.PaymentProviderTypeID).toLowerCase());
+            if (name) services.set(String(p.CompanyID ?? '').toLowerCase(), name);
+        }
+    } catch {
+        /* wording only */
+    }
+    return services;
+}
+
+const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
+
+/** Provider type codes that send invoices to the customer. The Billing worklist keeps the same list. */
+const INVOICE_SERVICE_TYPE_CODES = ['BillCom'];
+
+/** An order with a balance, as the Customer A/R page reads it. */
+export type MJOReceivableOrderRow = Pick<
+    mjBizAppsOrdersOrderHeaderEntity,
+    | 'ID'
+    | 'OrderNumber'
+    | 'Status'
+    | 'OrderDate'
+    | 'DueDate'
+    | 'TotalGross'
+    | 'AmountPaid'
+    | 'Balance'
+    | 'CompanyID'
+    | 'Company'
+    | 'BillToOrganizationID'
+    | 'BillToOrganization'
+    | 'BillToPersonID'
+    | 'BillToPerson'
+>;
+
+/**
+ * Every live order with a non-zero balance, for the Customer A/R page: what is owed, and credit held.
+ *
+ * UNCAPPED. The read it replaces took 5,000 entity objects newest first, so past the cap it was the
+ * OLDEST orders that dropped out, which on an aging page are the ones that matter most, and nothing
+ * said so. This reads plain rows of the fourteen columns the page uses, and throws on failure (see
+ * `requireRows`).
+ */
+export async function GetReceivableOrders(user?: UserInfo): Promise<MJOReceivableOrderRow[]> {
+    return requireRows<MJOReceivableOrderRow>(
         MJO_ENTITIES.OrderHeader,
         [`Status NOT IN ('Draft','Quoted','Voided')`, `Balance <> 0`],
         'OrderDate DESC',
-        5000,
         user,
+        ['ID', 'OrderNumber', 'Status', 'OrderDate', 'DueDate', 'TotalGross', 'AmountPaid', 'Balance', 'CompanyID', 'Company', 'BillToOrganizationID', 'BillToOrganization', 'BillToPersonID', 'BillToPerson'],
+    );
+}
+
+/** An unpaid instalment with what the Customer A/R page shows of it: its number, invoice and state. */
+export type MJOOpenInstalmentDetailRow = Pick<
+    mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
+    'ID' | 'OrderHeaderID' | 'InstallmentNumber' | 'DueDate' | 'Amount' | 'AmountPaid' | 'Balance' | 'Status' | 'DocumentNumber' | 'InvoicedAt'
+>;
+
+/**
+ * Every unpaid instalment with its invoice facts, for the Customer A/R page (bc-aidp-next-golive#481).
+ *
+ * The same rows as {@link GetOpenInstalments}, from the same `UnpaidInstalmentClauses`, with the
+ * columns that say whether a row has been invoiced (`Status`, `DocumentNumber`, `InvoicedAt`). A
+ * `Scheduled` row has no invoice behind it, so the page lists it beside the receivable, not in it.
+ *
+ * Earliest due first and uncapped, for the reasons given on {@link GetOpenInstalments}. Throws on
+ * failure, like {@link GetReceivableOrders}.
+ */
+export async function GetOpenInstalmentDetails(user?: UserInfo): Promise<MJOOpenInstalmentDetailRow[]> {
+    return requireRows<MJOOpenInstalmentDetailRow>(
+        MJO_ENTITIES.OrderHeaderPaymentSchedule,
+        UnpaidInstalmentClauses(),
+        'DueDate, InstallmentNumber',
+        user,
+        ['ID', 'OrderHeaderID', 'InstallmentNumber', 'DueDate', 'Amount', 'AmountPaid', 'Balance', 'Status', 'DocumentNumber', 'InvoicedAt'],
     );
 }
 
@@ -1871,13 +1986,8 @@ export async function GetPaymentsForCustomer(
     } else {
         return [];
     }
-    return run<mjBizAppsOrdersPaymentHeaderEntity>(
-        MJO_ENTITIES.PaymentHeader,
-        filters,
-        'PaymentDate DESC',
-        50,
-        user,
-    );
+    // Throws on failure: "no payments" and "could not read the payments" must not look the same.
+    return requireEntities<mjBizAppsOrdersPaymentHeaderEntity>(MJO_ENTITIES.PaymentHeader, filters, 'PaymentDate DESC', 50, user);
 }
 
 /**
@@ -1977,13 +2087,8 @@ export async function GetSubscriptionsForCustomer(
         clauses.push(`BeneficiaryPersonID = '${customer.PersonID}'`);
     }
     if (!clauses.length) return [];
-    return run<mjBizAppsOrdersSubscriptionEntity>(
-        MJO_ENTITIES.Subscription,
-        [`(${clauses.join(' OR ')})`],
-        'EndDate DESC',
-        50,
-        user,
-    );
+    // Throws on failure, like GetPaymentsForCustomer.
+    return requireEntities<mjBizAppsOrdersSubscriptionEntity>(MJO_ENTITIES.Subscription, [`(${clauses.join(' OR ')})`], 'EndDate DESC', 50, user);
 }
 
 /**
