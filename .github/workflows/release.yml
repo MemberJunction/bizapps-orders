@@ -1,21 +1,25 @@
 # Merges the Version Packages PR — the one dispatch that turns a bump into a release.
 #
-# `version.yml` opens `changeset-release/main` -> `main` and stops there. Merging it IS the
-# release: the push to `main` runs `publish.yml`, which builds, publishes to npm and tags.
+# `version.yml` opens the release PR for a line and stops there: `changeset-release/main` -> `main`
+# for the newest line, `changeset-release/lts/X.Y` -> `lts/X.Y` for a line that releases from its
+# own branch. Merging it IS the release: the push runs `publish.yml`, which builds, publishes to
+# npm under the line's dist-tag and tags. Leave `line` empty to release the newest line; name an
+# older line (e.g. `6.1`) to release that one.
 # Until this workflow existed, that merge was a human click, and `protect-main` required an
 # approving review for it — so a release needed a second person even though the diff was
 # generated, reviewed by the `rr:` gates, and authored by the App rather than by anyone.
 #
-# Why a dispatch and not an auto-merge. `version.yml` runs on every push to `next`, so
-# auto-merging its PR on creation would make every merge into `next` publish. Releasing has
+# Why a dispatch and not an auto-merge. `version.yml` runs on every push to a line, so
+# auto-merging its PR on creation would make every backport publish. Releasing has
 # to stay a decision; this workflow is where that decision is recorded.
 #
-# Why this takes no inputs. The App is a `pull_request`-mode bypass actor on `protect-main`,
-# which is what lets this merge skip the review requirement. A `pr_number` input would point
-# that exemption at any PR a dispatcher chose, which would make "the App may merge without
-# review" mean "anyone with write may merge anything into main without review". The head
-# branch is therefore fixed to the one branch `changeset-release/main` that the changesets
-# action owns. The exemption is scoped by construction, not by trust.
+# Why the only input is a line, never a PR. The App is a `pull_request`-mode bypass actor on
+# `protect-main` (and `protect-lts`), which is what lets this merge skip the review requirement.
+# A `pr_number` input would point that exemption at any PR a dispatcher chose, which would make
+# "the App may merge without review" mean "anyone with write may merge anything without review".
+# The `line` input is checked against release-lines.json on `next` and only selects which of the
+# changesets action's own branches to merge (`changeset-release/main` or
+# `changeset-release/lts/X.Y`). The exemption is scoped by construction, not by trust.
 #
 # What the bypass does NOT cover. `publish.yml` argues against ruleset bypasses on the grounds
 # that a bypass is unconditional — that reasoning still holds, so the bypass here is as narrow
@@ -33,6 +37,11 @@ name: Cut the Release
 
 on:
   workflow_dispatch:
+    inputs:
+      line:
+        description: 'Leave empty to release the newest line (through main). Or an older line that releases from its own branch, e.g. 6.1.'
+        required: false
+        default: ''
 
 permissions:
   contents: read # the merge goes through the App token, not GITHUB_TOKEN
@@ -55,6 +64,41 @@ jobs:
       # every `gh` call in the job including any added later.
       GH_REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: next
+          sparse-checkout: |
+            .github/scripts
+            release-lines.json
+
+      # Which release PR to merge. Empty = the line released through main.
+      - name: Resolve the line
+        id: line
+        env:
+          LINE: ${{ github.event.inputs.line }}
+        run: |
+          set -euo pipefail
+          if [ -z "$LINE" ]; then
+            RECORD=$(node .github/scripts/release-lines.mjs main-line --file release-lines.json)
+          else
+            if ! [[ "$LINE" =~ ^[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::line must look like 6.1 (got '$LINE')."; exit 1
+            fi
+            RECORD=$(node .github/scripts/release-lines.mjs resolve "lts/$LINE" --file release-lines.json)
+          fi
+          if [ "$RECORD" = "{}" ]; then
+            echo "::error::No such line in release-lines.json on next ('${LINE:-the line released through main}')."; exit 1
+          fi
+          if [ "$(jq -r .releasesThrough <<< "$RECORD")" = "main" ]; then
+            [ -z "$LINE" ] || echo "::notice::$LINE releases through main."
+            BASE=main
+          else
+            BASE=$(jq -r .branch <<< "$RECORD")
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "head=changeset-release/$BASE" >> "$GITHUB_OUTPUT"
+          echo "Releasing line $(jq -r .key <<< "$RECORD"): changeset-release/$BASE -> $BASE"
+
       # The merge has to come from the App: it is the bypass actor on `protect-main`, and
       # GITHUB_TOKEN is not. A merge attempted with GITHUB_TOKEN fails the review requirement.
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -67,24 +111,26 @@ jobs:
         id: find
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          HEAD: ${{ steps.line.outputs.head }}
+          BASE: ${{ steps.line.outputs.base }}
         run: |
           set -euo pipefail
 
           # Exactly one, or refuse. Zero means there is nothing to release — either no changeset
           # has landed since the last release, or version.yml has not finished its run on the
-          # most recent push to `next`.
-          COUNT=$(gh pr list --head changeset-release/main --base main --state open \
+          # most recent push to the line.
+          COUNT=$(gh pr list --head "$HEAD" --base "$BASE" --state open \
                     --json number --jq 'length')
           if [ "$COUNT" = "0" ]; then
-            echo "::error::No open changeset-release/main -> main PR. Nothing to release: either no changeset has landed on next since the last release, or version.yml has not finished opening the PR for the latest push. Check the Version Packages workflow."
+            echo "::error::No open $HEAD -> $BASE PR. Nothing to release: either no changeset has landed on the line since its last release, or version.yml has not finished opening the PR for the latest push. Check the Version Packages workflow."
             exit 1
           fi
           if [ "$COUNT" != "1" ]; then
-            echo "::error::Found $COUNT open changeset-release/main -> main PRs, expected 1. Refusing to guess which one releases. Close the extras."
+            echo "::error::Found $COUNT open $HEAD -> $BASE PRs, expected 1. Refusing to guess which one releases. Close the extras."
             exit 1
           fi
 
-          NUMBER=$(gh pr list --head changeset-release/main --base main --state open \
+          NUMBER=$(gh pr list --head "$HEAD" --base "$BASE" --state open \
                      --json number --jq '.[0].number')
           HEAD_SHA=$(gh pr view "$NUMBER" --json headRefOid --jq .headRefOid)
           echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
@@ -130,6 +176,7 @@ jobs:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           NUMBER: ${{ steps.find.outputs.number }}
           HEAD_SHA: ${{ steps.find.outputs.head_sha }}
+          BASE: ${{ steps.line.outputs.base }}
         run: |
           set -euo pipefail
 
@@ -150,4 +197,4 @@ jobs:
           fi
 
           echo "## Release cut" >> "$GITHUB_STEP_SUMMARY"
-          echo "Merged #$NUMBER at \`$HEAD_SHA\`. The push to \`main\` is now running publish.yml, which builds, publishes to npm, tags, and opens the back-merge into \`next\`." >> "$GITHUB_STEP_SUMMARY"
+          echo "Merged #$NUMBER at \`$HEAD_SHA\`. The push to \`$BASE\` is now running publish.yml, which builds, publishes to npm and tags." >> "$GITHUB_STEP_SUMMARY"

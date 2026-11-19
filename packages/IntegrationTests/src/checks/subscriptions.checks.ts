@@ -108,13 +108,14 @@ async function buySubscription(
     productKey: string,
     price: number,
     overrides: Partial<OrderSpec> = {},
+    action?: 'ExtendExisting' | 'CreateNew',
 ) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JULY_1,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
+        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, SubscriptionAction: action }],
         ...overrides,
     });
     return result;
@@ -228,13 +229,27 @@ interface OverlapPreview {
  * Confirm one SubRolling line (annual, 12-month terms, monthly recognition) at its engine price of
  * 1,200 with a stated service period, and read back what the confirm made of it (golive #338).
  */
-async function buyStatedPeriod(ctx: IntegrationCheckContext, start: string, end: string) {
+async function buyStatedPeriod(
+    ctx: IntegrationCheckContext,
+    start: string,
+    end: string,
+    action?: 'ExtendExisting' | 'CreateNew',
+) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JULY_1,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: start, ServicePeriodEnd: end }],
+        Lines: [
+            {
+                ProductID: f.Products.SubRolling,
+                Quantity: 1,
+                UnitPrice: 1200,
+                ServicePeriodStart: start,
+                ServicePeriodEnd: end,
+                SubscriptionAction: action,
+            },
+        ],
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
     const orderID = result.Order.ID as string;
@@ -478,7 +493,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                 Assert(first.Saved, `first confirm failed: ${first.Message}`);
                 const [term1] = await termsForOrder(ctx, first.Order.ID as string);
 
-                const second = await buySubscription(ctx, 'SubRolling', 1200);
+                const second = await buySubscription(ctx, 'SubRolling', 1200, {}, 'ExtendExisting');
                 Assert(second.Saved, `second confirm failed: ${second.Message}`);
                 const [term2] = await termsForOrder(ctx, second.Order.ID as string);
 
@@ -511,7 +526,8 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const first = await buySubscription(ctx, 'SubFiscal', 900);
                 Assert(first.Saved, `first confirm failed: ${first.Message}`);
 
-                const second = await buySubscription(ctx, 'SubFiscal', 900);
+                // Asked for a new one, the type's rule still refuses a second concurrent subscription.
+                const second = await buySubscription(ctx, 'SubFiscal', 900, {}, 'CreateNew');
                 Assert(!second.Saved, 'the second purchase must be REJECTED by ConcurrencyMode=RejectDuplicate');
                 Assert(
                     /second concurrent subscription/i.test(second.Message),
@@ -1251,11 +1267,11 @@ export const SubscriptionChecks: NamedCheck[] = [
                 const f = Fx();
                 const orderA = await buySubscription(ctx, 'SubMonthly', 24);
                 Assert(orderA.Saved, `order A failed: ${orderA.Message}`);
-                const orderB = await buySubscription(ctx, 'SubMonthly', 24);
+                const orderB = await buySubscription(ctx, 'SubMonthly', 24, {}, 'ExtendExisting');
                 Assert(orderB.Saved, `order B failed: ${orderB.Message}`);
                 const [termB] = await termsForOrder(ctx, orderB.Order.ID as string);
 
-                const line = { ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 24 };
+                const line = { ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: 24, SubscriptionAction: 'ExtendExisting' as const };
                 const orderC = await buySubscription(ctx, 'SubMonthly', 24, { Lines: [line, { ...line }] });
                 Assert(orderC.Saved, `order C failed: ${orderC.Message}`);
                 const termsC = await termsForOrder(ctx, orderC.Order.ID as string);
@@ -1481,7 +1497,7 @@ export const SubscriptionChecks: NamedCheck[] = [
 
                 // Stated 2026-07-01 to 2026-12-31: six months. The subscriber already holds the
                 // product, so the line extends it; it used to become a 12-month term a year later.
-                const got = await buyStatedPeriod(ctx, '2026-07-01', '2026-12-31');
+                const got = await buyStatedPeriod(ctx, '2026-07-01', '2026-12-31', 'ExtendExisting');
                 AssertEqual(got.terms.length, 1, 'one term');
                 const [term] = got.terms;
                 Assert(SameID(term.SubscriptionID, held.SubscriptionID), 'it extends the held subscription');
@@ -1542,7 +1558,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                 AssertEqual(Number(raised[0].Amount), 100, 'the month given away, at the list rate');
                 Assert(raised[0].Summary.includes('1 month is not charged for'), `summary: ${raised[0].Summary}`);
 
-                const twelve = await buyStatedPeriod(ctx, '2027-08-01', '2028-07-31');
+                const twelve = await buyStatedPeriod(ctx, '2027-08-01', '2028-07-31', 'ExtendExisting');
                 AssertEqual((await exceptionsFor(twelve.result.Order.ID as string)).length, 0, '12 months raises nothing');
             }),
     },

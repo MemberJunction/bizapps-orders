@@ -399,10 +399,11 @@ function linesFor(
                 { ProductID: world.Products['STYLE-HB'], Quantity: 1, UnitPrice: 45 },
                 { ProductID: world.Products['HH-ANTH'], Quantity: 1, UnitPrice: 210 },
             ];
+        // Repeat purchases of a membership the customer holds: extend it.
         case 2:
-            return [{ ProductID: world.Products['MEM-IND'], Quantity: 1, UnitPrice: 240 }];
+            return [{ ProductID: world.Products['MEM-IND'], Quantity: 1, UnitPrice: 240, SubscriptionAction: 'ExtendExisting' }];
         case 3:
-            return [{ ProductID: world.Products['MEM-MONTH'], Quantity: 1, UnitPrice: 24 }];
+            return [{ ProductID: world.Products['MEM-MONTH'], Quantity: 1, UnitPrice: 24, SubscriptionAction: 'ExtendExisting' }];
         case 4:
             return eventLines(world, emails, i);
         case 5:
@@ -454,6 +455,8 @@ function seatLines(world: ClientWorld, emails: string[], i: number): ClientLineS
             Quantity: 1,
             UnitPrice: 180,
             ShipToPersonID: world.People[email],
+            // The organization holds seats for others: this person's is a new one.
+            SubscriptionAction: 'CreateNew',
         },
     ];
 }

@@ -1,5 +1,58 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.51.0
+
+### Minor Changes
+
+- 3caa683: Confirm no longer moves a subscription line to the next term without anyone deciding it. A direct order is refused while a line for a product its subscriber already holds has not chosen between renewing that subscription and "Create new subscription" (checkout and provider-payment orders keep the subscription type's rule). When a line's stated start does move to the next term, confirm refuses the order if its payment schedule still falls due before that term starts, naming the line, both periods and the instalments, instead of invoicing them early. The order line card warns about those instalments as soon as the renew choice is made, testing every moved line against the gross of the lines on screen. `orders-entities` exports `FindInstalmentsBeforeMovedTerms`, `DescribeInstalmentsBeforeMovedTerm`, `ExplainInstalmentsBeforeMovedTerms` and `ExplainUnansweredHeldLines`.
+- aacb117: Renewals: a prior line longer than the renewal term renews at the term's share of its price, typed or engine-priced, and a shorter one renews unscaled with a review note; Spawn Renewals reports both (golive #468). Revenue bands: an unpicked band on one line no longer unprices the rest of the order on screen, Confirm accepts a band picked on the line, and bands are listed by lower edge (golive #470).
+- dab3dc1: Go-live fixes: a Confirmed order header, and a company's last schedule row on one, refuse DELETE (51019, 51020); the confirmation stamp is server-owned and put back if booking rolls back; a $0 line on a booked order keeps its money; Bill.com finds an existing customer by account number, creates one only when allowed, and tells finance when an invoice is ready; per-order "Check for payments now"; the payment webhook writes on its own provider; a settled checkout intent is not moved back; approval roles, permissions and the Senior Finance (AR) override grant; and smaller concession, review-task, renewal and pricing fixes.
+- c5d9e02: A rep's share limit can rise with the order's product mix (golive #281). The new `SalesAuthorityMixTier` table holds tiers on a Sales Authority: on an order whose lines span at least `MinProductTypes` distinct product types, the authority's `MaxConcessionPctOfContract` is raised to the tier's value, for example 10% with two product types and 15% with three. A product type is the product family. Bundle components and reversals are not counted. The limit is applied when a concession is recorded and again at confirm, so removing a product type after an approval on the rep's own authority holds the confirm until that concession is withdrawn and recorded again. Authorities with no tiers behave as before. New migration `V202611170400__v5.51.x__SalesAuthority_MixTiers.sql`.
+
+### Patch Changes
+
+- 35d4f3c: Applying an account credit no longer posts through the Cash account. A credit spent on another order moves a receivable and no money, so its entries now sit on Accounts Receivable: within one company's books nothing is posted, and across companies only the receivable and intercompany lines are. Entries that remain are described as "Credit applied" and "Credit spent" instead of "Payment" and "Refund". Cash, gift card and every other tender post as before.
+- 645dfa3: Checkout element: `capture-cookies` attribute, the embedding page URL and its referrer host, kept on the checkout session as `MetadataJSON.Tracking` for outbound consumers. The page URL keeps only its origin, path and tracking parameters (`utm_*` and ad click ids).
+- f93cf40: Issuing an instalment invoice no longer fails on an order whose lines another app has frozen. When an order's deal is closed, Sales refuses edits to the order's lines. Issuing an instalment advances `BilledToDate` on each line it bills, and that write was treated as an edit, so the order could not be confirmed while an instalment was already due ("This deal is closed. Set the status back to Open before changing what was sold.") and a later instalment could not be invoiced either. The write is now marked as Orders' own bookkeeping, like the journal entry stamp and the fulfilment writes. The same applies to the two other writes of a line's running totals: recording progress (`RecognizedToDate`) and an amount change's credit memo (`BilledToDate`).
+- 546f9be: An order save that deleted removed lines now clears them from the order's line collection once it commits. Before, the removal stayed pending: every later save of the same object took the full line walk, and confirming an order whose lines were built in code rather than loaded failed with "cannot load over unsaved changes" (#1045).
+- 9a4efdd: Permission refusals no longer show authorization names, setting keys or rule types. Each one says what the person cannot do and who can; when an authorization is not installed, its name and the fix go to the server log (bc-aidp-next-golive#493). Messages that send a person to Finance or an administrator now ask politely ("Please request this from Finance.", "Please contact your administrator.").
+- Updated dependencies [05d15e9]
+- Updated dependencies [645dfa3]
+- Updated dependencies [3caa683]
+- Updated dependencies [aacb117]
+- Updated dependencies [dab3dc1]
+- Updated dependencies [b416a08]
+- Updated dependencies [5162834]
+- Updated dependencies [9a4efdd]
+- Updated dependencies [c5d9e02]
+  - @mj-biz-apps/orders-entities@5.51.0
+
+## 5.50.2
+
+### Patch Changes
+
+- Updated dependencies [543e594]
+  - @mj-biz-apps/orders-entities@5.50.2
+
+## 5.50.1
+
+### Patch Changes
+
+- c8eedb2: A renewal takes its annual increase when the expiring term is not the first term its order line bought (golive #478). The anniversary test now measures from the start of the earliest term that line bought, where its price began, instead of from the expiring term's start. A 13-month line booked as a year and a remainder, or an annual line with a one-day last term, used to renew flat because the last term already started on the anniversary. A line that bought one term renews as before: annual on every renewal, quarterly and monthly once a year.
+- Updated dependencies [c8eedb2]
+  - @mj-biz-apps/orders-entities@5.50.1
+
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+### Patch Changes
+
+- Updated dependencies [f950cc2]
+  - @mj-biz-apps/orders-entities@5.50.0
+
 ## 5.49.0
 
 ### Minor Changes
@@ -1356,8 +1409,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                    "FK_EntityFieldValue_EntityField"
+                                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

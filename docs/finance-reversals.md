@@ -28,7 +28,7 @@ Nothing booked is edited. Each step adds a record that undoes or moves money:
 |---|---|---|
 | Cancel a subscription | The subscription's form, Cancel subscription | A credit memo: a new order that reverses the unearned part of the term (it names the original in `ReversesOrderHeaderID`). Its negative balance is the customer's credit. Access ends as the timing says. |
 | Refund a payment | Payments, Refunds | A new payment reversing the original, spread over the orders it paid in the same proportions. It does not end access. |
-| Move a credit | Payments, Account Credit | A zero-amount payment: minus on the credit, plus on the target order. Both orders must be Confirmed and belong to the same customer. |
+| Move a credit | Payments, Account Credit | A zero-amount payment: minus on the credit, plus on the target order. Both orders must be Confirmed and belong to the same customer. It moves the receivable from one order to the other and never touches a cash account: inside one company no journal entry is posted, and across companies only the receivable and intercompany lines are. |
 | Reissue | Orders, new order | An ordinary order for what the customer now owes. |
 
 ## Early termination

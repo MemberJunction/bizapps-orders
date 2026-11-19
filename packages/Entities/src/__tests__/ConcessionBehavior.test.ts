@@ -4,6 +4,7 @@ import {
     ConcessionAlwaysEscalates,
     ConcessionShare,
     ConcessionValue,
+    EffectiveShareLimit,
     DaysAdded,
     PaymentTermsDaysChange,
     InclusiveDays,
@@ -378,5 +379,46 @@ describe('products that always need approval (golive #281)', () => {
     });
     it('lets a product require it on its own', () => {
         expect(ResolveRequiresSaleApproval({ Product: true, Categories: [], Type: null })).toBe(true);
+    });
+});
+
+describe('share limit raised by the product mix (golive #281)', () => {
+    const tiers = [
+        { MinProductTypes: 2, MaxConcessionPctOfContract: 0.1 },
+        { MinProductTypes: 3, MaxConcessionPctOfContract: 0.15 },
+    ];
+
+    it('keeps the authority limit on an order with one product type', () => {
+        expect(EffectiveShareLimit(0.05, tiers, 1)).toBe(0.05);
+    });
+
+    it('applies the tier for two product types', () => {
+        expect(EffectiveShareLimit(0.05, tiers, 2)).toBe(0.1);
+    });
+
+    it('applies the highest tier met, whatever order the tiers come in', () => {
+        expect(EffectiveShareLimit(0.05, [...tiers].reverse(), 4)).toBe(0.15);
+    });
+
+    it('never lowers the authority limit', () => {
+        expect(EffectiveShareLimit(0.2, tiers, 3)).toBe(0.2);
+    });
+
+    it('leaves an authority with no share limit unlimited', () => {
+        expect(EffectiveShareLimit(null, tiers, 3)).toBeNull();
+    });
+
+    it('lets a concession the base limit refuses through on a mixed order', () => {
+        const authority: ConcessionAuthority = {
+            ID: 'auth-1',
+            MaxDiscountPct: null,
+            MaxConcessionValue: 100000,
+            MaxTermExtensionDays: null,
+            MaxConcessionPctOfContract: EffectiveShareLimit(0.05, tiers, 2),
+        };
+        const valuation = { Value: 800, Percent: null };
+
+        expect(AssessConcession('Seats', valuation, authority, null, 0.08).WithinAuthority).toBe(true);
+        expect(AssessConcession('Seats', valuation, { ...authority, MaxConcessionPctOfContract: 0.05 }, null, 0.08).WithinAuthority).toBe(false);
     });
 });

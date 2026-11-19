@@ -217,11 +217,12 @@ function shapeFor(i: number, promotionCode: string): { Spec: OrderSpec; Shape: s
       label = "two-company";
       break;
     case 2:
-      lines = [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: px(1200) }];
+      // Every sixth order buys the product again: extend the subscription already held.
+      lines = [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: px(1200), SubscriptionAction: "ExtendExisting" }];
       label = "subscription-annual";
       break;
     case 3:
-      lines = [{ ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: px(99) }];
+      lines = [{ ProductID: f.Products.SubMonthly, Quantity: 1, UnitPrice: px(99), SubscriptionAction: "ExtendExisting" }];
       label = "subscription-monthly";
       break;
     case 4:
@@ -930,7 +931,7 @@ export const VolumeChecks: NamedCheck[] = [
             CompanyID: f.CoA.ID,
             OrderDate: new Date("2026-07-01T00:00:00"),
             BillToOrganizationID: f.Customers.OrganizationID,
-            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, SubscriptionAction: "ExtendExisting" }],
           });
           Assert(result.Saved, `purchase ${i + 1} of ${REPEATS} failed: ${result.Message}`);
         }
@@ -994,7 +995,7 @@ export const VolumeChecks: NamedCheck[] = [
             CompanyID: f.CoA.ID,
             OrderDate: new Date("2026-07-01T00:00:00"),
             BillToOrganizationID: f.Customers.OrganizationID,
-            Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1 }],
+            Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, SubscriptionAction: "CreateNew" }],
           });
           results.push({ Saved: r.Saved, Message: r.Message, ID: r.Order.ID as string });
         }

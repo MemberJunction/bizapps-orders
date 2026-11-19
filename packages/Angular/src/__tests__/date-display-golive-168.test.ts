@@ -119,7 +119,8 @@ describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('golive #
         });
 
         it('a payment date on customer AR', () => {
-            expect(method<string>(MJOCustomerARPageComponent, 'dateOf', {}, driverDate('2026-10-01'))).toBe('Oct 1');
+            // Customer A/R writes every date numerically, year included.
+            expect(method<string>(MJOCustomerARPageComponent, 'dateOf', {}, driverDate('2026-10-01'))).toBe('10/01/2026');
         });
 
         it('a certificate expiry on the charges & tax page', () => {

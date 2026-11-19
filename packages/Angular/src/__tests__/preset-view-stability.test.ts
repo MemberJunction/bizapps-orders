@@ -4,7 +4,6 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi } from 'vitest';
 import { PresetViewRef } from '../lib/data/preset-view';
-import { MJOCustomerARPageComponent } from '../lib/pages/receivables/customer-ar.page';
 import { MJOAccountCreditPageComponent } from '../lib/pages/payments/account-credit.page';
 import { MJOOverduePageComponent } from '../lib/pages/receivables/overdue.page';
 import { MJOFulfillmentPageComponent } from '../lib/pages/orders/fulfillment.page';
@@ -51,7 +50,8 @@ describe('PresetViewRef hands back the same object until its key changes', () =>
 });
 
 /**
- * The four pages that hand the viewer a synthetic view. Two were reported (#362); the other two
+ * The three pages that hand the viewer a synthetic view (Customer A/R was a fourth until its open
+ * items became its own table, bc-aidp-next-golive#481). Two were reported (#362); the other two
  * share the pattern and so shared the defect, waiting on timing rather than on being reported.
  */
 describe('every preset view getter is reference-stable across change detection', () => {
@@ -69,27 +69,6 @@ describe('every preset view getter is reference-stable across change detection',
         }
         return page;
     };
-
-    it('Customer A/R: Open items', () => {
-        const page = make<MJOCustomerARPageComponent>(MJOCustomerARPageComponent.prototype, 'openOrdersView', {
-            OrderEntityInfo: entity,
-            Selected: { Key: 'ORG1', Name: 'Cascade', IsOrganization: true },
-        });
-        expect(page.CustomerOpenOrdersView).toBe(page.CustomerOpenOrdersView);
-    });
-
-    it('Customer A/R: and it DOES rebuild when another customer is picked', () => {
-        const selected = { Key: 'ORG1', Name: 'Cascade', IsOrganization: true };
-        const page = make<MJOCustomerARPageComponent>(MJOCustomerARPageComponent.prototype, 'openOrdersView', {
-            OrderEntityInfo: entity,
-            Selected: selected,
-        });
-        const first = page.CustomerOpenOrdersView;
-        (page as unknown as { Selected: unknown }).Selected = { Key: 'ORG2', Name: 'Northwind', IsOrganization: true };
-        const second = page.CustomerOpenOrdersView;
-        expect(second).not.toBe(first);
-        expect((second as unknown as { WhereClause: string }).WhereClause).toContain('ORG2');
-    });
 
     it('Account credits', () => {
         const page = make<MJOAccountCreditPageComponent>(MJOAccountCreditPageComponent.prototype, 'creditOrdersView', { OrderEntityInfo: entity });
@@ -150,7 +129,7 @@ describe('every preset view getter is reference-stable across change detection',
 });
 
 /**
- * THE CASES ABOVE NAME FOUR PAGES, AND THE FIFTH ONE IS THE PROBLEM.
+ * THE CASES ABOVE NAME THREE PAGES, AND THE NEXT ONE IS THE PROBLEM.
  *
  * Each was written against a binding that exists today. A page added later that binds `[ViewEntity]`
  * to a getter building its object inline reintroduces #362 exactly, and every case above still
@@ -160,7 +139,7 @@ describe('every preset view getter is reference-stable across change detection',
  * must bind a getter that goes through `PresetViewRef`, and the set of bindings must be the set
  * covered above -- which makes adding a page a test failure until a case here names it.
  */
-describe('every [ViewEntity] in the package is covered, not just the four named above', () => {
+describe('every [ViewEntity] in the package is covered, not just the three named above', () => {
     const PAGES_DIR = fileURLToPath(new URL('../lib/pages/', import.meta.url));
 
     function SourceFiles(dir: string): string[] {
@@ -191,7 +170,6 @@ describe('every [ViewEntity] in the package is covered, not just the four named 
 
     /** The getters the cases above exercise by name. */
     const COVERED: ReadonlySet<string> = new Set([
-        'CustomerOpenOrdersView',
         'CreditOrdersView',
         'OverdueView',
         'FulfillmentQueueView',
