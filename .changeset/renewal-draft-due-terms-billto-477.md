@@ -1,0 +1,5 @@
+---
+"@mj-biz-apps/orders-core-entities-server": patch
+---
+
+Every renewal order is due the day before its new term starts, the last day of the expiring term (golive #477). That holds for a draft placed from the Renewals page, for a renewal placed confirmed from the page and for one the nightly pass places, on the order and on a confirmed renewal's schedule row; the payment terms are recorded but no longer move the date. A subscription with a renewal card is still due on the term start, when the card is charged. A renewal draft also arrives with payment terms and a bill-to person. The terms are the customer's own, else the terms of the order being renewed, else the selling company's default. The bill-to person is the subscription's beneficiary, else the person the order being renewed was billed to. Where the prior order names no person or terms, none are invented.

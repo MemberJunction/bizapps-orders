@@ -1194,10 +1194,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * already moved in the ledger; refusing it because a lookup could not be read would be a far
      * worse outcome than an order that falls back to due-on-receipt and says so in the log.
      *
-     * Public so `Orders.SpawnRenewals` can settle the terms on its draft before writing the renewal's
-     * schedule row, which is due on the invoice day plus these same terms (#305).
+     * Public so `Orders.SpawnRenewals` can settle the terms on its order before it states the renewal's
+     * due date, the day before the new term starts (golive #477). A renewal DRAFT
+     * passes the terms of the order it renews (`PriorPaymentTermsTypeID`), which answer only when
+     * the customer has no terms of their own (golive #477).
      */
-    public async resolveDueDate(): Promise<void> {
+    public async resolveDueDate(options: { PriorPaymentTermsTypeID?: string | null } = {}): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;
@@ -1225,6 +1227,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 OrderDate: orderDate,
                 CompanyID: this.CompanyID ?? null,
                 CustomerTerms: customerTerms,
+                PriorOrderTerms: options.PriorPaymentTermsTypeID ? (terms.get(options.PriorPaymentTermsTypeID.toLowerCase()) ?? null) : null,
                 CompanyDefault: companyDefault,
                 TermsByID: terms,
             });
