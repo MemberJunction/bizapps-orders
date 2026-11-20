@@ -48,7 +48,8 @@
  * ── WHICH ORDERS ARE REVIEWED AT ALL ────────────────────────────────────────────────────────────
  *
  * Every order except those this app's own processes create. A checkout (`Origin` = `Widget`) or
- * provider-payment (`ProviderPayment`) order is paid before anyone could look at it, a reversal has its
+ * provider-payment (`ProviderPayment`) order is paid before anyone could look at it, a migrated order
+ * (`Migration`) records an invoice the previous system already raised and collected, a reversal has its
  * own cancellation approval, and a renewal the renewal job books is covered by the renewal register
  * review. A renewal whose carried-forward price someone edits is still raised for review when the edit
  * is saved.
@@ -164,10 +165,11 @@ export interface OrderReviewScopeFacts {
 
 /**
  * The `Origin` values only this app's own processes write, exactly as they write them: `Widget` by
- * checkout (`CheckoutSessionService`) and `ProviderPayment` by `CreateOrderFromProviderPaymentOperation`.
- * The only origins exempt from review.
+ * checkout (`CheckoutSessionService`), `ProviderPayment` by `CreateOrderFromProviderPaymentOperation`,
+ * and `Migration` by an in-process import that loads history from a previous system through
+ * `SetSystemOrderOrigin`. The only origins exempt from review.
  */
-export const SYSTEM_ORDER_ORIGINS = ['Widget', 'ProviderPayment'] as const;
+export const SYSTEM_ORDER_ORIGINS = ['Widget', 'ProviderPayment', 'Migration'] as const;
 
 export type SystemOrderOrigin = (typeof SYSTEM_ORDER_ORIGINS)[number];
 
