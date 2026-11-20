@@ -38,6 +38,7 @@
  *   RENEWAL: ./SpawnRenewalsOperation.ts (the line, the pricing mark, the carried choices)
  *   GATE:    ./SubscriptionEntityServer.ts (SanctionGatewayRenewal) · ./ProviderBilledSubscriptions.ts
  */
+import { AddLineChoices, LoadLineChoices } from './renewal-choices.js';
 import {
     LogError,
     RunView,
@@ -69,7 +70,6 @@ import { UnitPriceForCharge } from './UnmatchedChargeRules.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
-const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 /** The tender a card charge is recorded as, the same default the checkout capture uses. */
 const CARD_TENDER_CODE = 'CreditCard';
@@ -229,13 +229,8 @@ export async function BookProviderRenewal(
         order.MarkRenewalPriced(line);
         order.Lines.Add(line);
         if (subscription.LatestTermOrderLineID) {
-            for (const choice of await loadChoices(subscription.LatestTermOrderLineID, provider, user)) {
-                const row = await line.Choices.Create();
-                row.GroupKey = choice.GroupKey;
-                row.GroupLabel = choice.GroupLabel;
-                row.OptionValue = choice.OptionValue;
-                row.OptionLabel = choice.OptionLabel;
-            }
+            // Widget choices and option picks (golive #399) both carry; the product does not change here.
+            await AddLineChoices(line, await LoadLineChoices(subscription.LatestTermOrderLineID, provider, user));
         }
 
         order.Status = 'Draft';
@@ -458,25 +453,6 @@ async function zeroRenewalBooked(subscriptionID: string, invoiceID: string, prov
     return (r.Results ?? []).length > 0;
 }
 
-async function loadChoices(
-    orderLineID: string,
-    provider: IMetadataProvider,
-    user: UserInfo,
-): Promise<Array<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>> {
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const r = await rv.RunView<{ GroupKey: string; GroupLabel: string; OptionValue: string; OptionLabel: string }>(
-        {
-            EntityName: ORDER_LINE_CHOICE_ENTITY,
-            ExtraFilter: `OrderLineID = '${RequireUUID(orderLineID, 'OrderLineID')}'`,
-            Fields: ['GroupKey', 'GroupLabel', 'OptionValue', 'OptionLabel'],
-            OrderBy: 'GroupKey, OptionValue',
-            ResultType: 'simple',
-            BypassCache: true,
-        },
-        user,
-    );
-    return r.Results ?? [];
-}
 
 async function logEvent(
     subscriptionID: string,

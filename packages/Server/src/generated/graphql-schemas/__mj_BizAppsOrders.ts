@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersInstalmentLineBillingEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesAuthorityMixTierEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersInstalmentLineBillingEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductOptionAssignmentValueEntity, mjBizAppsOrdersProductOptionAssignmentEntity, mjBizAppsOrdersProductOptionValueEntity, mjBizAppsOrdersProductOptionEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductSuccessorOptionValueEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductVariantValueEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesAuthorityMixTierEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -3433,6 +3433,10 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field(() => Boolean, {nullable: true}) 
     IsSellableNew?: boolean;
         
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ParentProductID?: string;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -3542,6 +3546,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Boolean, { nullable: true })
     IsSellableNew?: boolean;
 
+    @Field({ nullable: true })
+    ParentProductID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3650,6 +3657,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     IsSellableNew?: boolean;
+
+    @Field({ nullable: true })
+    ParentProductID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7419,6 +7429,18 @@ export class mjBizAppsOrdersOrderLineChoice_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field({nullable: true, description: "For a product option pick, the option it answers; GroupKey is then the option code. Empty for a checkout-widget choice."}) 
+    @MaxLength(36)
+    ProductOptionID?: string;
+        
+    @Field({nullable: true, description: "For a product option pick, the value picked; OptionValue is then the value code. Set together with ProductOptionID."}) 
+    @MaxLength(36)
+    ProductOptionValueID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ProductOption?: string;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -7447,6 +7469,12 @@ export class CreatemjBizAppsOrdersOrderLineChoiceInput {
     @Field({ nullable: true })
     OptionLabel?: string;
 
+    @Field({ nullable: true })
+    ProductOptionID: string | null;
+
+    @Field({ nullable: true })
+    ProductOptionValueID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7474,6 +7502,12 @@ export class UpdatemjBizAppsOrdersOrderLineChoiceInput {
 
     @Field({ nullable: true })
     OptionLabel?: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string | null;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13620,6 +13654,778 @@ export class mjBizAppsOrdersProductEntitlementResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Product Option Assignment Values
+//****************************************************************************
+@ObjectType({ description: "A value an option assignment allows. An assignment with no rows here allows every active value of its option." })
+export class mjBizAppsOrdersProductOptionAssignmentValue_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionAssignmentID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionValueID?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Option Assignment Values
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersProductOptionAssignmentValueInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionAssignmentID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Option Assignment Values
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersProductOptionAssignmentValueInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    ProductOptionAssignmentID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Product Option Assignment Values
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersProductOptionAssignmentValueViewResult {
+    @Field(() => [mjBizAppsOrdersProductOptionAssignmentValue_])
+    Results: mjBizAppsOrdersProductOptionAssignmentValue_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersProductOptionAssignmentValue_)
+export class mjBizAppsOrdersProductOptionAssignmentValueResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersProductOptionAssignmentValueViewResult)
+    async RunmjBizAppsOrdersProductOptionAssignmentValueViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionAssignmentValueViewResult)
+    async RunmjBizAppsOrdersProductOptionAssignmentValueViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionAssignmentValueViewResult)
+    async RunmjBizAppsOrdersProductOptionAssignmentValueDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Product Option Assignment Values';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersProductOptionAssignmentValue_, { nullable: true })
+    async mjBizAppsOrdersProductOptionAssignmentValue(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersProductOptionAssignmentValue_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Product Option Assignment Values', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwProductOptionAssignmentValues')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Product Option Assignment Values', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Product Option Assignment Values', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOptionAssignmentValue_)
+    async CreatemjBizAppsOrdersProductOptionAssignmentValue(
+        @Arg('input', () => CreatemjBizAppsOrdersProductOptionAssignmentValueInput) input: CreatemjBizAppsOrdersProductOptionAssignmentValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Product Option Assignment Values', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersProductOptionAssignmentValue_)
+    async UpdatemjBizAppsOrdersProductOptionAssignmentValue(
+        @Arg('input', () => UpdatemjBizAppsOrdersProductOptionAssignmentValueInput) input: UpdatemjBizAppsOrdersProductOptionAssignmentValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Product Option Assignment Values', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOptionAssignmentValue_)
+    async DeletemjBizAppsOrdersProductOptionAssignmentValue(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Product Option Assignment Values', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Product Option Assignments
+//****************************************************************************
+@ObjectType({ description: "Offers an option on a product type, a category (and everything below it) or one product. For each option the most specific assignment wins whole: product, then the nearest category, then the type." })
+export class mjBizAppsOrdersProductOptionAssignment_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: "Set for a type-level default. Only a shared option may be assigned here. Exactly one of ProductTypeID, ProductCategoryID and ProductID is set."}) 
+    @MaxLength(36)
+    ProductTypeID?: string;
+        
+    @Field({nullable: true, description: "Set for a category-level assignment, inherited by every subcategory and product below it."}) 
+    @MaxLength(36)
+    ProductCategoryID?: string;
+        
+    @Field({nullable: true, description: "Set for a product-level assignment, which has the final say."}) 
+    @MaxLength(36)
+    ProductID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionID?: string;
+        
+    @Field(() => Boolean, {nullable: true, description: "Removes an inherited option at this level and below, until a more specific assignment offers it again."}) 
+    IsExcluded?: boolean;
+        
+    @Field(() => Boolean, {nullable: true, description: "A line for the product cannot be saved or priced without a pick for this option."}) 
+    IsRequired?: boolean;
+        
+    @Field({nullable: true, description: "Value a new line starts with; staff or the buyer can change it. Must be one of the allowed values."}) 
+    @MaxLength(36)
+    DefaultProductOptionValueID?: string;
+        
+    @Field(() => Int, {nullable: true, description: "Order in which this option is shown on a line."}) 
+    SortOrder?: number;
+        
+    @Field({nullable: true, description: "LineOption: picked on the order line. Variant: the option defines a separate SKU; not supported yet and refused on save."}) 
+    @MaxLength(20)
+    Role?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ProductType?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    ProductCategory?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    Product?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ProductOption?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Option Assignments
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersProductOptionAssignmentInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    ProductTypeID: string | null;
+
+    @Field({ nullable: true })
+    ProductCategoryID: string | null;
+
+    @Field({ nullable: true })
+    ProductID: string | null;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field(() => Boolean, { nullable: true })
+    IsExcluded?: boolean;
+
+    @Field(() => Boolean, { nullable: true })
+    IsRequired?: boolean;
+
+    @Field({ nullable: true })
+    DefaultProductOptionValueID: string | null;
+
+    @Field(() => Int, { nullable: true })
+    SortOrder?: number;
+
+    @Field({ nullable: true })
+    Role?: string;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Option Assignments
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersProductOptionAssignmentInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    ProductTypeID?: string | null;
+
+    @Field({ nullable: true })
+    ProductCategoryID?: string | null;
+
+    @Field({ nullable: true })
+    ProductID?: string | null;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field(() => Boolean, { nullable: true })
+    IsExcluded?: boolean;
+
+    @Field(() => Boolean, { nullable: true })
+    IsRequired?: boolean;
+
+    @Field({ nullable: true })
+    DefaultProductOptionValueID?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    SortOrder?: number;
+
+    @Field({ nullable: true })
+    Role?: string;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Product Option Assignments
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersProductOptionAssignmentViewResult {
+    @Field(() => [mjBizAppsOrdersProductOptionAssignment_])
+    Results: mjBizAppsOrdersProductOptionAssignment_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersProductOptionAssignment_)
+export class mjBizAppsOrdersProductOptionAssignmentResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersProductOptionAssignmentViewResult)
+    async RunmjBizAppsOrdersProductOptionAssignmentViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionAssignmentViewResult)
+    async RunmjBizAppsOrdersProductOptionAssignmentViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionAssignmentViewResult)
+    async RunmjBizAppsOrdersProductOptionAssignmentDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Product Option Assignments';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersProductOptionAssignment_, { nullable: true })
+    async mjBizAppsOrdersProductOptionAssignment(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersProductOptionAssignment_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Product Option Assignments', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwProductOptionAssignments')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Product Option Assignments', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Product Option Assignments', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOptionAssignment_)
+    async CreatemjBizAppsOrdersProductOptionAssignment(
+        @Arg('input', () => CreatemjBizAppsOrdersProductOptionAssignmentInput) input: CreatemjBizAppsOrdersProductOptionAssignmentInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Product Option Assignments', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersProductOptionAssignment_)
+    async UpdatemjBizAppsOrdersProductOptionAssignment(
+        @Arg('input', () => UpdatemjBizAppsOrdersProductOptionAssignmentInput) input: UpdatemjBizAppsOrdersProductOptionAssignmentInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Product Option Assignments', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOptionAssignment_)
+    async DeletemjBizAppsOrdersProductOptionAssignment(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Product Option Assignments', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Product Option Values
+//****************************************************************************
+@ObjectType({ description: "One value of a product option, such as Pro for Tier. A value a line has used is deactivated, never deleted." })
+export class mjBizAppsOrdersProductOptionValue_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionID?: string;
+        
+    @Field({nullable: true, description: "Stable code for the value, compared by price rules (Option.TIER eq PRO) and recorded as the OptionValue of a pick. Unique within its option."}) 
+    @MaxLength(50)
+    Code?: string;
+        
+    @Field({nullable: true, description: "Label shown to staff and buyers. Copied onto the pick when the line is recorded, so a later rename does not change past orders."}) 
+    @MaxLength(200)
+    Label?: string;
+        
+    @Field(() => Int, {nullable: true, description: "Order in which values are shown."}) 
+    SortOrder?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: "An inactive value can no longer be picked on a new line."}) 
+    IsActive?: boolean;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ProductOption?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Option Values
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersProductOptionValueInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Label?: string;
+
+    @Field(() => Int, { nullable: true })
+    SortOrder?: number;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Option Values
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersProductOptionValueInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Label?: string;
+
+    @Field(() => Int, { nullable: true })
+    SortOrder?: number;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Product Option Values
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersProductOptionValueViewResult {
+    @Field(() => [mjBizAppsOrdersProductOptionValue_])
+    Results: mjBizAppsOrdersProductOptionValue_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersProductOptionValue_)
+export class mjBizAppsOrdersProductOptionValueResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersProductOptionValueViewResult)
+    async RunmjBizAppsOrdersProductOptionValueViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionValueViewResult)
+    async RunmjBizAppsOrdersProductOptionValueViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionValueViewResult)
+    async RunmjBizAppsOrdersProductOptionValueDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Product Option Values';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersProductOptionValue_, { nullable: true })
+    async mjBizAppsOrdersProductOptionValue(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersProductOptionValue_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Product Option Values', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwProductOptionValues')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Product Option Values', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Product Option Values', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOptionValue_)
+    async CreatemjBizAppsOrdersProductOptionValue(
+        @Arg('input', () => CreatemjBizAppsOrdersProductOptionValueInput) input: CreatemjBizAppsOrdersProductOptionValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Product Option Values', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersProductOptionValue_)
+    async UpdatemjBizAppsOrdersProductOptionValue(
+        @Arg('input', () => UpdatemjBizAppsOrdersProductOptionValueInput) input: UpdatemjBizAppsOrdersProductOptionValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Product Option Values', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOptionValue_)
+    async DeletemjBizAppsOrdersProductOptionValue(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Product Option Values', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Product Options
+//****************************************************************************
+@ObjectType({ description: "A choice a buyer makes on a line, such as Tier or Size. Its values are in Product Option Values; which products offer it is set by Product Option Assignments." })
+export class mjBizAppsOrdersProductOption_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: "The company that owns this option. Empty for a shared option, usable by every company and the only kind a product type may assign."}) 
+    @MaxLength(36)
+    CompanyID?: string;
+        
+    @Field({nullable: true, description: "Stable code for the option, used as the field name in price rules (Option.<Code>) and as the GroupKey of the picks recorded on a line. Unique among shared options, and within a company."}) 
+    @MaxLength(50)
+    Code?: string;
+        
+    @Field({nullable: true, description: "Name shown to staff and buyers."}) 
+    @MaxLength(100)
+    Name?: string;
+        
+    @Field({nullable: true}) 
+    Description?: string;
+        
+    @Field(() => Int, {nullable: true, description: "Order in which options are shown on a line."}) 
+    SortOrder?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: "An inactive option is no longer offered on new lines. Lines that picked it keep their picks."}) 
+    IsActive?: boolean;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(50)
+    Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Options
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersProductOptionInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    CompanyID: string | null;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field(() => Int, { nullable: true })
+    SortOrder?: number;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Options
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersProductOptionInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string | null;
+
+    @Field({ nullable: true })
+    Code?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    SortOrder?: number;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Product Options
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersProductOptionViewResult {
+    @Field(() => [mjBizAppsOrdersProductOption_])
+    Results: mjBizAppsOrdersProductOption_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersProductOption_)
+export class mjBizAppsOrdersProductOptionResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersProductOptionViewResult)
+    async RunmjBizAppsOrdersProductOptionViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionViewResult)
+    async RunmjBizAppsOrdersProductOptionViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductOptionViewResult)
+    async RunmjBizAppsOrdersProductOptionDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Product Options';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersProductOption_, { nullable: true })
+    async mjBizAppsOrdersProductOption(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersProductOption_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Product Options', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwProductOptions')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Product Options', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Product Options', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOption_)
+    async CreatemjBizAppsOrdersProductOption(
+        @Arg('input', () => CreatemjBizAppsOrdersProductOptionInput) input: CreatemjBizAppsOrdersProductOptionInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Product Options', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersProductOption_)
+    async UpdatemjBizAppsOrdersProductOption(
+        @Arg('input', () => UpdatemjBizAppsOrdersProductOptionInput) input: UpdatemjBizAppsOrdersProductOptionInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Product Options', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductOption_)
+    async DeletemjBizAppsOrdersProductOption(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Product Options', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Product Prices
 //****************************************************************************
 @ObjectType({ description: `ONE ROW IS ONE PRICE RULE. Several rows per product and list express quantity bands, seasons, promotional windows and time-of-day rates; Priority disambiguates. The row carries both the applicability predicates and the outcome, so there is no separate rule table to keep in step. Ties on Priority are refused when WRITTEN, not resolved when read - an arbitrary winner between two applicable rules is stable in test and liable to flip in production.` })
@@ -13983,6 +14789,178 @@ export class mjBizAppsOrdersProductPriceResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Product Successor Option Values
+//****************************************************************************
+@ObjectType({ description: "The pick a renewal line takes when a subscription moves from this product to its successor product. Lets one product per combination be retired onto one product with options: the retired product names its successor and the tier and size it stood for." })
+export class mjBizAppsOrdersProductSuccessorOptionValue_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: "The product being moved away from, whose SuccessorProductID names the product the renewal books on."}) 
+    @MaxLength(36)
+    ProductID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionValueID?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    Product?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ProductOption?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Successor Option Values
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersProductSuccessorOptionValueInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Successor Option Values
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersProductSuccessorOptionValueInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Product Successor Option Values
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersProductSuccessorOptionValueViewResult {
+    @Field(() => [mjBizAppsOrdersProductSuccessorOptionValue_])
+    Results: mjBizAppsOrdersProductSuccessorOptionValue_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersProductSuccessorOptionValue_)
+export class mjBizAppsOrdersProductSuccessorOptionValueResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersProductSuccessorOptionValueViewResult)
+    async RunmjBizAppsOrdersProductSuccessorOptionValueViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductSuccessorOptionValueViewResult)
+    async RunmjBizAppsOrdersProductSuccessorOptionValueViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductSuccessorOptionValueViewResult)
+    async RunmjBizAppsOrdersProductSuccessorOptionValueDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Product Successor Option Values';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersProductSuccessorOptionValue_, { nullable: true })
+    async mjBizAppsOrdersProductSuccessorOptionValue(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersProductSuccessorOptionValue_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Product Successor Option Values', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwProductSuccessorOptionValues')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Product Successor Option Values', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Product Successor Option Values', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductSuccessorOptionValue_)
+    async CreatemjBizAppsOrdersProductSuccessorOptionValue(
+        @Arg('input', () => CreatemjBizAppsOrdersProductSuccessorOptionValueInput) input: CreatemjBizAppsOrdersProductSuccessorOptionValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Product Successor Option Values', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersProductSuccessorOptionValue_)
+    async UpdatemjBizAppsOrdersProductSuccessorOptionValue(
+        @Arg('input', () => UpdatemjBizAppsOrdersProductSuccessorOptionValueInput) input: UpdatemjBizAppsOrdersProductSuccessorOptionValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Product Successor Option Values', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductSuccessorOptionValue_)
+    async DeletemjBizAppsOrdersProductSuccessorOptionValue(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Product Successor Option Values', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Product Types
 //****************************************************************************
 @ObjectType({ description: `Classifies products (e.g. Physical Good, Service, Subscription).` })
@@ -14289,6 +15267,178 @@ export class mjBizAppsOrdersProductTypeResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Product Variant Values
+//****************************************************************************
+@ObjectType({ description: "The value a variant SKU has on one option, such as Size L for one shirt variant. Not supported yet: refused on save." })
+export class mjBizAppsOrdersProductVariantValue_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionID?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(36)
+    ProductOptionValueID?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    Product?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    ProductOption?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Variant Values
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersProductVariantValueInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Product Variant Values
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersProductVariantValueInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionID?: string;
+
+    @Field({ nullable: true })
+    ProductOptionValueID?: string;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Product Variant Values
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersProductVariantValueViewResult {
+    @Field(() => [mjBizAppsOrdersProductVariantValue_])
+    Results: mjBizAppsOrdersProductVariantValue_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersProductVariantValue_)
+export class mjBizAppsOrdersProductVariantValueResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersProductVariantValueViewResult)
+    async RunmjBizAppsOrdersProductVariantValueViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductVariantValueViewResult)
+    async RunmjBizAppsOrdersProductVariantValueViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersProductVariantValueViewResult)
+    async RunmjBizAppsOrdersProductVariantValueDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Product Variant Values';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersProductVariantValue_, { nullable: true })
+    async mjBizAppsOrdersProductVariantValue(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersProductVariantValue_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Product Variant Values', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwProductVariantValues')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Product Variant Values', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Product Variant Values', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductVariantValue_)
+    async CreatemjBizAppsOrdersProductVariantValue(
+        @Arg('input', () => CreatemjBizAppsOrdersProductVariantValueInput) input: CreatemjBizAppsOrdersProductVariantValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Product Variant Values', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersProductVariantValue_)
+    async UpdatemjBizAppsOrdersProductVariantValue(
+        @Arg('input', () => UpdatemjBizAppsOrdersProductVariantValueInput) input: UpdatemjBizAppsOrdersProductVariantValueInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Product Variant Values', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersProductVariantValue_)
+    async DeletemjBizAppsOrdersProductVariantValue(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Product Variant Values', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Products
 //****************************************************************************
 @ObjectType({ description: `A catalog item that can be ordered. GL accounts are NOT stored here — accounting\'s GLAccountLink points at Product rows (role-mapped, date-effective).` })
@@ -14390,6 +15540,10 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Boolean, {nullable: true, description: "0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it."}) 
     IsSellableNew?: boolean;
         
+    @Field({nullable: true, description: "For a variant SKU, the product it is a variant of. One level only. Not supported yet: refused on save until the pricing, tax and entitlement walks use it."}) 
+    @MaxLength(36)
+    ParentProductID?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -14417,6 +15571,10 @@ export class mjBizAppsOrdersProduct_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     SubscriptionFamily?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    ParentProduct?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -14503,6 +15661,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Boolean, { nullable: true })
     IsSellableNew?: boolean;
 
+    @Field({ nullable: true })
+    ParentProductID: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -14587,6 +15748,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Boolean, { nullable: true })
     IsSellableNew?: boolean;
+
+    @Field({ nullable: true })
+    ParentProductID?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

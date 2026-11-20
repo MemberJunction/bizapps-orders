@@ -369,6 +369,8 @@ export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPrice
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
 export { ProductPriceEntityServer, LoadProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export * from './ProductOptionRules.js';
+export * from './renewal-choices.js';
 export {
     ProductEntityServer,
     SubscriptionFamilyEntityServer,

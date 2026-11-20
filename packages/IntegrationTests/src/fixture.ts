@@ -1074,6 +1074,8 @@ const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
     // Billing rows refuse deletion; an issued instalment always leaves some.
     `${ORDERS_SCHEMA}.trg_InstalmentLineBilling_Immutable ON ${ORDERS_SCHEMA}.InstalmentLineBilling`,
+    // An option pick on a confirmed order's line refuses deletion (51034, golive #399).
+    `${ORDERS_SCHEMA}.trg_OrderLineChoice_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLineChoice`,
 ];
 
 /**
@@ -1356,6 +1358,7 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLineChoice_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLineChoice`,
 
         // ENTITLEMENT GRANTS FIRST, before anything they point at.
         //
@@ -1491,6 +1494,7 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLineChoice_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLineChoice`,
     ];
 
 }

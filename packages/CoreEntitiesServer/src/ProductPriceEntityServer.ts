@@ -34,6 +34,7 @@ import { BaseEntity, ValidationErrorInfo, ValidationResult } from '@memberjuncti
 import { RegisterClass } from '@memberjunction/global';
 import {
     LoadOrdersEngine,
+    OptionConditionsDisjoint,
     OrdersEngine,
     ParseRevenueBand,
     ProductPriceEntity,
@@ -77,7 +78,8 @@ function windowsOverlap(aFrom: Date, aTo: Date | null, bFrom: Date, bTo: Date | 
 /**
  * Can two same-priority rules (same product or category, price list and fee type) both apply to one
  * order line? True when their quantity bands and effective windows overlap, except for two revenue
- * bands whose revenue ranges are disjoint. Exported for the unit test; the entity calls it.
+ * bands whose revenue ranges are disjoint, and two option rules that require different values of
+ * one option (the rows of a Tier x Size matrix). Exported for the unit test; the entity calls it.
  */
 export function PriceRulesCanCollide(a: CollisionRule, b: CollisionRule): boolean {
     if (!bandsOverlap(a.MinQuantity, a.MaxQuantity, b.MinQuantity, b.MaxQuantity)) return false;
@@ -85,6 +87,7 @@ export function PriceRulesCanCollide(a: CollisionRule, b: CollisionRule): boolea
     const bandA = ParseRevenueBand(a.Applicability);
     const bandB = ParseRevenueBand(b.Applicability);
     if (bandA && bandB && !RevenueBandsOverlap(bandA, bandB)) return false;
+    if (OptionConditionsDisjoint(a.Applicability, b.Applicability)) return false;
     return true;
 }
 

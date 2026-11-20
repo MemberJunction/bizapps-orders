@@ -21,6 +21,7 @@ import {
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import { RequireUUID } from '../sql-guards.js';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
+import { OptionPicksOnly, type OptionPick } from '../product-options.js';
 
 /** The line fields the context depends on. */
 export interface PricedLineFacts {
@@ -29,6 +30,13 @@ export interface PricedLineFacts {
     Quantity: number | null;
     UnitPrice: number | null;
     ProductPriceID: string | null;
+    /**
+     * The line's option picks, when the caller already has them (a line not saved yet, a renewal
+     * priced onto a successor product). Otherwise they are read from the line: its `Choices`
+     * collection when loaded, else the saved rows for its `ID`.
+     */
+    OptionPicks?: readonly OptionPick[] | null;
+    ID?: string | null;
 }
 
 interface HeaderPricingFacts {
@@ -74,10 +82,68 @@ export async function BuildLinePriceContext(
                 ShipToOrganizationID: header?.ShipToOrganizationID ?? null,
                 BillToAddressID: header?.BillToAddressID ?? null,
                 ShipToAddressID: header?.ShipToAddressID ?? null,
+                OptionPicks: await LineOptionPicks(line, provider, user),
             },
             provider,
             user,
         ),
+    };
+}
+
+interface ChoiceRow {
+    ProductOptionID: string | null;
+    ProductOptionValueID: string | null;
+    GroupKey: string;
+    OptionValue: string;
+}
+
+interface ChoicesCollection {
+    IsLoaded: boolean;
+    Items: readonly ChoiceRow[];
+}
+
+/**
+ * The option picks a line carries, saved or not.
+ *
+ * - `OptionPicks` passed by the caller win (unsaved lines, renewal pricing).
+ * - A line entity's `Choices` collection, when loaded, holds unsaved edits.
+ * - Otherwise the saved picks for the line's ID; none for a line not saved yet.
+ */
+export async function LineOptionPicks(
+    line: PricedLineFacts | (PricedLineFacts & { Choices?: ChoicesCollection }),
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<OptionPick[]> {
+    if (line.OptionPicks) return OptionPicksOnly(line.OptionPicks);
+    const choices = (line as { Choices?: ChoicesCollection }).Choices;
+    // A line not saved yet has nothing in the database: what it holds in memory is all of it, even
+    // though its collection was never loaded.
+    const unsaved = (line as { IsSaved?: boolean }).IsSaved === false;
+    if (choices && (choices.IsLoaded || unsaved)) return OptionPicksOnly(choices.Items.map(toPick));
+    if (!line.ID) return [];
+    // A product the cached catalog knows and that offers no options has no picks worth a query:
+    // every line of an order without options is priced without one.
+    const engine = OrdersEngine.Instance;
+    if (engine.ProductByID(line.ProductID) && engine.EffectiveOptions(line.ProductID).length === 0) return [];
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<ChoiceRow>(
+        {
+            EntityName: 'MJ_BizApps_Orders: Order Line Choices',
+            ExtraFilter: `OrderLineID = '${RequireUUID(line.ID, 'OrderLineID')}' AND ProductOptionID IS NOT NULL`,
+            Fields: ['ProductOptionID', 'ProductOptionValueID', 'GroupKey', 'OptionValue'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    return OptionPicksOnly((res?.Results ?? []).map(toPick));
+}
+
+function toPick(c: ChoiceRow): OptionPick {
+    return {
+        ProductOptionID: c.ProductOptionID,
+        ProductOptionValueID: c.ProductOptionValueID,
+        GroupKey: c.GroupKey,
+        OptionValue: c.OptionValue,
     };
 }
 

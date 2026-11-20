@@ -42,10 +42,12 @@ import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngin
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
 import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.js';
-import { PriceResolutionError, ResolvePrice, RevenueBandRequiredError } from './PriceResolver.js';
+import { OptionRequiredError, PriceResolutionError, ResolvePrice, RevenueBandRequiredError } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
-import { IsMarkedPriceStated, IsProductReplacedWithoutPriceEdit } from './linePricePick.js';
+import { LineOptionPicks, type PricedLineFacts } from './linePriceContext.js';
+import { OPTION_SOURCE, OptionApplicabilityRecord } from '../product-options.js';
+import { IsMarkedPriceStated, IsRepricedByEdit } from './linePricePick.js';
 import { AllocateProRata, DropStaleExtendedAmount, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
@@ -160,6 +162,9 @@ export interface OrderPricingContext {
      * pass, so every other line lost its price on screen too, a band already picked included, until
      * the unpicked line was removed. The screen's passes set this; the save walk does not, and still
      * refuses an order with a band left to pick.
+     *
+     * A line missing an option pick a price rule tests (`OptionRequiredError`) is left unpriced the
+     * same way, for the same reason.
      */
     LeaveUndecidedBandsUnpriced?: boolean;
 }
@@ -644,10 +649,11 @@ export class OrderPricingService {
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price
-        // for a free line and must not be mistaken for silence. Changing a saved line's product
-        // without typing a new price clears the old product's stored price so the new product is priced.
+        // for a free line and must not be mistaken for silence. Changing a saved line's product, or
+        // its option picks, without typing a new price clears the stored price so the line is priced
+        // again from the rules.
         const field = line.GetFieldByName('UnitPrice');
-        const productReplaced = IsProductReplacedWithoutPriceEdit(line);
+        const productReplaced = IsRepricedByEdit(line);
         const stated =
             !productReplaced &&
             (field?.Dirty === true || (line.UnitPrice ?? 0) > 0 || IsMarkedPriceStated(line));
@@ -664,8 +670,9 @@ export class OrderPricingService {
         try {
             resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
         } catch (err) {
-            if (!(err instanceof RevenueBandRequiredError) || !this.ctx.LeaveUndecidedBandsUnpriced) throw err;
-            // The rep has a band to pick on this line. The rest of the order still prices.
+            const pickNeeded = err instanceof RevenueBandRequiredError || err instanceof OptionRequiredError;
+            if (!pickNeeded || !this.ctx.LeaveUndecidedBandsUnpriced) throw err;
+            // The rep has a band or an option to pick on this line. The rest of the order still prices.
             this.out.LineErrors.set(line, err.message);
             this.out.EngineDefaults.set(line, null);
             return;
@@ -722,7 +729,7 @@ export class OrderPricingService {
             AsOf: AsDateValue(this.ctx.OrderDate) ?? TodayAsDateValue(),
             OrganizationID: this.ctx.BillToOrganizationID ?? null,
             PersonID: this.ctx.BillToPersonID ?? null,
-            ApplicabilityContext: await this.applicabilityBag(line.ProductID),
+            ApplicabilityContext: await this.applicabilityBag(line),
             ...(this.ctx.PriceListID !== undefined ? { PriceListID: this.ctx.PriceListID } : {}),
             ...(this.ctx.FeeType ? { FeeType: this.ctx.FeeType } : {}),
         };
@@ -768,9 +775,11 @@ export class OrderPricingService {
     }
 
     /**
-     * Parties once per walk; Product swapped per line so a When on Product.Type sees the SKU.
+     * Parties once per walk; Product and the line's option picks swapped per line, so a When on
+     * Product.Type sees the SKU and a When on Option.TIER sees this line's tier.
      */
-    private async applicabilityBag(productID: string): Promise<FilterEvalContext> {
+    private async applicabilityBag(line: mjBizAppsOrdersOrderLineEntity): Promise<FilterEvalContext> {
+        const productID = line.ProductID;
         if (!this.partyContext) {
             this.partyContext = await loadApplicabilityContext(
                 {
@@ -802,7 +811,8 @@ export class OrderPricingService {
             this.host.Provider,
             this.host.User,
         );
-        return { ...this.partyContext, Product: product.Product };
+        const picks = await LineOptionPicks(line as unknown as PricedLineFacts, this.host.Provider, this.host.User);
+        return { ...this.partyContext, Product: product.Product, [OPTION_SOURCE]: OptionApplicabilityRecord(picks) };
     }
 
     /** Product facts pricing needs: its category (for the walk), its company, and whether it may be sold at all. */

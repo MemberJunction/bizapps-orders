@@ -23,7 +23,8 @@ export class mjBizAppsOrdersProductCategoryFormComponent extends BaseFormCompone
             { sectionKey: 'mJBizAppsOrdersProducts', sectionName: 'Products', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductCategories', sectionName: 'Product Categories', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersProductOptionAssignments', sectionName: 'Product Option Assignments', isExpanded: false }
         ]);
     }
 }
