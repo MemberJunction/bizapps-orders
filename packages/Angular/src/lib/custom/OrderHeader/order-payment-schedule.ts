@@ -32,10 +32,13 @@ export function NoScheduleARNote(booked: boolean): string {
  * When one instalment raises AR.
  *
  * A row with a journal entry has been invoiced, and that entry is the AR increase. A `Scheduled`
- * row raises AR when it is invoiced. A row canceled before invoicing never raises any.
+ * row raises AR when it is invoiced. A row canceled before invoicing never raises any. Any other
+ * row without an entry (invoiced, paid or written off) is not expected to exist, since invoicing
+ * posts the entry; if one does, it says so rather than claiming AR was never raised.
  */
 export function InstalmentARLabel(row: InstalmentARFacts): string {
     if (row.JournalEntryID) return row.InvoicedAt ? `Raised ${FormatInstantDate(row.InvoicedAt)}` : 'Raised';
     if (row.Status === 'Scheduled') return 'When invoiced';
-    return 'Not raised';
+    if (row.Status === 'Canceled' && !row.InvoicedAt) return 'Not raised';
+    return 'No entry posted';
 }

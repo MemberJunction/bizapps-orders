@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OrdersConfirmReadinessOperation } from '@mj-biz-apps/orders-entities';
+import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import {
     BizAppsOrderHeaderFormComponent,
     ConfirmBlockerList,
@@ -143,5 +144,85 @@ describe('RefreshConfirmReadiness', () => {
         expect(instance.ConcessionProblems).toEqual([]);
         expect(instance.ConcessionCheckError).toMatch(/could not be checked \(network down\)/);
         expect(instance.ShowConfirm).toBe(true);
+    });
+});
+
+describe('the toolbar Confirm button', () => {
+    it('gives the concession problems as its disabled reason', () => {
+        const instance = form(record(), [PROBLEM, 'A second.']);
+        expect(instance.ConfirmDisabledReason(instance.record)).toBe(`${PROBLEM} A second.`);
+    });
+
+    it('gives the browser reason before the concession problems', () => {
+        const rec = record({ ConfirmEligibility: () => ({ Allowed: false, Reason: 'Need a line.' }) });
+        const instance = form(rec, [PROBLEM]);
+        expect(instance.ConfirmDisabledReason(instance.record)).toBe('Need a line.');
+    });
+
+    it('is on when nothing blocks', () => {
+        const instance = form(record(), []);
+        expect(instance.ConfirmDisabledReason(instance.record)).toBe(false);
+    });
+});
+
+describe('record events', () => {
+    type Handler = (event: { type: string }) => void;
+    type Watched = { watchRecordForReadiness(): void; loadInstalments(): Promise<void> };
+
+    function watched(): { instance: BizAppsOrderHeaderFormComponent; fire: Handler } {
+        let handler: Handler = () => undefined;
+        const rec = {
+            ...record(),
+            RegisterEventHandler: (h: Handler) => {
+                handler = h;
+                return { unsubscribe: () => undefined };
+            },
+        };
+        const instance = form(rec as unknown as FakeRecord);
+        (instance as unknown as Watched).watchRecordForReadiness();
+        return { instance, fire: (event) => handler(event) };
+    }
+
+    it('re-asks readiness and re-reads the schedule after a save', () => {
+        const { instance, fire } = watched();
+        const readiness = vi.spyOn(instance, 'RefreshConfirmReadiness').mockResolvedValue();
+        const instalments = vi.spyOn(instance as unknown as Watched, 'loadInstalments').mockResolvedValue();
+        fire({ type: 'save' });
+        expect(readiness).toHaveBeenCalledTimes(1);
+        expect(instalments).toHaveBeenCalledTimes(1);
+    });
+
+    it('re-asks readiness on a reload, leaving the schedule to RefreshRecord', () => {
+        const { instance, fire } = watched();
+        const readiness = vi.spyOn(instance, 'RefreshConfirmReadiness').mockResolvedValue();
+        const instalments = vi.spyOn(instance as unknown as Watched, 'loadInstalments').mockResolvedValue();
+        fire({ type: 'load_complete' });
+        expect(readiness).toHaveBeenCalledTimes(1);
+        expect(instalments).not.toHaveBeenCalled();
+    });
+
+    it('ignores other events', () => {
+        const { instance, fire } = watched();
+        const readiness = vi.spyOn(instance, 'RefreshConfirmReadiness').mockResolvedValue();
+        fire({ type: 'delete' });
+        expect(readiness).not.toHaveBeenCalled();
+    });
+});
+
+describe('RefreshRecord', () => {
+    it('re-reads the payment schedule after a successful refresh', async () => {
+        vi.spyOn(BaseFormComponent.prototype, 'RefreshRecord').mockResolvedValue(true);
+        const rows = [{ ID: 'r1' }];
+        const instance = form({ ...record(), LoadPaymentSchedule: async () => rows } as unknown as FakeRecord);
+        await expect(instance.RefreshRecord()).resolves.toBe(true);
+        expect(instance.Instalments).toEqual(rows);
+    });
+
+    it('leaves the schedule alone when the refresh fails', async () => {
+        vi.spyOn(BaseFormComponent.prototype, 'RefreshRecord').mockResolvedValue(false);
+        const load = vi.fn(async () => []);
+        const instance = form({ ...record(), LoadPaymentSchedule: load } as unknown as FakeRecord);
+        await instance.RefreshRecord();
+        expect(load).not.toHaveBeenCalled();
     });
 });

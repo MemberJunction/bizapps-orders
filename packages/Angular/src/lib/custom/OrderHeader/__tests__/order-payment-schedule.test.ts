@@ -35,6 +35,14 @@ describe('InstalmentARLabel', () => {
         expect(InstalmentARLabel({ Status: 'Canceled', InvoicedAt: null, JournalEntryID: null })).toBe('Not raised');
     });
 
+    it.each(['Invoiced', 'Paid', 'WrittenOff'] as const)('says no entry was posted for a %s row without one', (Status) => {
+        expect(InstalmentARLabel({ Status, InvoicedAt: invoicedAt, JournalEntryID: null })).toBe('No entry posted');
+    });
+
+    it('says no entry was posted for a row canceled after invoicing without one', () => {
+        expect(InstalmentARLabel({ Status: 'Canceled', InvoicedAt: invoicedAt, JournalEntryID: null })).toBe('No entry posted');
+    });
+
     it('still reports AR raised for an instalment canceled after invoicing', () => {
         expect(InstalmentARLabel({ Status: 'Canceled', InvoicedAt: invoicedAt, JournalEntryID: 'je-1' })).toBe(
             `Raised ${FormatInstantDate(invoicedAt)}`,
