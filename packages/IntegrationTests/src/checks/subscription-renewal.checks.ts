@@ -24,9 +24,9 @@
  *   SR12  the Action the scheduler dispatches reaches the operation and places the renewal
  *   SR13  Preview arrives from a scheduler as the STRING "true" and still writes nothing
  *   SR14  the schedule points at this Action, and ships disabled and set to preview
- *   SR15  the renewal carries one Invoiced schedule row per company, due on the invoice day plus the
- *         customer's terms capped at the term start, and AR is dated the business day it was
- *         invoiced, never on the new term's first day (#305)
+ *   SR15  the renewal carries one Invoiced schedule row per company, due the day before the new term
+ *         starts whatever the terms and the pass day (golive #477), and AR is dated the business day
+ *         it was invoiced, never on the new term's first day (#305)
  *   SR16  a renewal of a product recognised at sale books Dr Unbilled / Cr Sales, then the invoice
  *         moves it to AR (Dr AR / Cr Unbilled)
  *   SR17  the same renewal with no Unbilled Receivable account linked is skipped with the reason,
@@ -995,8 +995,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                // Net 30 for the seller, and a pass 60 days out, so invoice day + 30 lands before
-                // the term start and the cap does not decide the date (#305 review item 1).
+                // Net 30 for the seller, and a pass 60 days out: neither moves the due date, which is
+                // the day before the new term starts (golive #477).
                 await setCompanyDefaultTerms(ctx, 'Net30');
                 const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
                 const asOf = daysBefore(Term.EndDate, 60);
@@ -1008,7 +1008,9 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     `SELECT CONVERT(varchar(10), OrderDate, 23) AS OrderDate, CONVERT(varchar(10), DueDate, 23) AS DueDate
                      FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`,
                 );
-                AssertEqual(header.DueDate, daysBefore(header.OrderDate, -30), 'precondition: the order resolved Net 30');
+                const dayBeforeTerm = isoDate(Term.EndDate);
+                AssertEqual(header.OrderDate, daysBefore(dayBeforeTerm, -1), 'precondition: dated the first day of the new term');
+                AssertEqual(header.DueDate, dayBeforeTerm, 'the order is due the day before the new term starts, not order date plus Net 30');
 
                 const companies = await TxQuery<{ CompanyID: string }>(
                     ctx,
@@ -1025,7 +1027,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 Assert(SameID(row.CompanyID, companies[0].CompanyID), 'the row bills the line company');
                 AssertEqual(Number(row.InstallmentNumber), 1, 'a single instalment');
                 AssertEqual(Number(row.Amount), 1200, 'for the whole renewal');
-                AssertEqual(row.DueDate, daysBefore(asOf, -30), 'due on the invoice day plus the customer terms');
+                AssertEqual(row.DueDate, dayBeforeTerm, 'and so is its instalment, not the invoice day plus Net 30');
                 AssertEqual(row.Status, 'Invoiced', 'issued inside the confirm');
                 Assert(!!row.DocumentNumber, 'with an invoice number');
                 Assert(row.InvoicedAt != null, 'and an invoice timestamp');
@@ -1065,23 +1067,23 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 );
                 AssertEqual(Number(deferred.C), 1200, 'the invoice credits Deferred Revenue for the whole renewal');
 
-                // THE CAP. A second subscription renewed 10 days out: invoice day + 30 would be past
-                // the term start, so the row is due on the order date instead — and still issued.
-                // A different product: a second SubRolling for the same buyer stacks onto the first.
+                // A second subscription renewed 10 days out is due the day before its own term too, and
+                // the row is still issued. A different product: a second SubRolling for the same buyer
+                // stacks onto the first.
                 const second = await buySubscription(ctx, 'SubCalendar', 1200);
                 const lateAsOf = daysBefore(second.Term.EndDate, 10);
                 const late = await spawnRenewals(ctx, { SubscriptionID: second.SubscriptionID, AsOfDate: lateAsOf });
                 AssertEqual(late.Placed, 1, `expected the second renewal: ${late.Message} ${late.Candidates[0]?.SkippedReason ?? ''}`);
-                const capped = await TxOne<{ DueDate: string; Status: string; OrderDate: string }>(
+                const lateRow = await TxOne<{ DueDate: string; Status: string; HeaderDueDate: string }>(
                     ctx,
-                    `SELECT CONVERT(varchar(10), ps.DueDate, 23) AS DueDate, ps.Status, CONVERT(varchar(10), oh.OrderDate, 23) AS OrderDate
+                    `SELECT CONVERT(varchar(10), ps.DueDate, 23) AS DueDate, ps.Status, CONVERT(varchar(10), oh.DueDate, 23) AS HeaderDueDate
                      FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps
                      JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ps.OrderHeaderID
                      WHERE ps.OrderHeaderID = '${late.Candidates[0].OrderID}'`,
                 );
-                AssertEqual(capped.DueDate, capped.OrderDate, 'capped at the order date');
-                Assert(daysBefore(lateAsOf, -30) > capped.OrderDate, 'the check needs invoice day + 30 past the term start');
-                AssertEqual(capped.Status, 'Invoiced', 'and confirm still issued it');
+                AssertEqual(lateRow.DueDate, isoDate(second.Term.EndDate), 'due the day before the new term starts');
+                AssertEqual(lateRow.HeaderDueDate, lateRow.DueDate, 'on the order as on its instalment');
+                AssertEqual(lateRow.Status, 'Invoiced', 'and confirm still issued it');
             }),
     },
     {
@@ -1788,7 +1790,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR40',
-        Name: 'SR40: a subscription without a renewal card keeps the invoice-day due date and is never charged',
+        Name: 'SR40: a subscription without a renewal card is due the day before the term start and is never charged',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -1801,7 +1803,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     ctx,
                     `SELECT CONVERT(varchar(10), DueDate, 23) AS DueDate FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${orderID}'`,
                 );
-                Assert(row.DueDate < daysBefore(Term.EndDate, -1), `due before the term start, on the invoice-day rule: ${row.DueDate}`);
+                AssertEqual(row.DueDate, isoDate(Term.EndDate), 'due the day before the term start');
 
                 const out = await chargeRenewals(ctx, { SubscriptionID, AsOfDate: row.DueDate });
                 AssertEqual(out.Considered, 0, `an invoice-only renewal is not a candidate: ${out.Message}`);
@@ -4480,6 +4482,65 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { AutoRenew: true });
                 AssertEqual((await rowOn(daysBefore(lastDay, -12))).State, 'Lapsed', 'with auto-renew on, the same term lapsed past the pass');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR106',
+        Name: 'SR106: a renewal draft arrives with the prior order\'s bill-to person and terms and is due the day before the new term, and the confirm keeps them; a renewal placed confirmed is due the same day and takes no person from the prior order (golive #477)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // The prior order is confirmed under Net 30 for the organization, which holds the subscription.
+                // Its billing contact is then named on the order alone, as on an order loaded from a prior system.
+                await setCompanyDefaultTerms(ctx, 'Net30');
+                const { OrderID: priorOrderID, SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET BillToPersonID = '${f.Customers.PersonID}' WHERE ID = '${priorOrderID}'`);
+                const header = (orderID: string) =>
+                    TxOne<{ Status: string; OrderDate: string; DueDate: string | null; PaymentTermsTypeID: string | null; BillToPersonID: string | null }>(
+                        ctx,
+                        `SELECT Status, CONVERT(varchar(10), OrderDate, 23) AS OrderDate, CONVERT(varchar(10), DueDate, 23) AS DueDate, PaymentTermsTypeID, BillToPersonID
+                         FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`,
+                    );
+                const prior = await header(priorOrderID);
+                Assert(prior.PaymentTermsTypeID != null, 'precondition: the prior order recorded its terms');
+                const holder = await TxOne<{ BeneficiaryPersonID: string | null }>(ctx, `SELECT BeneficiaryPersonID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${SubscriptionID}'`);
+                AssertEqual(holder.BeneficiaryPersonID, null, 'precondition: the organization holds the subscription, so it names no person itself');
+                // The seller's default moves on. The draft still shows what this customer was last billed on.
+                await setCompanyDefaultTerms(ctx, 'Net60');
+
+                const out = await spawnRenewals(ctx, { SubscriptionIDs: [SubscriptionID], PlaceAs: 'Draft' });
+                AssertEqual(out.Placed, 1, `expected one draft: ${out.Message}; ${out.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                const orderID = out.Candidates[0].OrderID!;
+                const draft = await header(orderID);
+                const termStart = daysBefore(isoDate(Term.EndDate), -1);
+                AssertEqual(draft.Status, 'Draft', 'left as a draft');
+                AssertEqual(draft.OrderDate, termStart, 'precondition: dated the first day of the new term');
+                const dueDay = isoDate(Term.EndDate);
+                AssertEqual(draft.DueDate, dueDay, 'due on the last day of the expiring term, the day before the new term starts');
+                AssertEqual(String(draft.PaymentTermsTypeID).toLowerCase(), String(prior.PaymentTermsTypeID).toLowerCase(), "on the prior order's terms, not the seller's new default");
+                AssertEqual(String(draft.BillToPersonID).toLowerCase(), String(f.Customers.PersonID).toLowerCase(), 'billed to the person the prior order was billed to');
+
+                // A person confirms it from the order form: a stated due date is not recomputed from the terms.
+                const fresh = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+                Assert(await fresh.Load(orderID), 'the draft did not load');
+                fresh.Status = 'Confirmed';
+                Assert(await fresh.Save(), `a fresh object confirms the draft: ${fresh.LatestResult?.CompleteMessage}`);
+                const confirmed = await header(orderID);
+                AssertEqual(confirmed.DueDate, dueDay, 'the confirm leaves the due date where the draft stated it');
+                AssertEqual(String(confirmed.PaymentTermsTypeID).toLowerCase(), String(prior.PaymentTermsTypeID).toLowerCase(), 'and the terms as they were');
+                AssertEqual((await termsOf(ctx, SubscriptionID)).length, 2, 'and term 2 is booked');
+
+                // Placed CONFIRMED, nobody reviews the order before it is invoiced, so it names no person
+                // the subscription did not: a second subscription bought the same way keeps a blank bill-to person.
+                const other = await buySubscription(ctx, 'SubCalendar', 1200);
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET BillToPersonID = '${f.Customers.PersonID}' WHERE ID = '${other.OrderID}'`);
+                const placed = await spawnRenewals(ctx, { SubscriptionIDs: [other.SubscriptionID], PlaceAs: 'Confirmed' });
+                AssertEqual(placed.Placed, 1, `expected one confirmed renewal: ${placed.Message}; ${placed.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                const booked = await header(placed.Candidates[0].OrderID!);
+                AssertEqual(booked.Status, 'Confirmed', 'placed confirmed');
+                AssertEqual(booked.BillToPersonID, null, 'a renewal placed confirmed takes no bill-to person from the prior order');
+                AssertEqual(booked.DueDate, isoDate(other.Term.EndDate), 'and is due the day before its new term starts, as a draft is');
             }),
     },
 ];
