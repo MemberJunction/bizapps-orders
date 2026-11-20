@@ -167,6 +167,8 @@ export * from './external-payment-set-aside';
 export * from './ExternalPaymentEntity';
 // Whether the scheduled poll job lets the payment poll record cash — read by the operation, the webhook and the queue page (#583).
 export * from './external-payment-poll-job.js';
+// Whether the scheduled send job will send a unit on its own — read by the send dialogs (#742).
+export * from './external-invoice-send-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
 export * from './renewal-price.js';
 export * from './renewal-worklist.js';
