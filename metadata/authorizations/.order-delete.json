@@ -1,0 +1,26 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Order.Delete",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Delete any Draft or Quoted order, whoever created it (OrderEntityServer.Delete). Parent of MJ.BizApps.Orders.Order.DeleteOwn, so it implies it. Entity permissions still decide whether a role may delete order rows at all; this decides whose. Held by Finance, and by Developer, which keeps every permission. A deal's draft order deleted with its deal is exempt: sales deletes it as the system user after its own deal check. Without this row, no one can delete an order."
+    },
+    "primaryKey": {
+      "ID": "3EDE967A-0A85-4B5B-AF2E-C342185BA939"
+    }
+  },
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Order.DeleteOwn",
+      "ParentID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Order.Delete",
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Delete a Draft or Quoted order the user created, read from the order's Create entry in MJ: Record Changes. An order with no recorded creator needs MJ.BizApps.Orders.Order.Delete. Held by Account Director."
+    },
+    "primaryKey": {
+      "ID": "DC173597-0636-49E4-80AD-8798B1BAD960"
+    }
+  }
+]

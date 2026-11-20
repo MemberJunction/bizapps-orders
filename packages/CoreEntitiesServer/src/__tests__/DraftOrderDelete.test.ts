@@ -4,7 +4,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockRunView } = vi.hoisted(() => ({ mockRunView: vi.fn() }));
+const { mockRunView, deleteGate } = vi.hoisted(() => ({ mockRunView: vi.fn(), deleteGate: { refusal: null as string | null } }));
+
+// Who may delete (#1021) has its own tests in OrderDeleteAuthority.test.ts; these drive what comes after it.
+vi.mock('../OrderDeleteAuthority.js', () => ({ CheckOrderDelete: vi.fn(async () => deleteGate.refusal) }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();
@@ -72,9 +75,21 @@ function draftOrder(status: string, log: string[]) {
 
 beforeEach(() => {
     mockRunView.mockReset();
+    deleteGate.refusal = null;
 });
 
 describe('OrderEntityServer.Delete', () => {
+    it('refuses an order the user may not delete (#1021) before opening a transaction', async () => {
+        const log: string[] = [];
+        const { order, history } = draftOrder('Draft', log);
+        deleteGate.refusal = 'Order ORD-000009 was created by someone else.';
+
+        await expect(order.Delete()).resolves.toBe(false);
+        expect(history[0].Message).toBe('Order ORD-000009 was created by someone else.');
+        expect(mockRunView).not.toHaveBeenCalled();
+        expect(log).toEqual([]);
+    });
+
     it('refuses a confirmed order and touches nothing', async () => {
         const log: string[] = [];
         const { order, history } = draftOrder('Confirmed', log);
