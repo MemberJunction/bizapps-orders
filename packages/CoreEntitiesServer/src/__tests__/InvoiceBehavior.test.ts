@@ -751,7 +751,7 @@ describe('instalment documents', () => {
         expect(doc.DueDate).toBe('2027-03-18');
         expect(doc.DocumentNumber).toBe('ORD-1005-2');
         expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Total', 'Instalment', 'Due']);
-        expect(doc.Ladder.find((r) => r.Kind === 'Instalment')?.Label).toBe('Instalment 2 of 4');
+        expect(doc.Ladder.find((r) => r.Kind === 'Instalment')?.Label).toBe('Installment 2 of 4');
     });
 
     it("bills an order-company instalment of a two-company order as one document for every line (golive #311)", () => {

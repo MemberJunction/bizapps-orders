@@ -1,5 +1,60 @@
 # @mj-biz-apps/orders-ng
 
+## 5.51.0
+
+### Minor Changes
+
+- 3caa683: Confirm no longer moves a subscription line to the next term without anyone deciding it. A direct order is refused while a line for a product its subscriber already holds has not chosen between renewing that subscription and "Create new subscription" (checkout and provider-payment orders keep the subscription type's rule). When a line's stated start does move to the next term, confirm refuses the order if its payment schedule still falls due before that term starts, naming the line, both periods and the instalments, instead of invoicing them early. The order line card warns about those instalments as soon as the renew choice is made, testing every moved line against the gross of the lines on screen. `orders-entities` exports `FindInstalmentsBeforeMovedTerms`, `DescribeInstalmentsBeforeMovedTerm`, `ExplainInstalmentsBeforeMovedTerms` and `ExplainUnansweredHeldLines`.
+- aacb117: Renewals: a prior line longer than the renewal term renews at the term's share of its price, typed or engine-priced, and a shorter one renews unscaled with a review note; Spawn Renewals reports both (golive #468). Revenue bands: an unpicked band on one line no longer unprices the rest of the order on screen, Confirm accepts a band picked on the line, and bands are listed by lower edge (golive #470).
+- dab3dc1: Go-live fixes: a Confirmed order header, and a company's last schedule row on one, refuse DELETE (51019, 51020); the confirmation stamp is server-owned and put back if booking rolls back; a $0 line on a booked order keeps its money; Bill.com finds an existing customer by account number, creates one only when allowed, and tells finance when an invoice is ready; per-order "Check for payments now"; the payment webhook writes on its own provider; a settled checkout intent is not moved back; approval roles, permissions and the Senior Finance (AR) override grant; and smaller concession, review-task, renewal and pricing fixes.
+
+### Patch Changes
+
+- 05d15e9: Customer A/R and the Orders dashboard now age an order billed in instalments by each instalment's own due date. Before, the whole balance aged on the order's single due date, so one late instalment made the entire balance past due and the date never moved as instalments were paid. The dashboard's Overdue amount is now the money that is late, matching the aging bar, and the overdue count above the orders list uses the next unpaid instalment's date like the list it labels. On Customer A/R the open items show the next due date. Orders with no instalments read as before.
+- 645dfa3: Checkout element: `capture-cookies` attribute, the embedding page URL and its referrer host, kept on the checkout session as `MetadataJSON.Tracking` for outbound consumers. The page URL keeps only its origin, path and tracking parameters (`utm_*` and ad click ids).
+- a436df1: `@mj-biz-apps/orders-ng` exports the order lines editor (`MJOOrderLinesEditorComponent`, selector `mjo-order-lines-editor`) and its discount draft types, so other apps can edit an order's lines inside their own forms (bc-aidp-next-golive#331).
+- b416a08: The product pricing screen hides prices kept for orders created before a past cutover (Applicability `Order.__mj_CreatedAt lt <cutover>`) with the inactive and expired ones, behind "Show inactive". They show as "Orders before <date>" and are not offered for activation. New `OlderOrdersCutoff` reads the cutover from a row's Applicability.
+- af72a2d: Order line product picker: add an "Only selling company products" checkbox, checked by default. Unchecking it lists every company's products for multi-company deals; while checked, the list says how many search matches other companies have.
+- Updated dependencies [05d15e9]
+- Updated dependencies [645dfa3]
+- Updated dependencies [3caa683]
+- Updated dependencies [aacb117]
+- Updated dependencies [dab3dc1]
+- Updated dependencies [b416a08]
+- Updated dependencies [5162834]
+- Updated dependencies [9a4efdd]
+- Updated dependencies [c5d9e02]
+  - @mj-biz-apps/orders-entities@5.51.0
+
+## 5.50.2
+
+### Patch Changes
+
+- 543e594: The order line prompt for a product the customer already has is reworded as a question (golive #480): "Is this line a renewal of that subscription, or a new one?" The choices are now "Renew <subscription>" and "Create new subscription", each showing the dates it gives the line, and the hint under them says when renewing will run on different dates from the ones entered. Wording only: what confirm does with each answer is unchanged.
+- b17f317: The Orders home shows an "Orders awaiting review" card: the Order Review tasks assigned to the signed-in user or to a role they hold, through the Tasks approval inbox, so finance can review and decide them without opening the Tasks app (bc-aidp-next-golive#442). orders-ng now declares `@mj-biz-apps/tasks-ng` as a peer (`^1.13.0`, the release with role-assigned tasks), and the app manifest requires bizapps-tasks 1.13.0 or later.
+- Updated dependencies [543e594]
+  - @mj-biz-apps/orders-entities@5.50.2
+
+## 5.50.1
+
+### Patch Changes
+
+- c8eedb2: A renewal takes its annual increase when the expiring term is not the first term its order line bought (golive #478). The anniversary test now measures from the start of the earliest term that line bought, where its price began, instead of from the expiring term's start. A 13-month line booked as a year and a remainder, or an annual line with a one-day last term, used to renew flat because the last term already started on the anniversary. A line that bought one term renews as before: annual on every renewal, quarterly and monthly once a year.
+- Updated dependencies [c8eedb2]
+  - @mj-biz-apps/orders-entities@5.50.1
+
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+### Patch Changes
+
+- 4a60083: Restore the declarative `[mjRecordLink]` directive (removed while the app built against MJ 6.1 LTS) now that MJ pins are on the 6.2 LTS line, which ships it.
+- Updated dependencies [f950cc2]
+  - @mj-biz-apps/orders-entities@5.50.0
+
 ## 5.49.0
 
 ### Minor Changes
@@ -1164,8 +1219,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                    "FK_EntityFieldValue_EntityField"
+                                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

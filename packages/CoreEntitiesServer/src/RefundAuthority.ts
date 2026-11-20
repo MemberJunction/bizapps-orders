@@ -89,10 +89,9 @@ export function RefundAuthorityRefusal(facts: RefundAuthorityFacts): string | nu
     }
     if (facts.ApproverRoleName && facts.CallerHoldsApproverRole) return null;
     return facts.ApproverRoleName
-        ? `Issuing a refund needs the '${facts.ApproverRoleName}' role, or the receiving company's approver (the Approval CFO on its ` +
-              `Accounting Company Profile), and you hold neither.`
-        : `Issuing a refund needs the receiving company's approver (the Approval CFO on its Accounting Company Profile): no refund ` +
-              `approver role is configured (Orders setting RefundApproverRole).`;
+        ? `You don't have permission to issue this refund. Refunds can be issued by the ${facts.ApproverRoleName} role or the ` +
+              `receiving company's CFO approver.`
+        : `You don't have permission to issue this refund. Only the receiving company's CFO approver can.`;
 }
 
 /** What {@link CheckRefundAuthority} needs about the refund. */

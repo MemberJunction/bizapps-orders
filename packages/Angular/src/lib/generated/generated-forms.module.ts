@@ -77,6 +77,7 @@ import { mjBizAppsOrdersPromotionTypeFormComponent } from "./Entities/mjBizAppsO
 import { mjBizAppsOrdersReferralProgramFormComponent } from "./Entities/mjBizAppsOrdersReferralProgram/mjbizappsordersreferralprogram.form.component";
 import { mjBizAppsOrdersRevenueRecognitionTypeFormComponent } from "./Entities/mjBizAppsOrdersRevenueRecognitionType/mjbizappsordersrevenuerecognitiontype.form.component";
 import { mjBizAppsOrdersSalesAuthorityFormComponent } from "./Entities/mjBizAppsOrdersSalesAuthority/mjbizappsorderssalesauthority.form.component";
+import { mjBizAppsOrdersSalesAuthorityMixTierFormComponent } from "./Entities/mjBizAppsOrdersSalesAuthorityMixTier/mjbizappsorderssalesauthoritymixtier.form.component";
 import { mjBizAppsOrdersSalesRuleFormComponent } from "./Entities/mjBizAppsOrdersSalesRule/mjbizappsorderssalesrule.form.component";
 import { mjBizAppsOrdersStoredValueAccountFormComponent } from "./Entities/mjBizAppsOrdersStoredValueAccount/mjbizappsordersstoredvalueaccount.form.component";
 import { mjBizAppsOrdersStoredValueTransactionFormComponent } from "./Entities/mjBizAppsOrdersStoredValueTransaction/mjbizappsordersstoredvaluetransaction.form.component";
@@ -90,7 +91,8 @@ import { mjBizAppsOrdersSubscriptionTypeFormComponent } from "./Entities/mjBizAp
 
 @NgModule({
 declarations: [
-    mjBizAppsOrdersDimensionDefaultFormComponent
+    mjBizAppsOrdersDimensionDefaultFormComponent,
+    mjBizAppsOrdersSalesAuthorityMixTierFormComponent
 ],
 imports: [
     CommonModule,

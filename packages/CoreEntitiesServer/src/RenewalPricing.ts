@@ -28,8 +28,10 @@ import {
     LoadOrdersEngine,
     OrdersEngine,
     PriceRenewal,
-    PriorTermShare,
+    PriorLineScaling,
+    type PriorLineScale,
     RenewalCrossesAnniversary,
+    RenewalPriceStart,
     ResolvePrice,
     ResolveRenewalIncrease,
     type PricedLineFacts,
@@ -37,7 +39,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { RequireUUID } from './sql-guards.js';
 import {
-    MultiTermLineMonths,
+    MonthsCovered,
     ResolveSubscriptionTypeID,
     SubscriptionBehaviorFor,
     SubscriptionTypeRulesFrom,
@@ -71,6 +73,13 @@ export interface RenewalSubjectRow {
     /** Seats the expiring term covers (`SubscriptionTerm.Quantity`) — what the renewal buys again. */
     TermQuantity: number;
     OrderLineID: string;
+    /**
+     * The start of the earliest term on this subscription that `OrderLineID` bought (golive #478):
+     * where the price being renewed began. Differs from `TermStartDate` only when the line bought
+     * several terms. Null reads as `TermStartDate`. Required, so a selection that forgets it does
+     * not compile into the old reading; select it with {@link LineFirstTermStartSql}.
+     */
+    LineFirstTermStartDate: string | null;
     SubscriptionStartDate: string;
     SubscriptionIncreasePercent: number | null;
     CarryDiscountOnRenewal: boolean;
@@ -122,8 +131,15 @@ export interface PricedRenewal {
     MovesToSuccessor: boolean;
     Quantity: number;
     Price: RenewalPrice;
-    /** The months the prior line's price covered, when it bought several terms and was cut to one (golive #338). */
+    /**
+     * The months the prior line's price covered, when that line was longer than the renewal term and
+     * its price was cut to the term's share (golive #338, golive #468); null otherwise.
+     */
     PriorLineMonths: number | null;
+    /** How the prior line's length compares with the renewal term (golive #468). */
+    PriorLineScale: PriorLineScale;
+    /** The prior line's unit price as it stood, before any cut to the renewal term's share. */
+    PriorUnitPrice: number;
     /** The renewal term, as the confirm will decide it; null when it cannot be decided ahead of the confirm. */
     Term: { Start: string; End: string } | null;
     /** The codes the renewal presents (see `RenewalPromotions.ts`), with their PromotionCode IDs. */
@@ -164,6 +180,28 @@ export function NonSubscriptionSuccessorRefusal(chain: ReadonlyArray<Pick<ChainP
 export function DayAfter(date: string | Date): Date {
     const d = new Date(date);
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
+}
+
+/**
+ * SQL for {@link RenewalSubjectRow.LineFirstTermStartDate}: the earliest start among the terms of
+ * the same subscription bought by the same order line as the term aliased `termAlias`.
+ */
+export function LineFirstTermStartSql(termAlias: string): string {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(termAlias)) {
+        throw new Error(`LineFirstTermStartSql: '${termAlias}' is not a plain SQL table alias.`);
+    }
+    return (
+        `(SELECT MIN(ft.StartDate) FROM __mj_BizAppsOrders.SubscriptionTerm ft ` +
+        `WHERE ft.SubscriptionID = ${termAlias}.SubscriptionID AND ft.OrderLineID = ${termAlias}.OrderLineID)`
+    );
+}
+
+/** A `date` column value (string or Date) as UTC midnight of its calendar day, or null when absent or unreadable. */
+function utcDayOf(v: string | Date | null | undefined): Date | null {
+    if (v == null || v === '') return null;
+    const d = new Date(v);
+    if (Number.isNaN(d.getTime())) return null;
+    return new Date(`${d.toISOString().slice(0, 10)}T00:00:00Z`);
 }
 
 /** Lead days in force for a subject: its own, else its type's, else 0. */
@@ -229,8 +267,9 @@ export class RenewalPricer {
         const renewalDay = DayAfter(due.TermEndDate);
         const carry = !!due.CarryDiscountOnRenewal;
         await LoadOrdersEngine(this.provider, this.user);
-        const priorLineMonths = this.priorLineMonths(due, source);
-        const share = priorLineMonths == null ? 1 : PriorTermShare(priorLineMonths, this.termMonthsOf(due));
+        const term = this.RenewalTerm(due, product);
+        const scale = PriorLineScaling(this.priorLineMonths(due, source), this.renewalTermMonths(due, term));
+        const share = scale.Share;
 
         // A list price is resolved only where the rule needs one: the successor's as of the renewal
         // day, or the prior product's as of the prior order when a price typed below it may lapse.
@@ -247,6 +286,13 @@ export class RenewalPricer {
             Company: await this.loadCompanyIncrease(due.CompanyID),
         });
 
+        // From where the price began, not where the last term on the line began (golive #478).
+        const applyIncrease = RenewalCrossesAnniversary(
+            due.SubscriptionStartDate,
+            RenewalPriceStart(due.TermStartDate, due.LineFirstTermStartDate),
+            renewalDay,
+        );
+
         let price: RenewalPrice;
         try {
             price = PriceRenewal({
@@ -258,7 +304,7 @@ export class RenewalPricer {
                 SuccessorListPrice: successorList,
                 CarryDiscount: carry,
                 Increase: increase,
-                ApplyIncrease: RenewalCrossesAnniversary(due.SubscriptionStartDate, due.TermStartDate, renewalDay),
+                ApplyIncrease: applyIncrease,
             });
         } catch (err) {
             throw new Error(
@@ -273,9 +319,10 @@ export class RenewalPricer {
             MovesToSuccessor: movesToSuccessor,
             Quantity: quantity,
             Price: price,
-            // Only a typed price is cut (see `PriceRenewal`), so only that one is reported as a share.
-            PriorLineMonths: share < 1 && source.PriceOverridden ? priorLineMonths : null,
-            Term: this.RenewalTerm(due, product),
+            PriorLineMonths: scale.ScaledDown ? scale.LineMonths : null,
+            PriorLineScale: scale,
+            PriorUnitPrice: Number(source.UnitPrice),
+            Term: term,
             PromotionCodes: options.IncludePromotions === false ? [] : await this.loadRenewalPromotionCodes(source),
         };
     }
@@ -351,12 +398,29 @@ export class RenewalPricer {
     }
 
     /**
-     * The months the source line's price covers when that line bought earlier terms too, or null
-     * (golive #338). Read from the line's service period, which the confirm sets to the whole coverage.
+     * The months the source line's price covers: its service period, which the confirm sets to the
+     * whole coverage when the line bought several terms (golive #338). A line stating no period reads
+     * as the expiring term it bought. Null when neither is a usable span.
      */
     private priorLineMonths(due: RenewalSubjectRow, source: RenewalSourceLineRow): number | null {
-        const day = (v: string | Date | null) => (v ? new Date(`${new Date(v).toISOString().slice(0, 10)}T00:00:00Z`) : null);
-        return MultiTermLineMonths(day(source.ServicePeriodStart), day(source.ServicePeriodEnd), day(due.TermStartDate)!);
+        const statesPeriod = !!source.ServicePeriodStart && !!source.ServicePeriodEnd;
+        const start = utcDayOf(statesPeriod ? source.ServicePeriodStart : due.TermStartDate);
+        const end = utcDayOf(statesPeriod ? source.ServicePeriodEnd : due.TermEndDate);
+        if (!start || !end || end.getTime() < start.getTime()) return null;
+        return MonthsCovered(start, end);
+    }
+
+    /**
+     * The months the renewal buys: the term the confirm will decide when that is known here, else the
+     * subscription type's term length (golive #468).
+     */
+    private renewalTermMonths(due: RenewalSubjectRow, term: { Start: string; End: string } | null): number {
+        if (term) {
+            const start = utcDayOf(term.Start);
+            const end = utcDayOf(term.End);
+            if (start && end && end.getTime() >= start.getTime()) return MonthsCovered(start, end);
+        }
+        return this.termMonthsOf(due);
     }
 
     /**

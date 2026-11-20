@@ -1,0 +1,154 @@
+# The release-line rules, enforced on PRs (guides/RELEASE_LINES.md).
+#
+#   lines: record                  PR into next   release-lines.json is well formed, a line's identity
+#                                                 never changes, an LTS line never reopens.
+#   lines: backport or edge-only   PR into next   a PR adding a migration is labelled for every open
+#                                                 line, or its migrations are edge-only.
+#   lines: on next first           PR into lts/*  every commit is a cherry-pick of a commit on next.
+#   lines: migrations              PR into lts/*  open line: next's migrations in next's order, no
+#                                                 edge-only ones. LTS line: no migration or metadata
+#                                                 change, no minor bump.
+#   lines: mj pin                  PR into lts/*  MJ dependencies, the lockfile and mj-app.json stay
+#                                  and main       inside the line's MJ minor.
+#
+# Every job reads release-lines.json from `next`, except `lines: record` and `lines: backport or
+# edge-only`, which read the PR's own copy (a PR may add its migration to the edge-only list).
+#
+# One workflow on all three base branches with job-level `if:`s, so each context exists wherever it
+# might be required: a job skipped by `if:` reports a conclusion and satisfies a required check,
+# while a workflow filtered out at `on:` creates no run and would leave it Pending forever.
+name: Release lines
+
+on:
+  pull_request:
+    # labeled/unlabeled: two jobs read labels, and adding or removing one must re-run them.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    branches: [next, main, 'lts/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-lines-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: 'lines: record'
+    if: github.event.pull_request.draft == false && github.base_ref == 'next'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: release-lines.json is valid, and its changes are allowed transitions
+        run: |
+          git fetch --no-tags origin next
+          node .github/scripts/release-lines.mjs validate --file release-lines.json --base origin/next
+      - name: Every edge-only migration exists on this branch
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in $(jq -r '.next.edgeOnlyMigrations[]' release-lines.json); do
+            if [ ! -f "migrations/$name" ]; then
+              echo "::error file=release-lines.json::next.edgeOnlyMigrations lists $name, which is not in migrations/."
+              missing=1
+            fi
+          done
+          exit $missing
+
+  backport-or-edge-only:
+    name: 'lines: backport or edge-only'
+    if: github.event.pull_request.draft == false && github.base_ref == 'next'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: A migration goes to every open line, or is edge-only
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          git fetch --no-tags origin next
+          node .github/scripts/check-backport.mjs labels \
+            --base "$(git merge-base origin/next HEAD)" --labels "$LABELS" --record release-lines.json
+
+  on-next-first:
+    name: 'lines: on next first'
+    if: github.event.pull_request.draft == false && startsWith(github.base_ref, 'lts/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # issues/pull-requests read: the `line-cut` exemption looks up who added the label and their role.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Every commit is a cherry-pick of a commit on next
+        env:
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+          AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --no-tags origin next "$BASE_REF"
+          node .github/scripts/check-backport.mjs provenance \
+            --base "$(git merge-base "origin/$BASE_REF" HEAD)" --labels "$LABELS" \
+            --head-ref "$HEAD_REF" --author-type "$AUTHOR_TYPE"
+
+  migrations:
+    name: 'lines: migrations'
+    if: github.event.pull_request.draft == false && startsWith(github.base_ref, 'lts/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Open line follows next; LTS line is frozen
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin next "$BASE_REF"
+          node .github/scripts/check-line-migrations.mjs --branch "$BASE_REF" \
+            --base "$(git merge-base "origin/$BASE_REF" HEAD)"
+
+  mj-pin:
+    name: 'lines: mj pin'
+    if: github.event.pull_request.draft == false && github.base_ref != 'next'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: MemberJunction stays inside the line
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags --depth=1 origin next
+          if [ "$BASE_REF" = "main" ]; then
+            node .github/scripts/check-mj-line.mjs --main
+          else
+            node .github/scripts/check-mj-line.mjs --branch "$BASE_REF"
+          fi

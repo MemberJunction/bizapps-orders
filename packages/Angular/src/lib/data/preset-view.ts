@@ -5,8 +5,9 @@ import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
  *
  * ── WHY THIS EXISTS, AND WHY A PLAIN GETTER CANNOT ─────────────────────────────────────────────
  *
- * Four pages here hand the viewer a synthetic view they build themselves rather than a saved one:
- * Customer A/R, Account Credit, Overdue and Fulfillment. Each built it in a getter that returned a
+ * Three pages here hand the viewer a synthetic view they build themselves rather than a saved one:
+ * Account Credit, Overdue and Fulfillment (Customer A/R was a fourth until its open items became its
+ * own table). Each built it in a getter that returned a
  * fresh object literal, which is the natural way to write it and is what deadlocked two of those
  * screens (bc-aidp-next-golive#362): "Loading MJ_BizApps_Orders: Order Headers..." with 0 records,
  * for as long as anyone was willing to wait.
@@ -28,7 +29,7 @@ import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
  * ```typescript
  * private readonly openOrders = new PresetViewRef();
  *
- * public get CustomerOpenOrdersView(): MJUserViewEntityExtended | null {
+ * public get CreditOrdersView(): MJUserViewEntityExtended | null {
  *     if (!this.OrderEntityInfo || !this.Selected) return null;
  *     return this.openOrders.For(`${this.OrderEntityInfo.ID}|${this.Selected.Key}`, () => ({ ... }));
  * }

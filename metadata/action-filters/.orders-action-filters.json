@@ -1,0 +1,12 @@
+[
+  {
+    "fields": {
+      "UserDescription": "MJ_BizApps_Orders: Order Status Changed To Confirmed. True when the save transitions OrderHeader.Status to Confirmed.",
+      "Code": "return ActionFilterContext.DidFieldChangeToValue('Status', 'Confirmed');",
+      "CodeExplanation": "Evaluates to true only on the save where OrderHeader.Status changes to 'Confirmed', preventing subsequent saves on an already-confirmed order from re-triggering the bound Entity Action."
+    },
+    "primaryKey": {
+      "ID": "4A91F2E3-8C47-4D62-9B15-7E2A3C4D5F60"
+    }
+  }
+]

@@ -175,7 +175,7 @@ describe('PaymentHeaderEntityServer.Save — correcting a captured payment\'s da
         expect(h.steps).toEqual([]);
         expect(h.redateCalls).toEqual([]);
         expect(failure(p)).toBe(
-            `Changing the date of a captured payment requires the ${PAYMENT_DATE_CHANGE_AUTH} authorization (the Finance role).`,
+            "You don't have permission to change the date of a received payment. Please request this from Finance.",
         );
     });
 

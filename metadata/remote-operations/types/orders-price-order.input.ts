@@ -46,6 +46,12 @@ export interface PriceOrderInput {
         Quantity: number;
         /** Omit to have the engine resolve it. Supplying it PINS the price, exactly as on a real line. */
         UnitPrice?: number | null;
+        /**
+         * The named price the line is on, carried with a pinned `UnitPrice` so the answer names the
+         * rule it was picked from (a revenue band the rep chose, a named list price). Ignored when
+         * `UnitPrice` is omitted: the engine then decides the rule (golive #470).
+         */
+        ProductPriceID?: string | null;
         DiscountPct?: number | null;
         ServicePeriodStart?: string | null;
         ServicePeriodEnd?: string | null;

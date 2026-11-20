@@ -57,7 +57,7 @@ export function PaymentDateCorrectionRefusal(
     provider?: IMetadataProvider | { Authorizations?: AuthorizationInfo[] },
 ): string | null {
     if (!IsPaymentDateCorrection(payment) || UserCanChangePaymentDate(user, provider)) return null;
-    return `Changing the date of a captured payment requires the ${PAYMENT_DATE_CHANGE_AUTH} authorization (the Finance role).`;
+    return "You don't have permission to change the date of a received payment. Please request this from Finance.";
 }
 
 /**

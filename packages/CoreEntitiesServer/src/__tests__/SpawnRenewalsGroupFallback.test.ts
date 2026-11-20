@@ -28,6 +28,8 @@ vi.mock('../RenewalPricing.js', async (importOriginal) => {
                     Quantity: due.TermQuantity,
                     Price: { BasePrice: 100, BaseSource: 'PriorPrice', IncreasePercent: 0, IncreaseSource: 'None', UnitPrice: 100, DiscountPct: 0 },
                     PriorLineMonths: null,
+                    PriorLineScale: { Share: 1, LineMonths: 12, TermMonths: 12, ScaledDown: false, ShorterThanTerm: false },
+                    PriorUnitPrice: 100,
                     Term: { Start: '2027-04-01', End: '2028-03-31' },
                     PromotionCodes: [],
                 };
