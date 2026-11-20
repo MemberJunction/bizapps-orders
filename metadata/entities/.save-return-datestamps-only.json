@@ -1,0 +1,62 @@
+[
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Payment Webhook Deliveries to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Payment Webhook Deliveries",
+      "TrackRecordChanges": false,
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries"
+    }
+  },
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Outbound Deliveries to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Outbound Deliveries",
+      "TrackRecordChanges": false,
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries"
+    }
+  },
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Outbound Events to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Outbound Events",
+      "TrackRecordChanges": false,
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events"
+    }
+  },
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Subscription Events to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Subscription Events",
+      "TrackRecordChanges": false,
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Events"
+    }
+  }
+]
