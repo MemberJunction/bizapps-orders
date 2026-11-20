@@ -742,12 +742,11 @@ export const IsaChecks: NamedCheck[] = [
                 });
                 const ticket = built.Lines[0];
 
-                // EnsureISAChild on a NEW line — the call CheckoutSessionService and the order-lines
-                // editor make. The line has no row yet, so the child copies its key instead of reading
-                // one; MJ#4859 (fixed in MJ#4891) stopped that path logging the miss. A check cannot
-                // see a log line, so this exercises the fixed path without guarding it.
+                // Zero-arg EnsureISAChild on a NEW line — the call CheckoutSessionService, SplitLineIntoSeats,
+                // and the order-lines editor make. SubtypeSelector ("ProductID.ProductTypeID.OrderLineExtensionEntity")
+                // resolves EVENT_ORDER_LINE_ENTITY from ticket.ProductID without any hand-passed entity name.
                 const attendee = eventOrderLineOf(
-                    await ticket.EnsureISAChild(EVENT_ORDER_LINE_ENTITY),
+                    await ticket.EnsureISAChild(),
                     'IS10: the new ticket line',
                 );
                 Assert(
@@ -755,7 +754,7 @@ export const IsaChecks: NamedCheck[] = [
                     'IS10: EnsureISAChild links the child both ways',
                 );
                 Assert(
-                    (await ticket.EnsureISAChild(EVENT_ORDER_LINE_ENTITY)) === attendee,
+                    (await ticket.EnsureISAChild()) === attendee,
                     'IS10: asking again returns the SAME child — EnsureISAChild is idempotent',
                 );
                 attendee.PersonID = f.Customers.PersonID;
@@ -777,6 +776,70 @@ export const IsaChecks: NamedCheck[] = [
                 Assert(line.Extension.Entity === found, "IS10: the line's Extension companion exposes the discovered child");
                 Assert(SameID(found.PersonID, f.Customers.PersonID), 'IS10: the attendee came back with the line');
                 AssertEqual(found.Comments, ATTENDEE_NOTE, "IS10: and so did the attendee's note");
+            }),
+    },
+    {
+        Id: 'orders-isa.IS11',
+        Name: 'IS11: zero-arg EnsureISAChild() on an Event-typed Product resolves Event Product via SubtypeSelector and validates leaf before parent write',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const catalog = catalogColumns();
+                const sku = freshSku('IS11');
+                const product = await ctx.Provider.GetEntityObject<mjBizAppsOrdersProductEntity>(
+                    PRODUCT_ENTITY,
+                    ctx.User,
+                );
+                product.NewRecord();
+                product.CompanyID = catalog.CompanyID;
+                product.ProductTypeID = catalog.ProductTypeID; // Event -> ProductExtensionEntity = Event Products
+                product.ProductCategoryID = catalog.ProductCategoryID;
+                product.RevenueRecognitionTypeID = catalog.RevenueRecognitionTypeID;
+                product.Name = 'ISA IS11 SubtypeSelector Summit';
+                product.SKU = sku;
+                product.Status = 'Active';
+                product.IsTaxable = false;
+
+                // Zero-arg EnsureISAChild() resolves EVENT_PRODUCT_ENTITY via Product's SubtypeSelector
+                // ("ProductTypeID.ProductExtensionEntity") without any caller-supplied entity name.
+                const ensuredChild = eventProductOf(
+                    await product.EnsureISAChild(),
+                    'IS11: zero-arg EnsureISAChild() on an Event-typed Product',
+                );
+                Assert(
+                    product.ISAChild === ensuredChild && ensuredChild.ISAParent === product,
+                    'IS11: EnsureISAChild() links Product and EventProduct in both directions',
+                );
+                Assert(
+                    (await product.EnsureISAChild()) === ensuredChild,
+                    'IS11: zero-arg EnsureISAChild() is idempotent',
+                );
+
+                // First Save() delegates to the EventProduct leaf — refusing because EventProduct.EventStartsAt
+                // is NOT NULL and still unset, and writing no Product row.
+                Assert(
+                    !(await product.Save()),
+                    'IS11: saving an Event-typed Product with an unpopulated EventProduct child must fail leaf validation',
+                );
+                Assert(
+                    /Event\s*Starts\s*At/i.test(chainMessage(product)),
+                    `IS11: refusal names the missing EventStartsAt column on EventProduct, got: ${chainMessage(product)}`,
+                );
+                AssertEqual(
+                    (await productRowsWithSku(ctx, sku)).length,
+                    0,
+                    'IS11: failed leaf validation wrote no Product row',
+                );
+
+                // Populate EventProduct columns on the ensured child and save through the parent.
+                setEventColumns(ensuredChild);
+                Assert(await product.Save(), `IS11: Product.Save() with EventStartsAt set must succeed — ${chainMessage(product)}`);
+
+                const pRow = await productRow(ctx, product.ID);
+                const eRow = await eventProductRow(ctx, product.ID);
+                Assert(pRow != null, 'IS11: Product row written');
+                Assert(eRow != null, 'IS11: EventProduct row written under the shared key via zero-arg EnsureISAChild()');
+                AssertEqual(eRow.VenueName, VENUE, 'IS11: EventProduct columns persisted');
             }),
     },
 ];

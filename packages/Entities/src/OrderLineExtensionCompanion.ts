@@ -78,23 +78,24 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
      * Ensures an extension entity object exists, creating or hydrating one if necessary.
      */
     public async EnsureEntity(entityName?: string): Promise<BaseEntity | null> {
-        const targetName = entityName ?? this.EntityName;
-        if (!targetName) {
-            return null;
-        }
+        const targetName = entityName ?? this.EntityName ?? undefined;
 
-        if (this._entity && (!entityName || this._entity.EntityInfo?.Name === entityName)) {
+        if (this._entity && (!targetName || this._entity.EntityInfo?.Name === targetName)) {
             return this._entity;
         }
 
         const child = await this.Owner.EnsureISAChild(targetName);
         if (child) {
+            const pendingWire = this._wireData;
             this.SetEntity(child);
-            if (this._wireData) {
-                child.SetMany(this._wireData.Fields, true);
-                this._wireData = null;
+            if (pendingWire) {
+                child.SetMany(pendingWire.Fields, true);
             }
             return child;
+        }
+
+        if (!targetName) {
+            return null;
         }
 
         const provider = this.Owner.ProviderToUse as unknown as IMetadataProvider;
