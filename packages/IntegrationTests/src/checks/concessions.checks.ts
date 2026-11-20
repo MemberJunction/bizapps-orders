@@ -95,6 +95,18 @@
  *   CS39      a typed price on an order dated before the product's only price is in force confirms, measured as
  *             a product with no price is
  *
+ * A withdrawn concession stays on the order as a record (golive #403):
+ *
+ *   CS40      withdrawing a Pending one keeps it as Withdrawn with who and when, cancels its task, and releases the
+ *             confirm; Withdrawn is final; one an approver decided on a draft can be withdrawn and keeps its
+ *             decision; one applied to a booked term cannot
+ *
+ * A rep's share limit rises with the order's product mix (golive #281):
+ *
+ *   CS41      a mix tier raises the share limit on an order spanning two product types, so 8% is approved on
+ *             authority; when the order comes to span one type the limit drops back, the confirm is held, and the
+ *             concession recorded again is Pending
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -141,6 +153,7 @@ import {
   ORDER_HEADER_ENTITY,
   ORDER_LINE_ENTITY,
   SALES_AUTHORITY_ENTITY,
+  SALES_AUTHORITY_MIX_TIER_ENTITY,
   SALES_RULE_ENTITY,
   PERSON_ENTITY,
   PRODUCT_PRICE_ENTITY,
@@ -345,12 +358,15 @@ async function pendingSeats(ctx: IntegrationCheckContext, lineID: string, seats:
   return c.Entity;
 }
 
-/** Confirm a one-year SubRolling subscription at `price`; returns the order and its term. */
-async function bookTerm(ctx: IntegrationCheckContext, price: number) {
+/**
+ * Confirm a one-year SubRolling subscription at `price`; returns the order and its term. A repeat
+ * purchase extends the subscription already held; on a first purchase the answer changes nothing.
+ */
+async function bookTerm(ctx: IntegrationCheckContext, price: number, action: "ExtendExisting" | "CreateNew" = "ExtendExisting") {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
-    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: price }],
+    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: price, SubscriptionAction: action }],
   });
   Assert(result.Saved, `the subscription order did not confirm: ${result.Message}`);
   const term = await TxOne<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>(ctx,
@@ -1074,7 +1090,7 @@ export const ConcessionChecks: NamedCheck[] = [
 
         const notes = await TxQuery<{ Description: string }>(ctx,
           `SELECT Description FROM __mj_BizAppsTasks.TaskActivity WHERE TaskID = '${refused.Task.ID}'`);
-        Assert(notes.some((n) => n.Description.includes("Only a holder of the role")),
+        Assert(notes.some((n) => n.Description.includes("Only its assigned approvers can")),
           "the refused task records why the decision was not applied");
       }),
   },
@@ -1330,7 +1346,7 @@ export const ConcessionChecks: NamedCheck[] = [
         const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID, Reason: "custom scope" });
         Assert(c.Saved, `recording failed: ${c.Message}`);
         AssertEqual(c.Entity.Status, "Pending", "the requester's authority never approves it");
-        AssertEqual(Number(c.Entity.ComputedValue), 0, "nothing is given away against an engine price");
+        AssertEqual(Number(c.Entity.ComputedValue), 500, "valued at the line's net amount when nothing is given away against an engine price");
 
         const own = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
         Assert(await own.Load(c.Entity.ID), "the concession did not load");
@@ -1502,7 +1518,7 @@ export const ConcessionChecks: NamedCheck[] = [
 
         above.Entity.Status = "Approved";
         Assert(!(await above.Entity.Save()), "a holder of the lower tier's role must not decide a higher tier's concession");
-        Assert(/Only a holder of the role/.test(above.Entity.LatestResult?.CompleteMessage ?? ""),
+        Assert(/Only its assigned approvers can/.test(above.Entity.LatestResult?.CompleteMessage ?? ""),
           `the refusal should say why, got: ${above.Entity.LatestResult?.CompleteMessage}`);
       }),
   },
@@ -1628,7 +1644,7 @@ export const ConcessionChecks: NamedCheck[] = [
         const f = Fx();
         const draft = await BuildOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 2, UnitPrice: 1200 }],
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 2, UnitPrice: 1200, SubscriptionAction: "ExtendExisting" }],
         });
         Assert(await draft.Order.Save(), `the draft did not save: ${draft.Order.LatestResult?.CompleteMessage}`);
         const onDraft = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: draft.Lines[0].ID, AddedQuantity: 1 });
@@ -1831,6 +1847,111 @@ export const ConcessionChecks: NamedCheck[] = [
         built.Order.Status = "Confirmed";
         Assert(await built.Order.Save(),
           `a typed price with no price in force on the order date should confirm: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS40",
+    Name: "CS40: a withdrawn concession stays as Withdrawn, counts toward nothing, and is final",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const { Built, RuleID } = await orderNeedingApproval(ctx);
+        const withdrawn = await pendingSeats(ctx, Built.Lines[0].ID, 3);
+        const [task] = await approvalTasksOf(ctx, withdrawn.ID);
+        Built.Order.Status = "Confirmed";
+        Assert(!(await Built.Order.Save()), "a Pending concession must hold the confirm");
+        Built.Order.Status = "Draft";
+
+        withdrawn.Status = "Withdrawn";
+        Assert(await withdrawn.Save(), `withdrawing a Pending concession failed: ${withdrawn.LatestResult?.CompleteMessage}`);
+        const kept = await TxOne<{ Status: string; WithdrawnByUserID: string | null; WithdrawnAt: Date | null; DecidedByUserID: string | null }>(ctx,
+          `SELECT Status, WithdrawnByUserID, WithdrawnAt, DecidedByUserID FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${withdrawn.ID}'`);
+        AssertEqual(kept?.Status, "Withdrawn", "the concession stays on the order, Withdrawn");
+        Assert(sameID(String(kept.WithdrawnByUserID), ctx.User.ID) && kept.WithdrawnAt != null, "who withdrew it and when are stamped");
+        AssertEqual(kept.DecidedByUserID, null, "a concession withdrawn while Pending was never decided");
+        const [after] = await approvalTasksOf(ctx, withdrawn.ID);
+        AssertEqual(after?.Task.ID, task.Task.ID, "its approval task still links it");
+        AssertEqual(after?.Task.Status, "Cancelled", "and is cancelled");
+
+        withdrawn.Status = "Approved";
+        Assert(!(await withdrawn.Save()), "a Withdrawn concession is not decided afterwards");
+
+        // An approver's decision on a draft can still be withdrawn, and the record keeps who approved it.
+        const decided = await pendingSeats(ctx, Built.Lines[0].ID, 2);
+        await letTheUserDecide(ctx, RuleID);
+        decided.Status = "Approved";
+        Assert(await decided.Save(), `a role holder's approval failed: ${decided.LatestResult?.CompleteMessage}`);
+        decided.Status = "Withdrawn";
+        Assert(await decided.Save(), `withdrawing an approved concession on a draft failed: ${decided.LatestResult?.CompleteMessage}`);
+        const decision = await TxOne<{ DecidedByUserID: string | null }>(ctx,
+          `SELECT DecidedByUserID FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${decided.ID}'`);
+        Assert(sameID(String(decision.DecidedByUserID), ctx.User.ID), "the withdrawn concession keeps its approver");
+
+        Built.Order.Status = "Confirmed";
+        Assert(await Built.Order.Save(), `with every concession withdrawn, confirm should pass: ${Built.Order.LatestResult?.CompleteMessage}`);
+
+        // An extension applied to a booked term when it was approved stays.
+        await AcknowledgeAmendmentsWith(ctx);
+        const { Term } = await bookTerm(ctx, 1200);
+        await grantAuthority(ctx, { maxValue: 1000, maxDays: 30 });
+        const applied = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: Term.ID, AddedDays: 14 });
+        Assert(applied.Saved && applied.Entity.Status === "Approved", `expected an approved extension: ${applied.Message}`);
+        applied.Entity.Status = "Withdrawn";
+        Assert(!(await applied.Entity.Save()), "an extension applied to a booked term cannot be withdrawn");
+      }),
+  },
+  {
+    Id: "concessions.CS41",
+    Name: "CS41: a mix tier raises the share limit by the order's product types, and loses it when a type is removed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        // WidgetA is a physical good and DiscountedA a service: two product types.
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await CreateProductPrice(ctx, f.Products.DiscountedA, 100);
+        const authorityID = await grantAuthority(ctx, { maxValue: 5000, maxShare: 0.05 });
+        await createViaEntity(ctx, SALES_AUTHORITY_MIX_TIER_ENTITY, {
+          SalesAuthorityID: authorityID,
+          MinProductTypes: 2,
+          MaxConcessionPctOfContract: 0.1,
+        });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 90 },
+            { ProductID: f.Products.DiscountedA, Quantity: 10 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const seatsLine = built.Lines.find((l) => l.ProductID === f.Products.WidgetA);
+        Assert(seatsLine?.ID != null, "the seats line was not saved");
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 8 });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        const share = Number(c.Entity.CumulativeShare);
+        Assert(share >= 0.05 && share < 0.1, `the check needs a share between the 5% base and the 10% tier, got ${share}`);
+        AssertEqual(c.Entity.Status, "Approved", `over the 5% base limit, under the 10% two-type tier: ${c.Message}`);
+
+        // The service line becomes a second physical good: the order now spans one product type, so the
+        // share is over the 5% the authority holds alone.
+        const service = built.Order.Lines.Items.find((l) => l.ProductID === f.Products.DiscountedA);
+        Assert(service != null, "the service line is not on the order");
+        service.ProductID = f.Products.WidgetB;
+        Assert(await built.Order.Save(), `changing the line's product must save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "with one product type the approval on authority no longer covers the order");
+        Assert(/of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should give the base limit, got: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Draft";
+        Assert(await c.Entity.Delete(), `withdrawing an approval on authority from a draft failed: ${c.Entity.LatestResult?.CompleteMessage}`);
+        const again = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 8 });
+        Assert(again.Saved, `recording again failed: ${again.Message}`);
+        AssertEqual(again.Entity.Status, "Pending", "measured against one product type, it needs approval");
       }),
   },
 ];

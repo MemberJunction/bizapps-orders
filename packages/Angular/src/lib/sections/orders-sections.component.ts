@@ -1,5 +1,5 @@
 /**
- * @fileoverview The four Explorer tabs.
+ * @fileoverview The five Explorer tabs.
  *
  * Each class is registered with `@RegisterClass(BaseResourceComponent, '<DriverClass>')`
  * under the name the Application's `DefaultNavItems` reference
@@ -53,7 +53,8 @@ import { MJOBillingPageComponent } from '../pages/receivables/billing.page';
 import { MJOExternalInvoicingQueuePageComponent } from '../pages/receivables/external-invoicing-queue.page';
 import { MJOProgressPageComponent } from '../pages/receivables/progress.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
-import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
+import { MJOSubscriptionsPageComponent } from '../pages/subscriptions/subscriptions.page';
+import { MJORenewalsPageComponent } from '../pages/subscriptions/renewals.page';
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
@@ -80,12 +81,13 @@ import {
     ORDERS_SUB_PAGES,
     PAYMENTS_SUB_PAGES,
     RECEIVABLES_SUB_PAGES,
+    SUBSCRIPTIONS_SUB_PAGES,
     type OrdersNavBadges,
     type OrdersSubPage,
 } from './section-nav.model';
 
 /**
- * Shared behaviour for the four sections: rail construction, active-page state,
+ * Shared behaviour for the five sections: rail construction, active-page state,
  * per-user persistence of where someone was, and cached sub-page mounting.
  *
  * A `@Directive` rather than a plain class so Angular's compiler accepts the
@@ -94,7 +96,7 @@ import {
  */
 @Directive()
 export abstract class MJOSectionBaseComponent extends BaseResourceComponent implements OnInit {
-    /** Where a sub-page is created. Declared once, inherited by all four sections. */
+    /** Where a sub-page is created. Declared once, inherited by all five sections. */
     @ViewChild('pageHost', { read: ViewContainerRef, static: false })
     protected pageHost?: ViewContainerRef;
 
@@ -130,7 +132,10 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
     public override ngOnInit(): void {
         super.ngOnInit();
         this.NavSections = BuildLeftNavSections(this.subPages, this.badges);
-        this.ActivePageId = this.restorePageId();
+        // A link that names something a page shows (a customer on Customer A/R) opens that page,
+        // whatever page this user was last on.
+        this.address = { ...this.GetQueryParams() };
+        this.ActivePageId = this.pageForAddress(this.address) ?? this.restorePageId();
         // The host view has to exist before a page can be created into it, AND the
         // page must be created outside the change-detection pass that is running now.
         //
@@ -157,11 +162,76 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         });
     }
 
-    /** Rail click handler. */
+    /**
+     * This tab's address as the section last knew it.
+     *
+     * KEPT HERE, NOT READ FROM `GetQueryParams()` EACH TIME. That call returns what the tab was
+     * opened with: the shell replaces the tab's configuration on every change, so the copy this
+     * component was mounted with never moves. Seeded once, then kept current from what the shell
+     * delivers (`OnQueryParamsChanged`, which also echoes this section's own writes) and from what
+     * the section writes.
+     */
+    protected address: Record<string, string> = {};
+
+    /**
+     * The page a tab address belongs to, or null when the address names nothing page-specific.
+     * A section whose pages keep state in the address overrides this.
+     */
+    protected pageForAddress(_params: Record<string, string>): string | null {
+        return null;
+    }
+
+    /** The address keys to clear when the user leaves the page {@link pageForAddress} names. */
+    protected get pageAddressKeys(): string[] {
+        return [];
+    }
+
+    /**
+     * Back, Forward or a link changed this tab's address: hand it to the page it belongs to.
+     *
+     * THE SECTION OWNS THE TAB, SO THE SECTION TALKS TO THE SHELL. A page that wrote the address
+     * itself would have to use "the active tab", which is whatever the user is looking at, and a
+     * cached page finishing work in the background would then rewrite another tab's link.
+     */
+    protected override OnQueryParamsChanged(params: Record<string, string>, _source: 'popstate' | 'deeplink'): void {
+        this.address = { ...params };
+        const target = this.pageForAddress(params);
+        // Showing the page delivers the address to it, so both branches end with the page told.
+        if (target && target !== this.ActivePageId) void this.OnPageSelected(target);
+        else this.deliverAddress(this.mounted.get(this.ActivePageId ?? ''));
+    }
+
+    /** Write to this tab's address and remember what was written; the shell's echo arrives later. */
+    private writeAddress(params: Record<string, string | null>): void {
+        const next = { ...this.address };
+        for (const [key, value] of Object.entries(params)) {
+            if (value === null) delete next[key];
+            else next[key] = value;
+        }
+        this.address = next;
+        this.UpdateQueryParams(params);
+    }
+
+    /** Give a page the tab's address, when it is a page that reads one. */
+    private deliverAddress(ref: ComponentRef<unknown> | undefined): void {
+        const page = ref?.instance as { ApplyAddress?: (params: Record<string, string>) => void } | undefined;
+        page?.ApplyAddress?.(this.address);
+    }
+
+    /** Rail click handler. Also where a link or Back lands when it names another page of this section. */
     public async OnPageSelected(pageId: string): Promise<void> {
+        // Leaving the page the address belongs to: take its keys out, or a reload or a copied link
+        // would pull the user straight back to it.
+        const owner = this.pageForAddress(this.address);
+        if (owner && owner !== pageId && this.pageAddressKeys.length) {
+            this.writeAddress(Object.fromEntries(this.pageAddressKeys.map((key) => [key, null])));
+        }
         this.ActivePageId = pageId;
         this.persistPageId(pageId);
         await this.showPage(pageId);
+        // Cached or new, the page is told the address it is being shown under. A page that kept
+        // something open while it was off screen comes back matching the address, not ahead of it.
+        this.deliverAddress(this.mounted.get(pageId));
         this.cdr.detectChanges();
     }
 
@@ -201,6 +271,15 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 // scheduled a check for it — without this the input lands and nothing repaints.
                 cached.changeDetectorRef.detectChanges();
             }
+
+            // A PAGE THAT MUST RE-READ ON EVERY VISIT says so by exposing `OnShown()`, the same
+            // opt-in shape as `Reset()` below. Most cached pages are fine showing what they loaded;
+            // one that lists money a later act can change (Account credits after a return, golive
+            // #475) is not, and recreating every page on every visit would lose part-typed work.
+            const page = cached.instance as { OnShown?: () => unknown };
+            if (typeof page.OnShown === 'function') {
+                void Promise.resolve(page.OnShown()).finally(() => cached.changeDetectorRef.detectChanges());
+            }
             return;
         }
 
@@ -219,6 +298,15 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // created imperatively runs `ngOnInit` on its first change detection,
             // so an input that arrives afterwards is an input that arrives too late.
             const inputs = await this.sharedInputs();
+
+            // Another call may have created this page while the inputs were being read: a link
+            // delivered just after mount asks for the page the first show is still building.
+            const raced = this.mounted.get(pageId);
+            if (raced) {
+                host.detach();
+                host.insert(raced.hostView);
+                return;
+            }
 
             // A page opened FOR A RECORD needs that record, not a blank one.
             // Opening an order used to set PendingRecordID and navigate, and the
@@ -242,6 +330,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
             this.wirePage(ref);
             this.mounted.set(pageId, ref);
+            this.deliverAddress(ref);
             this.LoadError = null;
         } catch (e) {
             // A page that fails to construct must not take the section down with
@@ -280,6 +369,10 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
         // Navigation within the rail.
         on<string>('NavigateRequested', (pageId) => this.OnPageSelected(pageId));
+
+        // A page that keeps state in the tab's address (the open customer on Customer A/R) asks the
+        // section to write it: `UpdateQueryParams` is scoped to this section's own tab.
+        on<Record<string, string | null>>('AddressChanged', (params) => this.writeAddress(params));
 
         // Opening a record routes to the page that shows it. Each carries its id,
         // which the destination reads on activation.
@@ -805,11 +898,12 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /**
- * The Receivables tab — A/R, collections and subscriptions.
+ * The Receivables tab — A/R and collections.
  *
- * Its own section rather than a "Reports" folder: aging and renewals are
+ * Its own section rather than a "Reports" folder: aging and billing are
  * operational work with worklists and actions, and filing them under Reports
- * would tell the accounting team their work is read-only.
+ * would tell the accounting team their work is read-only. Subscriptions and
+ * renewals have their own tab (below).
  */
 @RegisterClass(BaseResourceComponent, 'ReceivablesSectionResource')
 @Component({
@@ -820,7 +914,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
         <mjo-section-shell
             Title="Receivables"
             Icon="fa-solid fa-chart-column"
-            Subtitle="Customer balances, aging and subscriptions"
+            Subtitle="Customer balances, aging and collections"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"
@@ -860,6 +954,13 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
     protected get preferenceKey(): string {
         return 'mjOrders.section.receivables.page';
     }
+    /** `?customer=` is Customer A/R's: a link to a customer opens that page. */
+    protected override pageForAddress(params: Record<string, string>): string | null {
+        return params['customer'] ? 'aging' : null;
+    }
+    protected override get pageAddressKeys(): string[] {
+        return ['customer'];
+    }
     protected get sectionTitle(): string {
         return 'Receivables';
     }
@@ -878,7 +979,83 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
                 return MJOProgressPageComponent;
             case 'aging':
                 return MJOCustomerARPageComponent;
-            case 'subscriptions':
+            default:
+                return null;
+        }
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Subscriptions
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The Subscriptions tab — what ends soon, what renews, and the full register.
+ *
+ * Its own tab rather than a page on the Receivables rail: accounting and the
+ * product teams both work renewals, from different sides, and neither of them
+ * would look for a worklist with an action under "Receivables".
+ */
+@RegisterClass(BaseResourceComponent, 'SubscriptionsSectionResource')
+@Component({
+    selector: 'mjo-subscriptions-section',
+    standalone: true,
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
+    template: `
+        <mjo-section-shell
+            Title="Subscriptions"
+            Icon="fa-solid fa-rotate"
+            Subtitle="Renewals, auto-renew and the subscription register"
+            [NavSections]="NavSections"
+            [ActivePageId]="ActivePageId"
+            [Loading]="IsLoading"
+            [Error]="LoadError"
+            (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    mjButton variant="outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
+            <ng-container #pageHost />
+        </mjo-section-shell>
+    `,
+})
+export class SubscriptionsSectionResource extends MJOSectionBaseComponent {
+    protected get subPages(): OrdersSubPage[] {
+        return SUBSCRIPTIONS_SUB_PAGES;
+    }
+    protected get preferenceKey(): string {
+        return 'mjOrders.section.subscriptions.page';
+    }
+    protected get sectionTitle(): string {
+        return 'Subscriptions';
+    }
+    protected get sectionIcon(): string {
+        return 'fa-solid fa-rotate';
+    }
+    protected resolvePage(pageId: string): Type<unknown> | null {
+        switch (pageId) {
+            case 'renewals':
+                return MJORenewalsPageComponent;
+            case 'list':
                 return MJOSubscriptionsPageComponent;
             default:
                 return null;

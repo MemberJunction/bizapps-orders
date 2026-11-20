@@ -112,6 +112,9 @@ export * from './pricing/linePriceContext';
 export * from './accessOverride';
 // Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
 export * from './coverage-overlap';
+// Reversing booked money (bc-aidp-next-golive#454) — cancel, refund, credit transfer and amount change are finance's.
+export * from './order-reversal';
+export * from './permission-messages';
 // A payment's date and correcting it (bc-aidp-next-golive#448) — the authorization and the initial payment's day.
 export * from './payment-date';
 export * from './pricing/linePricePick';
@@ -130,6 +133,8 @@ export * from './displaced-term-start';
 export * from './subscription-term-length';
 // Whether a subscription line's subscriber already holds its product — the extend-or-new question.
 export * from './existing-holding';
+// Instalments a moved term leaves behind, refused at confirm and warned on the line (golive #467).
+export * from './moved-term-schedule';
 export * from './subscription-type';
 
 /**
@@ -145,6 +150,7 @@ export * from './overdue';
 export * from './configuration-types';
 export * from './checkout-questions';
 export * from './checkout-attribution';
+export * from './checkout-tracking';
 export * from './checkout-choices';
 export * from './base-entity-augmentation';
 
@@ -163,3 +169,4 @@ export * from './ExternalPaymentEntity';
 export * from './external-payment-poll-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
 export * from './renewal-price.js';
+export * from './renewal-worklist.js';

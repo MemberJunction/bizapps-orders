@@ -11,7 +11,13 @@ import { CUSTOM_ELEMENTS_SCHEMA, provideZonelessChangeDetection } from '@angular
 import { TestBed, getTestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { BrowserTestingModule, platformBrowserTesting } from '@angular/platform-browser/testing';
-import { afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+// The viewer holds the finance reversal authorization; hiding the control without it is covered in
+// subscription-cancel.component.test.ts (bc-aidp-next-golive#454).
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@mj-biz-apps/orders-entities')>()),
+    UserCanReverse: () => true,
+}));
 import type { IMetadataProvider } from '@memberjunction/core';
 import type { mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 import { MJOMoneyPipe } from '../../panels/money-format';

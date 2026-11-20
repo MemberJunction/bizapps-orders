@@ -1,0 +1,15 @@
+{
+  "$comment": "The line status record. Each release line, the MJ version it was cut for, and whether it is open or LTS. CI reads the copy on next; have one of its CODEOWNERS review changes. See guides/RELEASE_LINES.md.",
+  "next": {
+    "edgeOnlyMigrations": []
+  },
+  "lines": {
+    "6.2": {
+      "branch": "lts/6.2",
+      "status": "open",
+      "mjVersion": "6.2.1",
+      "appMajor": 5,
+      "releasesThrough": "main"
+    }
+  }
+}

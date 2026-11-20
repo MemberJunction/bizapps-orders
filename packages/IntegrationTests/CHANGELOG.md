@@ -1,5 +1,80 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.51.0
+
+### Minor Changes
+
+- 3caa683: Confirm no longer moves a subscription line to the next term without anyone deciding it. A direct order is refused while a line for a product its subscriber already holds has not chosen between renewing that subscription and "Create new subscription" (checkout and provider-payment orders keep the subscription type's rule). When a line's stated start does move to the next term, confirm refuses the order if its payment schedule still falls due before that term starts, naming the line, both periods and the instalments, instead of invoicing them early. The order line card warns about those instalments as soon as the renew choice is made, testing every moved line against the gross of the lines on screen. `orders-entities` exports `FindInstalmentsBeforeMovedTerms`, `DescribeInstalmentsBeforeMovedTerm`, `ExplainInstalmentsBeforeMovedTerms` and `ExplainUnansweredHeldLines`.
+
+### Patch Changes
+
+- Updated dependencies [35d4f3c]
+- Updated dependencies [05d15e9]
+- Updated dependencies [645dfa3]
+- Updated dependencies [3caa683]
+- Updated dependencies [aacb117]
+- Updated dependencies [dab3dc1]
+- Updated dependencies [b416a08]
+- Updated dependencies [f93cf40]
+- Updated dependencies [546f9be]
+- Updated dependencies [5162834]
+- Updated dependencies [9a4efdd]
+- Updated dependencies [c5d9e02]
+  - @mj-biz-apps/orders-core-entities-server@5.51.0
+  - @mj-biz-apps/orders-entities@5.51.0
+  - @mj-biz-apps/orders-server@5.51.0
+
+## 5.50.2
+
+### Patch Changes
+
+- Updated dependencies [543e594]
+  - @mj-biz-apps/orders-entities@5.50.2
+  - @mj-biz-apps/orders-core-entities-server@5.50.2
+  - @mj-biz-apps/orders-server@5.50.2
+
+## 5.50.1
+
+### Patch Changes
+
+- Updated dependencies [c8eedb2]
+  - @mj-biz-apps/orders-entities@5.50.1
+  - @mj-biz-apps/orders-core-entities-server@5.50.1
+  - @mj-biz-apps/orders-server@5.50.1
+
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+### Patch Changes
+
+- Updated dependencies [f950cc2]
+  - @mj-biz-apps/orders-entities@5.50.0
+  - @mj-biz-apps/orders-core-entities-server@5.50.0
+  - @mj-biz-apps/orders-server@5.50.0
+
+## 5.49.0
+
+### Patch Changes
+
+- Updated dependencies [b3089be]
+- Updated dependencies [d5579c3]
+  - @mj-biz-apps/orders-entities@5.49.0
+  - @mj-biz-apps/orders-core-entities-server@5.49.0
+  - @mj-biz-apps/orders-server@5.49.0
+
+## 5.48.0
+
+### Patch Changes
+
+- Updated dependencies [c2060b4]
+- Updated dependencies [f6c0da6]
+  - @mj-biz-apps/orders-entities@5.48.0
+  - @mj-biz-apps/orders-core-entities-server@5.48.0
+  - @mj-biz-apps/orders-server@5.48.0
+
 ## 5.47.1
 
 ### Patch Changes

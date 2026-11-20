@@ -114,11 +114,11 @@ describe('page outputs are wired to the section', () => {
         // Cancel lives on the Subscription form. The Subscriptions page had no output at all, so the
         // guard above had nothing to check and passed while support could not reach Cancel. Pin the
         // output by name, and that the shell sends it to the Subscription entity's form.
-        expect(pageOutputs.get('receivables/subscriptions.page.ts') ?? []).toContain('SubscriptionOpened');
+        expect(pageOutputs.get('subscriptions/subscriptions.page.ts') ?? []).toContain('SubscriptionOpened');
         expect(shell).toMatch(/'SubscriptionOpened',[^\n]*openEntity\(MJO_ENTITIES\.Subscription,/);
         // The side panel's Open button is the visible way in; double-click is easy to miss. The page
         // tests call OpenSelected() directly, so only the template shows the button is still there.
-        const page = readFileSync(join(LIB, 'pages', 'receivables', 'subscriptions.page.ts'), 'utf8');
+        const page = readFileSync(join(LIB, 'pages', 'subscriptions', 'subscriptions.page.ts'), 'utf8');
         expect(page).toContain('(click)="OpenSelected()"');
     });
 
@@ -164,7 +164,9 @@ describe('page outputs are wired to the section', () => {
         expect(dash).toMatch(/GetDashboardOrders\(\)/);
         expect(dash).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
         expect(doc).toMatch(/GetOrders\(\{\s*OrderHeaderID:\s*this\.OrderID\s*\}\)/);
-        expect(ar).toMatch(/GetOpenBalanceOrders\(\)/);
+        // Customer A/R reads plain rows, uncapped: a capped read newest-first drops the OLDEST debt.
+        expect(ar).toMatch(/GetReceivableOrders\(\)/);
+        expect(ar).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
     });
 });
 

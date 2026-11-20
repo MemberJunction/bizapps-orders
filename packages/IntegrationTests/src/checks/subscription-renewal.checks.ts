@@ -203,6 +203,18 @@
  *   SR100  a 24-month line typed at 20,000 on a 12-month type renews for one 12-month term at 10,000, and the
  *         preview reports that term's dates, which the live renewal then books
  *
+ *   The Renewals page's way in (PR #1059): subscriptions chosen by id, grouped on one order per customer
+ *   per renewal date, left as drafts or confirmed:
+ *   SR101  two subscriptions for one customer ending the same day renew on ONE draft with a line each at
+ *          the prior price; readiness asked from a FRESH object lists no concession, and that object
+ *          confirms it, booking term 2 on both (the order form's path, not the pass's)
+ *   SR102  a product change is refused while a renewal draft is pending, naming the draft, and leaves the
+ *          subscription as it was; once the draft is voided the same change goes through
+ *   SR103  a group whose order fails on one member is retried a member at a time: the healthy one renews
+ *          on an order of its own, the broken one alone is skipped with its own reason
+ *   SR104  the worklist says a term with auto-renew off has Ended once its last day is past (WillEnd on the
+ *          day itself), and that the same term with auto-renew on Lapsed
+ *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
@@ -221,7 +233,14 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { OrdersEngine, Today, type CustomerPaymentMethodEntity } from '@mj-biz-apps/orders-entities';
+import {
+    OrdersEngine,
+    Today,
+    type CustomerPaymentMethodEntity,
+    type OrdersChangeSubscriptionProductOutput,
+    type OrdersGetRenewalWorklistOutput,
+    type mjBizAppsOrdersOrderHeaderEntity,
+} from '@mj-biz-apps/orders-entities';
 import { AddDays, BusinessTimeZoneEngine, DayStartUtc } from '@mj-biz-apps/common-entities';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -252,6 +271,7 @@ import {
     GL_ACCOUNT_LINK_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,
     ORDER_CONCESSION_ENTITY,
+    ORDER_HEADER_ENTITY,
     PAYMENT_INTENT_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_PRICE_ENTITY,
@@ -336,6 +356,7 @@ interface RenewalOutput {
         LeadDays: number;
         OrderID?: string;
         OrderNumber?: string;
+        OrderGroup?: number;
         SkippedReason?: string;
         RenewalProductID?: string;
         BasePrice?: number;
@@ -371,6 +392,27 @@ async function spawnRenewals(
     return result.Output as RenewalOutput;
 }
 
+/** A remote operation through the ClassFactory, as every caller resolves it; its output, or a failed assert. */
+async function runOperation<TIn extends Record<string, unknown>, TOut>(ctx: IntegrationCheckContext, name: string, input: TIn): Promise<TOut> {
+    const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<TIn, TOut>>(BaseRemotableOperation, name);
+    Assert(op != null, `'${name}' is not registered`);
+    const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+    Assert(result.Success, `${name} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown'}`);
+    Assert(result.Output != null, `${name} returned no payload`);
+    return result.Output as TOut;
+}
+
+/** `Orders.ConfirmReadiness`, as the order form asks it: the concession problems a confirm would refuse on. */
+async function confirmReadiness(ctx: IntegrationCheckContext, orderID: string): Promise<string[]> {
+    const out = await runOperation<{ OrderHeaderID: string }, { ConcessionProblems?: string[] }>(ctx, 'Orders.ConfirmReadiness', { OrderHeaderID: orderID });
+    return out.ConcessionProblems ?? [];
+}
+
+/** The Renewals page's rows, as `Orders.GetRenewalWorklist` decides them on `asOf`. */
+async function renewalWorklist(ctx: IntegrationCheckContext, asOf: string): Promise<OrdersGetRenewalWorklistOutput> {
+    return runOperation(ctx, 'Orders.GetRenewalWorklist', { AsOfDate: asOf, WindowDays: 30, LookbackDays: 30, MaxCount: 1000 });
+}
+
 /** Buy a subscription on Jan 1 and return its ID and first term. */
 async function buySubscription(
     ctx: IntegrationCheckContext,
@@ -380,6 +422,7 @@ async function buySubscription(
     promotionCodes?: string[],
     organizationID?: string,
     billToPersonID?: string,
+    action?: 'ExtendExisting' | 'CreateNew',
 ) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
@@ -387,7 +430,7 @@ async function buySubscription(
         OrderDate: JAN_1,
         BillToOrganizationID: organizationID ?? f.Customers.OrganizationID,
         BillToPersonID: billToPersonID,
-        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct }],
+        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct, SubscriptionAction: action }],
         PromotionCodes: promotionCodes,
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
@@ -2632,6 +2675,58 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
 
     {
+        Id: 'subscription-renewal.SR105',
+        Name: "SR105: a checkout keeps the page's tracking (page URL, referrer host, named cookies) on the session, without the personal data a URL can carry",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const widgetID = await createViaEntity(ctx, CHECKOUT_WIDGET_ENTITY, {
+                    Name: `${f.Run} tracking checkout`,
+                    CompanyID: f.CoA.ID,
+                    Status: 'Active',
+                    Configuration: JSON.stringify({ currency: 'USD', productId: f.Products.SubRolling }),
+                });
+                const slug = `${f.Run.toLowerCase()}-trk-${widgetID.slice(0, 8).toLowerCase()}`;
+                await createViaEntity(ctx, CHECKOUT_WIDGET_DISTRIBUTION_ENTITY, { CheckoutWidgetID: widgetID, Slug: slug, Status: 'Active' });
+                const key = `it-trk-${widgetID.slice(0, 8)}`;
+                const init = await CheckoutSessionService.InitializeSession(slug, key, ctx.User);
+                Assert(init.Success, `a session opens: ${init.ErrorMessage}`);
+                const email = `trk-it-${widgetID.slice(0, 8).toLowerCase()}@example.com`;
+                const lines = [{ ProductID: f.Products.SubRolling, Quantity: 1 }];
+                const billing = { Country: 'US', StateProvince: 'IL', PostalCode: '60601' };
+                // A first-and-latest-visit cookie as a page script writes it: URI-encoded JSON.
+                const visits = JSON.stringify({ ft: { s: 'google', m: 'cpc', lp: '/blog/x', at: '2026-11-01' }, lt: { ref: 'www.linkedin.com', lp: '/pricing', at: '2026-11-11' } });
+
+                // Draft 1: the page URL carries an e-mail and a token next to the UTM tags; the buyer came from a search.
+                const first = await CheckoutSessionService.UpdateDraft(init.SessionID!, key, email, lines, billing, ctx.User, {
+                    Tracking: {
+                        pageUrl: 'https://www.example.com/pricing?email=jane%40example.com&token=s3cret&utm_source=google&utm_medium=cpc&gclid=g-1#plans',
+                        referrer: 'https://www.google.com/search?q=jane%40example.com',
+                        cookies: { hubspotutk: 'abc123def', sc_attr: decodeURIComponent(encodeURIComponent(visits)) },
+                    },
+                });
+                Assert(first.Success, `the first draft prices: ${first.ErrorMessage}`);
+                // Draft 2: no referrer this time, a new cookie value, the same page.
+                const second = await CheckoutSessionService.UpdateDraft(init.SessionID!, key, email, lines, billing, ctx.User, {
+                    Tracking: { pageUrl: 'https://www.example.com/pricing', cookies: { hubspotutk: 'abc123xyz' } },
+                });
+                Assert(second.Success, `the second draft prices: ${second.ErrorMessage}`);
+
+                const row = await TxOne<{ MetadataJSON: string }>(ctx, `SELECT MetadataJSON FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${init.SessionID}'`);
+                const tracking = (JSON.parse(row.MetadataJSON) as { Tracking?: { PageURL?: string; ReferrerHost?: string; Cookies?: Record<string, string> } }).Tracking;
+                AssertEqual(tracking?.PageURL, 'https://www.example.com/pricing', 'the latest page, reduced to origin and path');
+                AssertEqual(tracking?.ReferrerHost, 'www.google.com', "the first draft's referrer host is kept by the second");
+                AssertEqual(tracking?.Cookies?.hubspotutk, 'abc123xyz', 'the newest cookie value wins');
+                AssertEqual(tracking?.Cookies?.sc_attr, visits, 'the structured cookie is kept whole');
+                AssertEqual(Object.keys(tracking?.Cookies ?? {}).sort().join(','), 'hubspotutk,sc_attr', 'and nothing else');
+                // Both directions: what attribution needs is there, what it must not keep is nowhere in the row.
+                for (const leaked of ['jane', 's3cret', '#plans', 'q=']) {
+                    Assert(!row.MetadataJSON.includes(leaked), `the session does not keep "${leaked}"`);
+                }
+            }),
+    },
+    {
         Id: 'subscription-renewal.SR67',
         Name: 'SR67: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
         RequiresMutation: true,
@@ -2778,16 +2873,16 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
                 const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
                 const oldID = linked.Outcomes[0].ProviderSubscriptionID!;
-                const buyAgain = (orderDate: string) =>
+                const buyAgain = (orderDate: string, action?: 'ExtendExisting' | 'CreateNew') =>
                     ConfirmOrder(ctx.User, {
                         CompanyID: f.CoA.ID,
                         OrderDate: new Date(`${orderDate}T00:00:00Z`),
                         BillToOrganizationID: f.Customers.OrganizationID,
-                        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: action }],
                     });
 
                 // SubRolling extends an existing subscription: here that would bill a year the gateway bills too.
-                const extend = await buyAgain('2026-02-01');
+                const extend = await buyAgain('2026-02-01', 'ExtendExisting');
                 Assert(!extend.Saved, 'a second order cannot extend it');
                 Assert(/billed by the payment gateway.*cannot extend it/.test(extend.Message ?? ''), `and says why: ${extend.Message}`);
 
@@ -3291,7 +3386,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     'WouldLink',
                     'control: confirmed by a person (an imported subscriber on an older price), it passes',
                 );
-                const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
+                // The second organization already holds `personal`: extend it, as before.
+                const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID, 'ExtendExisting');
                 await markProviderBilled(ctx, other.SubscriptionID, account, 'sub_it_taken');
                 fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_taken', Status: 'active', IsLive: true, Customer: 'cus_z', Metadata: {} });
                 AssertEqual((await link('sub_it_taken')).Code, 'LinkedElsewhere', 'one another subscription records');
@@ -3335,7 +3431,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(off.Outcome, 'Changed', `followed with the switch off: ${JSON.stringify(off)}`);
                 AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'the renewal the gateway charged is booked');
                 // …while the switch still stops a new hand-over (E2's rule, unchanged).
-                const fresh = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, Fx().Customers.SecondOrganizationID);
+                const fresh = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, Fx().Customers.SecondOrganizationID, undefined, 'ExtendExisting');
                 await payInFull(ctx, fresh.OrderID, Fx().Customers.SecondOrganizationID);
                 const handed = await EnsureProviderSubscriptions({ SubscriptionIDs: [fresh.SubscriptionID], Now: new Date('2026-01-01T12:00:00Z') }, ctx.Provider, ctx.User);
                 AssertEqual(handed.Outcomes.filter((o) => o.Code === 'Created').length, 0, `no new gateway subscription with the switch off: ${JSON.stringify(handed.Outcomes)}`);
@@ -3353,7 +3449,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     CompanyID: f.CoA.ID,
                     OrderDate: new Date('2026-02-01T00:00:00Z'),
                     BillToOrganizationID: f.Customers.OrganizationID,
-                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: 'ExtendExisting' }],
                 });
                 Assert(!extend.Saved && /billed by the payment gateway/.test(extend.Message ?? ''), `refused: ${extend.Message}`);
                 const renewalLine = await ConfirmOrder(ctx.User, {
@@ -4250,6 +4346,142 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 );
             }),
     },
+    {
+        Id: 'subscription-renewal.SR101',
+        Name: 'SR101: two subscriptions renew on one draft, which a fresh object confirms without a concession hold',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // One holder, both bought Jan 1 and ending Dec 31: one renewal group (RenewalGroupKey).
+                const a = await buySubscription(ctx, 'SubRolling', 1200);
+                const b = await buySubscription(ctx, 'SubCalendar', 1200);
+                AssertEqual(isoDate(a.Term.EndDate), isoDate(b.Term.EndDate), 'precondition: both terms end on the same day');
+                // The list rises past what the customer pays, so every renewal line sits below the engine price.
+                await CreateProductPrice(ctx, f.Products.SubRolling, 2000);
+                await CreateProductPrice(ctx, f.Products.SubCalendar, 2000);
+                // The gate prices against the engine's catalog cache, refreshed here so it sees 2000.
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+
+                const out = await spawnRenewals(ctx, { SubscriptionIDs: [a.SubscriptionID, b.SubscriptionID], PlaceAs: 'Draft' });
+                AssertEqual(out.Placed, 1, `one order for both: ${out.Message}; ${out.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                const orderID = out.Candidates[0].OrderID!;
+                AssertEqual(out.Candidates[1].OrderID, orderID, 'both candidates name the same order');
+                AssertEqual(out.Candidates[0].OrderGroup, out.Candidates[1].OrderGroup, 'and the same group');
+                const lines = await TxQuery<{ RenewsSubscriptionID: string; UnitPrice: number }>(
+                    ctx,
+                    `SELECT RenewsSubscriptionID, UnitPrice FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(lines.length, 2, 'a line each');
+                Assert(lines.every((l) => Number(l.UnitPrice) === 1200), `each at the prior price: ${JSON.stringify(lines)}`);
+                const status = (await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).Status;
+                AssertEqual(status, 'Draft', 'left as a draft');
+
+                // The order form asks readiness of a FRESH object with no price marks in memory. It reads the
+                // pass's RenewalOrderSpawned events back and lists nothing; without that read the form's
+                // Confirm stayed disabled on every renewal priced below list (PR #1059 review, issue 1).
+                const problems = await confirmReadiness(ctx, orderID);
+                AssertEqual(problems.length, 0, `the pass's own prices are not concessions: ${JSON.stringify(problems)}`);
+
+                const fresh = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+                Assert(await fresh.Load(orderID), 'the draft did not load');
+                fresh.Status = 'Confirmed';
+                Assert(await fresh.Save(), `a fresh object confirms the draft: ${fresh.LatestResult?.CompleteMessage}`);
+                AssertEqual((await termsOf(ctx, a.SubscriptionID)).length, 2, 'A has term 2');
+                AssertEqual((await termsOf(ctx, b.SubscriptionID)).length, 2, 'B has term 2');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR102',
+        Name: 'SR102: a product change is refused while a renewal draft is pending, naming it, and goes through once the draft is voided',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const draft = await draftRenewal(ctx, SubscriptionID, Term.EndDate);
+                const input = { SubscriptionIDs: [SubscriptionID], ProductID: f.Products.SubCalendar, AdoptProductType: true };
+
+                // Confirming the draft moves the subscription onto the draft line's product, so a change
+                // made meanwhile would be undone without a word (PR #1059 review, issue 2).
+                const refused = await runOperation<typeof input, OrdersChangeSubscriptionProductOutput>(ctx, 'Orders.ChangeSubscriptionProduct', input);
+                AssertEqual(refused.Failed, 1, `refused: ${refused.Message}`);
+                AssertEqual(refused.Updated, 0, 'nothing updated');
+                const change = refused.Changes[0];
+                Assert(
+                    new RegExp(`renewal order ${draft.OrderNumber} \\(Draft\\) is pending`).test(change.Error ?? ''),
+                    `the refusal names the draft: ${change.Error}`,
+                );
+                const before = await TxOne<{ ProductID: string }>(ctx, `SELECT ProductID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${SubscriptionID}'`);
+                Assert(SameID(before.ProductID, f.Products.SubRolling), 'the subscription keeps its product');
+
+                draft.Status = 'Voided';
+                Assert(await draft.Save(), `voiding the draft failed: ${draft.LatestResult?.CompleteMessage}`);
+                const allowed = await runOperation<typeof input, OrdersChangeSubscriptionProductOutput>(ctx, 'Orders.ChangeSubscriptionProduct', input);
+                AssertEqual(allowed.Updated, 1, `with no draft pending the change goes through: ${allowed.Changes[0]?.Error ?? allowed.Message}`);
+                const after = await TxOne<{ ProductID: string }>(ctx, `SELECT ProductID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${SubscriptionID}'`);
+                Assert(SameID(after.ProductID, f.Products.SubCalendar), 'the subscription is on the new product');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR103',
+        Name: 'SR103: a group whose order fails on one member is retried a member at a time, so the healthy one still renews',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const a = await buySubscription(ctx, 'SubRolling', 1200);
+                const b = await buySubscription(ctx, 'SubCalendar', 1200);
+                // B's product is recognised at sale with no Unbilled Receivable linked (SR17's refusal), so
+                // the group's one order rolls back on B's line. Before the retry, A was skipped with B's
+                // reason every night until someone fixed B (PR #1059 review, issue 3).
+                const out = await withUnbilledUnlinked(ctx, () =>
+                    withUpFrontRecognition(ctx, f.Products.SubCalendar, () =>
+                        spawnRenewals(ctx, { SubscriptionIDs: [a.SubscriptionID, b.SubscriptionID], PlaceAs: 'Confirmed' }),
+                    ),
+                );
+                AssertEqual(out.Placed, 1, `A places on its own: ${out.Message}; ${out.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                AssertEqual(out.Skipped, 1, 'B alone is skipped');
+                const byID = new Map(out.Candidates.map((c) => [c.SubscriptionID.toLowerCase(), c]));
+                const ca = byID.get(a.SubscriptionID.toLowerCase())!;
+                const cb = byID.get(b.SubscriptionID.toLowerCase())!;
+                Assert(!!ca.OrderID && !ca.SkippedReason, `A renewed: ${ca.SkippedReason ?? ''}`);
+                Assert(!cb.OrderID, 'B did not');
+                Assert((cb.SkippedReason ?? '').includes('Unbilled Receivable'), `B carries its own reason: ${cb.SkippedReason}`);
+                Assert(ca.OrderGroup !== cb.OrderGroup, 'they no longer share an order');
+                AssertEqual((await termsOf(ctx, a.SubscriptionID)).length, 2, 'A has term 2');
+                AssertEqual((await termsOf(ctx, b.SubscriptionID)).length, 1, 'B does not');
+                const lines = await TxQuery<{ RenewsSubscriptionID: string }>(ctx, `SELECT RenewsSubscriptionID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${ca.OrderID}'`);
+                AssertEqual(lines.length, 1, "A's order carries A's line only");
+                const bLines = await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${b.SubscriptionID}'`);
+                AssertEqual(Number(bLines.N), 0, 'no renewal line for B survives');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR104',
+        Name: 'SR104: the worklist says a term with auto-renew off has Ended once its last day is past, and Lapsed with it on',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { AutoRenew: false });
+                const rowOn = async (asOf: string) => {
+                    const out = await renewalWorklist(ctx, asOf);
+                    Assert(out.Success, `the worklist ran: ${out.Message}`);
+                    const row = out.Rows.find((r) => SameID(r.SubscriptionID, SubscriptionID));
+                    Assert(row != null, `the subscription is listed as of ${asOf}`);
+                    return row!;
+                };
+                const lastDay = isoDate(Term.EndDate);
+                AssertEqual((await rowOn(lastDay)).State, 'WillEnd', 'on its last day the term will end');
+                const later = await rowOn(daysBefore(lastDay, -12));
+                AssertEqual(later.State, 'Ended', 'twelve days on, it has ended (PR #1059 review, issue 4)');
+                AssertEqual(Number(later.DaysUntilEnd), -12, 'and the row says how long ago');
+
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { AutoRenew: true });
+                AssertEqual((await rowOn(daysBefore(lastDay, -12))).State, 'Lapsed', 'with auto-renew on, the same term lapsed past the pass');
+            }),
+    },
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
@@ -4654,10 +4886,15 @@ async function flagPrice(ctx: IntegrationCheckContext, providerID: string, produ
  * An annual subscription (bought 1 Jan 2026, paid) with a renewal card kept on this account, as checkout
  * leaves it.
  */
-async function subscriptionWithCard(ctx: IntegrationCheckContext, providerID: string, organizationID?: string) {
+async function subscriptionWithCard(
+    ctx: IntegrationCheckContext,
+    providerID: string,
+    organizationID?: string,
+    action?: 'ExtendExisting' | 'CreateNew',
+) {
     const f = Fx();
     const holder = organizationID ?? f.Customers.OrganizationID;
-    const bought = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder);
+    const bought = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder, undefined, action);
     // Paid, as a checkout's order is: the hand-over waits while the latest term's order owes money.
     await payInFull(ctx, bought.OrderID, holder);
     const tenderID = f.PaymentTypeIDs.get('CreditCard');

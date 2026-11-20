@@ -1776,6 +1776,38 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('UpdateDraft — tracking', () => {
+        const draft = (tracking?: unknown) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, undefined, { Tracking: tracking });
+        const stored = () => JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Tracking;
+
+        it('keeps the page URL and captured cookies with the draft', async () => {
+            const res = await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
+            expect(res.Success).toBe(true);
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' }, ReferrerHost: null });
+        });
+
+        it('merges a cookie set after the first draft with what that draft stored', async () => {
+            await draft({ pageUrl: 'https://example.com/pricing', cookies: {} });
+            await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
+            await draft(undefined);
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' }, ReferrerHost: null });
+        });
+
+        it('keeps the referrer host across drafts, and strips personal data from the page URL', async () => {
+            await draft({ pageUrl: 'https://example.com/pricing?email=a%40b.com&utm_source=ad', referrer: 'https://www.google.com/search?q=x', cookies: {} });
+            await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' }, ReferrerHost: 'www.google.com' });
+            expect(mocks.mockSessionInstance.MetadataJSON).not.toContain('a%40b.com');
+        });
+
+        it('drops tracking it cannot read rather than refusing the checkout', async () => {
+            const res = await draft({ pageUrl: 'javascript:void(0)', cookies: { 'bad name': 'x' } });
+            expect(res.Success).toBe(true);
+            expect(stored()).toBeUndefined();
+        });
+    });
+
     describe('OpenPaymentIntentForSession', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', 'wrong-key', testUser);
@@ -2607,6 +2639,21 @@ describe('CheckoutSessionService', () => {
 
                     expect(res.Success).toBe(true);
                     expect(stored.OrderHeaderID).toBe('order-999');
+                });
+
+                it('does not move a Succeeded intent back when the gateway read returns a non-settled status (#943)', async () => {
+                    unpaidSession();
+                    retrieve.mockImplementation(async () => {
+                        webhookStamps();
+                        return { Success: true, Status: 'Processing', Amount: 100 };
+                    });
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(res.Success).toBe(true);
+                    expect(stored.Status).toBe('Succeeded');
+                    expect(stored.ProviderEventID).toBe('evt_page_race');
+                    expect(stored.LastEventAt).toEqual(EVENT_AT);
                 });
             });
         });

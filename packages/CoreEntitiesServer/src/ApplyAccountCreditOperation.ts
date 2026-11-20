@@ -26,16 +26,18 @@
  * survive a partial refund — and because a captured payment is frozen (51005/51010/51011). Rewriting
  * history to express a new event would destroy the audit trail of money that genuinely moved.
  *
- * THE LEDGER FALLS OUT OF THE EXISTING MACHINERY
- * `PaymentLineEntityServer` already books each allocation and already treats a negative amount as a
- * reversal, so the two lines produce a mirrored pair and an ordinary pair:
+ * THE LEDGER: A RECEIVABLE MOVES, CASH DOES NOT
+ * `PaymentLineEntityServer` books each allocation and treats a negative amount as a reversal. For this
+ * tender the allocation puts the leg that would be Cash on the collector's receivable instead
+ * (`PaymentAllocationContext.AccountCredit`), then drops lines that cancel on one account:
  *
- *     credit order:   Dr A/R 100        Cr Cash 100     (mirrored — the reversal)
- *     target order:   Dr Cash 100       Cr A/R 100
+ *     credit order:   Dr A/R 100        Cr A/R 100      (mirrored: the reversal)
+ *     target order:   Dr A/R 100        Cr A/R 100
  *
- * Cash nets to zero across them; A/R moves from one order to the other. No new booking code exists
- * for this operation, and none should — if it needed its own entries, that would mean the allocation
- * path did not really understand negative applications.
+ * Inside one set of books both are empty, so nothing is posted: the customer's receivable is one
+ * account and the credit only changes which order it is counted against, which the payment lines
+ * already record. The entries used to run through Cash and net to zero there, which put twice the
+ * amount through a bank account as activity no bank statement would ever show.
  *
  * CROSS-COMPANY IS NOT A SPECIAL CASE EITHER. When the two orders belong to different companies the
  * same path raises the intercompany legs, because the allocation factory splits per owning company.
@@ -72,6 +74,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
+import { ReversalGate } from './ReversalAuthority.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -179,6 +182,9 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ApplyAccountCreditOutput> {
+        // FIRST, BEFORE ANY READ OR WRITE: reversing booked money is finance's (bc-aidp-next-golive#454).
+        const refusal = ReversalGate('Moving an account credit to another order', provider, user);
+        if (refusal) return { Success: false, Message: refusal };
         if (!input?.SourceOrderHeaderID || !input?.TargetOrderHeaderID) {
             return { Success: false, Message: 'Both SourceOrderHeaderID and TargetOrderHeaderID are required.' };
         }

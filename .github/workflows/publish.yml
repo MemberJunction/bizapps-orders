@@ -1,21 +1,24 @@
-# Publishes whatever `main` holds that npm does not, then carries the release back to `next`.
+# Publishes a release line: the newest line through `main` (npm dist-tag `latest`), every older
+# line from its own `lts/X.Y` branch (dist-tag `lts-X.Y`). `next` never publishes. Which line is
+# which comes from release-lines.json on `next` (guides/RELEASE_LINES.md).
 #
 # This workflow does not compute or commit a version. `changeset version` runs earlier, in the
-# Version Packages PR (changeset-release/main -> main, see version.yml). Merging that PR is the
-# release: by the time it reaches `main` the package versions ARE the instruction, and
+# Version Packages PR (changeset-release/main -> main, or changeset-release/lts/X.Y -> lts/X.Y; see
+# version.yml). Merging that PR is the release: by the time it reaches `main` the package versions ARE the instruction, and
 # `changeset publish` publishes every package whose version is not on the registry and skips
 # the rest. It never reads .changeset/*.md -- only `changeset version` does.
 #
 # Removed on purpose: the version prediction and its mismatch guard (the bump is now a reviewed
 # diff, not a computed surprise), the mj-app.json write (moved into version:prepare), and
-# `commitpush`, which pushed straight to `main`. The main -> next back-merge is kept, but as a
-# PR opened and merged with the App token (see the last step) rather than a direct push, so it
-# goes through the same rulesets as every other change to `next`.
+# `commitpush`, which pushed straight to `main`. The back-merge is kept, but as a PR opened and
+# merged with the App token (see the last step) rather than a direct push, so it goes through the
+# same rulesets as every other change. It goes from `main` to the line `main` follows, never to
+# `next`, which holds different version numbers and never publishes.
 name: Build and Publish
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'lts/**']
   workflow_dispatch:
 
 permissions:
@@ -27,25 +30,83 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Decides whether this run is a release, of which line, under which dist-tag, and where the
+  # back-merge goes. Every answer comes from release-lines.json on `next`.
+  #
+  # The guard that used to be `github.ref == 'refs/heads/main'` lives here now, widened only as far
+  # as the record allows. `workflow_dispatch` accepts any branch, and a dispatch on a branch that
+  # holds bumped versions and no pending changesets would publish them and push a `v*` tag with
+  # none of the `rr:` checks having run. So a run releases only from:
+  #   - `main`, as the line the record says releases through main; or
+  #   - an `lts/X.Y` branch the record lists with `releasesThrough: branch`, and only on the push
+  #     that changed the version (the merge of its Version Packages PR). Every other push to a
+  #     line is a backport landing, which releases nothing.
+  # Anything else is refused (dispatch) or skipped (push).
+  resolve:
+    if: github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      release: ${{ steps.line.outputs.release }}
+      dist_tag: ${{ steps.line.outputs.dist_tag }}
+      back_merge: ${{ steps.line.outputs.back_merge }}
+      line: ${{ steps.line.outputs.line }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Which line, and is this a release?
+        id: line
+        env:
+          REF: ${{ github.ref }}
+          BRANCH: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin next
+          skip() { echo "::notice::$1"; echo "release=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          refuse() { echo "::error::$1"; exit 1; }
+
+          if [ "$REF" = "refs/heads/main" ]; then
+            LINE=$(node .github/scripts/release-lines.mjs main-line)
+            [ "$LINE" != "{}" ] || refuse "release-lines.json on next names no line that releases through main. Nothing was published."
+            BACK_MERGE=$(jq -r .branch <<< "$LINE")
+          else
+            case "$REF" in
+              refs/heads/lts/*) ;;
+              *) refuse "Releases run only on main or a line branch (got $REF). Nothing was published." ;;
+            esac
+            LINE=$(node .github/scripts/release-lines.mjs resolve "$BRANCH")
+            if [ "$LINE" = "{}" ]; then
+              [ "$EVENT" = "push" ] && skip "$BRANCH is not in release-lines.json on next; nothing to publish."
+              refuse "$BRANCH is not in release-lines.json on next. Nothing was published."
+            fi
+            if [ "$(jq -r .releasesThrough <<< "$LINE")" != "branch" ]; then
+              [ "$EVENT" = "push" ] && skip "$BRANCH releases through main; a push here is a backport landing, not a release."
+              refuse "$BRANCH releases through main, not from its own branch. Dispatch the release on main. Nothing was published."
+            fi
+            # On push, only the merge of the Version Packages PR changes the version. A backport
+            # landing leaves it alone and must not reach `changeset publish`.
+            if [ "$EVENT" = "push" ]; then
+              NOW=$(jq -r .version packages/Entities/package.json)
+              WAS=$(git show "$BEFORE:packages/Entities/package.json" 2>/dev/null | jq -r .version || echo "")
+              [ "$NOW" != "$WAS" ] || skip "The version on $BRANCH is still $NOW; this push is a backport landing, not a release."
+            fi
+            BACK_MERGE=""
+          fi
+
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "line=$(jq -r .key <<< "$LINE")" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$(jq -r .distTag <<< "$LINE")" >> "$GITHUB_OUTPUT"
+          echo "back_merge=$BACK_MERGE" >> "$GITHUB_OUTPUT"
+          echo "Releasing line $(jq -r .key <<< "$LINE") from $BRANCH under dist-tag $(jq -r .distTag <<< "$LINE")${BACK_MERGE:+, back-merge into $BACK_MERGE}"
+
   build-and-publish:
-    # `main` ONLY, and this guard is the whole reason the workflow is safe to keep
-    # `workflow_dispatch` on.
-    #
-    # Before it existed there was a live hole. `workflow_dispatch` accepts any branch, and this
-    # workflow no longer refuses to run with zero pending changesets (it MUST run with zero —
-    # versions now arrive pre-bumped from the Version Packages PR). So the state `next` is in
-    # immediately after that PR merges — versions bumped, nothing pending — was exactly the state
-    # in which a dispatch on `next` would publish: `changeset publish` would ship next's versions
-    # and push a `v*` tag from a `next` commit, with `rr: changesets`, `rr: minor bump` and
-    # `rr: migration immutability` never having run. The next release PR would then compare
-    # against that tag and find nothing changed, so the gates would pass vacuously.
-    #
-    # The old workflow was accidentally protected here: it guarded publishing with
-    # `pending != '0'`, which made a dispatch-with-nothing-pending a no-op. Splitting version
-    # from publish removed that accident, so the guard has to be explicit.
-    #
-    # The template repo carries this pipeline for the apps made from it, but never publishes itself.
-    if: github.ref == 'refs/heads/main' && github.repository != 'MemberJunction/open-app-template'
+    needs: resolve
+    # The ref guard is in `resolve` above: this job runs only when it says this is a release.
+    if: needs.resolve.outputs.release == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -100,7 +161,7 @@ jobs:
         run: |
           PENDING=$(find .changeset -name "*.md" -not -name "README.md" 2>/dev/null | wc -l | tr -d ' ')
           if [ "$PENDING" -ne 0 ]; then
-            echo "::error::$PENDING changeset(s) are still pending on main. Versioning happens in the Version Packages PR on next (version.yml) — merge that first, then release. Publishing now would ship versions that no changelog describes."
+            echo "::error::$PENDING changeset(s) are still pending on $GITHUB_REF_NAME. Versioning happens in the line's Version Packages PR (version.yml) — merge that first, then release. Publishing now would ship versions that no changelog describes."
             exit 1
           fi
           echo "No pending changesets — versions on main are authoritative"
@@ -117,11 +178,15 @@ jobs:
       #
       # So capture what actually happened. `changeset publish` prints a "New tag:" line per
       # published package; zero of them means zero packages shipped.
+      # `--tag` always, even for `latest`: without it npm moves `latest` to whatever was published
+      # last, so an older line's patch would become what every new install gets.
       - name: Publish to npm
         id: publish
+        env:
+          DIST_TAG: ${{ needs.resolve.outputs.dist_tag }}
         run: |
           set -o pipefail
-          pnpm exec changeset publish 2>&1 | tee /tmp/publish.log
+          pnpm exec changeset publish --tag "$DIST_TAG" 2>&1 | tee /tmp/publish.log
           PUBLISHED=$(grep -c '^ *🦋 *New tag:' /tmp/publish.log || true)
           echo "count=$PUBLISHED" >> "$GITHUB_OUTPUT"
           echo "Packages published: $PUBLISHED"
@@ -183,43 +248,74 @@ jobs:
           echo "## Released $VERSION" >> "$GITHUB_STEP_SUMMARY"
           echo "$PUBLISHED package(s) published." >> "$GITHUB_STEP_SUMMARY"
 
-      # Carry the bump home. `next` still holds the consumed changeset files and the
-      # pre-release version until this lands, so a push to `next` before it does would
-      # regenerate a Version Packages PR proposing the number just published. The window is
-      # seconds, but the back-merge is load-bearing, not bookkeeping.
+      # The dist-tag is what a consumer's install resolves, so read it back rather than trusting
+      # the publish log. npm can take several minutes to show a new version on every package (the
+      # v1.14.0 release saw 4 of 7 still on the old tag after 2 minutes), so poll up to 10 minutes
+      # in all, bypassing npm's local cache, before failing.
+      - name: Verify the dist-tag
+        if: steps.tag.outputs.released == 'true'
+        env:
+          DIST_TAG: ${{ needs.resolve.outputs.dist_tag }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          set -euo pipefail
+          WANT="${VERSION#v}"
+          DEADLINE=$((SECONDS + 600))
+          for pkg in $(jq -r 'select(.private != true) | .name' packages/*/package.json); do
+            GOT=""
+            while :; do
+              GOT=$(npm view --prefer-online "$pkg" "dist-tags.$DIST_TAG" 2>/dev/null || true)
+              [ "$GOT" = "$WANT" ] && break
+              [ "$SECONDS" -ge "$DEADLINE" ] && break
+              sleep 10
+            done
+            if [ "$GOT" != "$WANT" ]; then
+              echo "::error::$pkg dist-tag $DIST_TAG is '$GOT', expected $WANT. Fix it with: npm dist-tag add $pkg@$WANT $DIST_TAG"
+              exit 1
+            fi
+            echo "$pkg@$DIST_TAG = $WANT"
+          done
+          echo "dist-tag \`$DIST_TAG\` -> $WANT on every package" >> "$GITHUB_STEP_SUMMARY"
+
+      # Carry the bump home, to the line `main` follows. That line still holds the consumed
+      # changeset files and the previous version until this lands, so a push to it before it
+      # does would regenerate a Version Packages PR proposing the number just published. The
+      # window is seconds, but the back-merge is load-bearing, not bookkeeping. A line that
+      # releases from its own branch already has the bump, so it gets no back-merge.
       #
       # A PR rather than a ruleset bypass: a bypass is unconditional, so anyone who can make
-      # this workflow run could write anything to `next`. The App can only propose.
+      # this workflow run could write anything to the line. The App can only propose.
       #
       # Merged directly rather than with `gh pr merge --auto`: auto-merge is refused on a PR
-      # that is already mergeable. `protect-next` requires nothing today, and once the rulesets
-      # land the App is a `pull_request`-mode bypass actor on both, so a direct merge stays valid.
+      # that is already mergeable. The App is a `pull_request`-mode bypass actor on the line's
+      # ruleset (`protect-lts`) as it is on `protect-next`, so a direct merge stays valid.
       #
       # If the back-merge cannot be opened or merged, this step FAILS. The packages are already
       # on npm by then, so a red run here means "action needed", not "the release failed" -- but
       # a warning on a green run is easy to miss, and until the back-merge lands the next release
       # PR is blocked by `rr: release base current`. Red is what makes someone look.
-      - name: Carry the release back to next
-        if: steps.tag.outputs.released == 'true'
+      - name: Carry the release back to the line
+        if: steps.tag.outputs.released == 'true' && needs.resolve.outputs.back_merge != ''
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           VERSION: ${{ steps.tag.outputs.version }}
+          LINE_BRANCH: ${{ needs.resolve.outputs.back_merge }}
         run: |
           set -euo pipefail
           BRANCH="release-back-merge/$VERSION"
           git push origin "HEAD:refs/heads/$BRANCH"
 
-          BODY="Carries the $VERSION bump, CHANGELOGs, mj-app.json sync and refreshed lockfile back to next.
+          BODY="Carries the $VERSION bump, CHANGELOGs, mj-app.json sync and refreshed lockfile back to $LINE_BRANCH.
 
-          Opened automatically by publish.yml after $VERSION published. Until this lands, next still holds the consumed changesets and the previous version, so the next Version Packages PR would propose a number that is already on npm."
+          Opened automatically by publish.yml after $VERSION published. Until this lands, $LINE_BRANCH still holds the consumed changesets and the previous version, so the next Version Packages PR would propose a number that is already on npm."
 
-          PR_URL=$(gh pr create --base next --head "$BRANCH" \
-                     --title "chore(release): carry $VERSION back to next" \
+          PR_URL=$(gh pr create --base "$LINE_BRANCH" --head "$BRANCH" \
+                     --title "chore(release): carry $VERSION back to $LINE_BRANCH" \
                      --body "$BODY" || true)
 
           if [ -z "${PR_URL:-}" ]; then
-            echo "::error::$VERSION is published, but the back-merge PR could not be opened. Open $BRANCH -> next by hand and merge it; the next release PR is blocked (rr: release base current) until it lands."
-            echo "Back-merge: NOT OPENED — open $BRANCH -> next by hand" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$VERSION is published, but the back-merge PR could not be opened. Open $BRANCH -> $LINE_BRANCH by hand and merge it; the next release PR is blocked (rr: release base current) until it lands."
+            echo "Back-merge: NOT OPENED — open $BRANCH -> $LINE_BRANCH by hand" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
@@ -229,3 +325,61 @@ jobs:
             exit 1
           fi
           echo "Back-merge: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      # `next` never versions, so nothing there consumes changesets. Each one travels to a line with
+      # its backport and is consumed by that line's release; this removes the copies on `next` that
+      # this release consumed, so `.changeset/` on `next` holds only what no line has released yet
+      # (edge-only work, and fixes nobody backported). At the next cut, what remains is that line's
+      # first release. A changeset backported to two lines is released once on each line; the
+      # first release to consume it removes it here, and the second finds nothing to remove.
+      #
+      # "Consumed" = the file was added somewhere in this release's history and is gone now. A
+      # changeset that never reached this line is never in its history, so it stays.
+      #
+      # Red on failure for the same reason as the back-merge: npm already has the release, and a
+      # stale changeset on `next` would be released a second time at the next cut.
+      - name: Remove this release's changesets from next
+        if: steps.tag.outputs.released == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.tag.outputs.version }}
+          LINE: ${{ needs.resolve.outputs.line }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin next
+          CONSUMED=()
+          while IFS= read -r f; do
+            case "$f" in *.md) ;; *) continue ;; esac
+            [ "$(basename "$f")" = "README.md" ] && continue
+            [ -e "$f" ] && continue
+            # --full-history: the file is gone at HEAD and on main's first parent, so default history
+            # simplification follows that parent and never sees the line's side where it was added.
+            [ -n "$(git log -1 --full-history --format=%H --diff-filter=A HEAD -- "$f")" ] && CONSUMED+=("$f")
+          done < <(git ls-tree -r --name-only origin/next -- .changeset/)
+
+          if [ "${#CONSUMED[@]}" -eq 0 ]; then
+            echo "No changeset on next was consumed by $VERSION"
+            echo "Next cleanup: nothing to remove" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          BRANCH="release-changesets/$VERSION-$LINE"
+          git checkout -q -B "$BRANCH" origin/next
+          git rm -q -- "${CONSUMED[@]}"
+          git commit -q -m "chore(release): drop changesets released in $VERSION ($LINE line)"
+          git push origin "HEAD:refs/heads/$BRANCH"
+
+          LIST=$(printf -- '- `%s`\n' "${CONSUMED[@]}")
+          BODY="$VERSION (the $LINE line) released these changesets. next never versions, so they are removed here; otherwise the next line cut would release them again.
+
+          $LIST
+
+          Opened automatically by publish.yml."
+          PR_URL=$(gh pr create --base next --head "$BRANCH" \
+                     --title "chore(release): drop changesets released in $VERSION" \
+                     --body "$BODY" || true)
+          if [ -z "${PR_URL:-}" ] || ! gh pr merge "$PR_URL" --merge --delete-branch; then
+            echo "::error::$VERSION is published, but the PR removing its changesets from next was not opened or merged (${PR_URL:-none}). Remove these from next by hand: ${CONSUMED[*]}"
+            exit 1
+          fi
+          echo "Next cleanup: $PR_URL" >> "$GITHUB_STEP_SUMMARY"

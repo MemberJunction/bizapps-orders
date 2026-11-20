@@ -48,6 +48,7 @@ import {
     IsBooked,
     LineGross,
     NetAfterDiscount,
+    ORDER_LINE_MONEY_FIELDS,
     OrderLineEntity,
     OrdersEngine,
     PRICE_OVERRIDE_REASON_REQUIRED,
@@ -152,6 +153,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         this.refuseUnexplainedOverride(result);
         this.refuseParentNotFromExpansion(result);
         await this.refuseNewLineOnBookedOrder(result);
+        await this.refuseMoneyEditOnBookedOrder(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
         return result;
@@ -384,6 +386,48 @@ export class OrderLineEntityServer extends OrderLineEntity {
     }
 
     /**
+     * A saved line with no journal entry of its own (a $0 or 100%-discounted line) still belongs
+     * to a booked order once the parent is Confirmed. `OrderLineEntity.refuseBookedMoneyEdits`
+     * checks `JournalEntryID` because it has no database access; this checks the parent's stored
+     * status when a standalone line save changes a booked field without a journal entry.
+     *
+     * Only the booking graph save (`BypassBookedCheck`) is exempt. `BypassExternalEditVeto` is not:
+     * that flag lets Orders' own writers past an outside app's freeze, and one flag meaning two rules
+     * would let a line marked for one reason change booked money for the other. None of Orders' own
+     * writers changes a booked line's money. The service period is left to trigger 51003, which knows
+     * the line's term windows that Orders' term amendments re-date it to.
+     */
+    private async refuseMoneyEditOnBookedOrder(result: ValidationResult): Promise<void> {
+        if (!this.IsSaved || this.BypassBookedCheck) {
+            return;
+        }
+        const fields = Array.isArray((this as { Fields?: unknown }).Fields) ? this.Fields : [];
+        const dirty = ORDER_LINE_MONEY_FIELDS.filter(
+            (name) => !SERVICE_PERIOD_FIELDS.includes(name) && fields.some((f) => f.Name === name && f.Dirty === true),
+        );
+        if (dirty.length === 0) return;
+
+        const fieldVal = (name: string): unknown => fields.find((f) => f.Name === name)?.Value;
+        const journalEntryID = fieldVal('JournalEntryID');
+        const orderHeaderID = fieldVal('OrderHeaderID');
+        if (journalEntryID || !orderHeaderID) return;
+
+        const status = await this.storedOrderStatus();
+        if (!status || !IsBooked(status)) return;
+
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                dirty[0],
+                `This line is booked — it cannot change ${dirty.join(', ')}. ` +
+                    `Voiding the order is how booked money is undone.`,
+                fieldVal(dirty[0]),
+                ValidationErrorType.Failure,
+            ),
+        );
+    }
+
+    /**
      * Whether this update touches the service period and NOTHING else, on an order that has not booked.
      *
      * Deliberately "only": a save that moves the dates AND the quantity is still changing what was
@@ -468,7 +512,13 @@ export class OrderLineEntityServer extends OrderLineEntity {
             return false;
         }
 
-        await this.persistExtension(options);
+        // When called as the parent leg of an IS-A leaf save (e.g. EventOrderLine._InnerSave
+        // saving its parent OrderLine first), the leaf is already in the middle of saving itself.
+        // Re-entering persistExtension here with IsParentEntitySave=true would call ext.Save()
+        // with IsParentEntitySave=true, bypassing BaseEntity's debounce and recursing infinitely.
+        if (!options?.IsParentEntitySave) {
+            await this.persistExtension(options);
+        }
         return true;
     }
 
@@ -495,10 +545,10 @@ export class OrderLineEntityServer extends OrderLineEntity {
             ext.Set('ID', this.ID);
         }
 
-        // If the extension is an IS-A child of this line, sync the saved parent state
-        // so the extension's inner save knows the parent row is already persisted in the database.
+        // If the extension is an IS-A child with its own separate parent instance, sync the
+        // saved parent state so the extension's inner save knows the parent row is already persisted.
         const parent = ext.ISAParent;
-        if (parent) {
+        if (parent && parent !== this) {
             await parent.LoadFromData(this.GetAll(), true);
         }
 

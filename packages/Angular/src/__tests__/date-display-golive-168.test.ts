@@ -29,7 +29,7 @@ import { MJOOrdersDashboardPageComponent } from '../lib/pages/orders/orders-dash
 import { MJOPricingPageComponent } from '../lib/pages/catalog/pricing.page';
 import { MJOCustomerARPageComponent } from '../lib/pages/receivables/customer-ar.page';
 import { MJOChargesTaxPageComponent } from '../lib/pages/catalog/products.page';
-import { MJOSubscriptionsPageComponent } from '../lib/pages/receivables/subscriptions.page';
+import { MJOSubscriptionsPageComponent } from '../lib/pages/subscriptions/subscriptions.page';
 import { PartyOrdersOverviewComponent } from '../lib/panels/party-orders-overview.component';
 import { BizAppsProductGLLinksComponent } from '../lib/custom/Product/widgets/product-gl-links.component';
 import { DescribeLineEvent } from '../lib/custom/EventOrderLine/line-event-summary';
@@ -119,7 +119,8 @@ describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('golive #
         });
 
         it('a payment date on customer AR', () => {
-            expect(method<string>(MJOCustomerARPageComponent, 'dateOf', {}, driverDate('2026-10-01'))).toBe('Oct 1');
+            // Customer A/R writes every date numerically, year included.
+            expect(method<string>(MJOCustomerARPageComponent, 'dateOf', {}, driverDate('2026-10-01'))).toBe('10/01/2026');
         });
 
         it('a certificate expiry on the charges & tax page', () => {

@@ -665,7 +665,7 @@ export function BuildLadder(input: {
     // total and would print the same figure twice.
     if (input.Instalment && input.Instalment.InstallmentCount > 1) {
         rows.push({
-            Label: `Instalment ${input.Instalment.InstallmentNumber} of ${input.Instalment.InstallmentCount}`,
+            Label: `Installment ${input.Instalment.InstallmentNumber} of ${input.Instalment.InstallmentCount}`,
             Note: input.Instalment.DueDate ? `due ${input.Instalment.DueDate}` : null,
             Amount: Money(input.Instalment.Amount),
             Kind: 'Instalment',

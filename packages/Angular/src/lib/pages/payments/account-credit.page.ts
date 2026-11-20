@@ -1,11 +1,11 @@
-import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerComponent, EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { PresetViewRef } from '../../data/preset-view';
-import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersApplyAccountCreditOperation, ORDER_REVERSE_AUTH, UserCanReverse, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { CrossesLegalEntities } from '../../panels/allocation-math';
@@ -30,6 +30,13 @@ import { GetOrders } from '../../data/orders-queries';
  * the credit order, minus on the target. No new cash entered the business, so
  * zero is the truth rather than a degenerate case — and the
  * payment-equals-its-lines rule is satisfied exactly.
+ *
+ * FINANCE MOVES CREDIT. Without MJ.BizApps.Orders.Order.Reverse (the Finance role) the page lists the
+ * credits and does not offer to apply one; the operation refuses it anyway (bc-aidp-next-golive#454).
+ *
+ * THE LIST IS RE-READ when the page is shown again and when a selected row is not in it (golive
+ * #475). The section caches this page, so a credit created by a return after the page first loaded
+ * appeared in the grid but not in the list the panel reads, and selecting it showed nothing.
  *
  * When the two orders belong to different companies the intercompany legs are
  * REQUIRED rather than convenient: a single Dr A/R / Cr A/R spanning two legal
@@ -59,6 +66,9 @@ import { GetOrders } from '../../data/orders-queries';
                 <h3>Customer credits on account</h3>
                 <span class="right small muted">{{ TotalDisplay }} across {{ Credits.length }}</span>
             </div>
+            @if (SelectionNote) {
+                <mj-alert Variant="warning" Icon="fa-solid fa-circle-info" class="mjo-cr__note">{{ SelectionNote }}</mj-alert>
+            }
             <div class="mjo-cr__viewer-host">
                 @if (OrderEntityInfo) {
                     <mj-entity-viewer
@@ -139,6 +149,9 @@ import { GetOrders } from '../../data/orders-queries';
                     {{ Busy ? 'Applying…' : 'Apply credit' }}
                 </button>
                 <span class="small muted">No cash changes hands.</span>
+                @if (!MayReverse) {
+                    <span class="small muted">Credits are moved by finance ({{ ReverseAuth }}).</span>
+                }
                 @if (Error) {
                     <span class="small mjo-cr__error">{{ Error }}</span>
                 }
@@ -215,6 +228,9 @@ import { GetOrders } from '../../data/orders-queries';
 export class MJOAccountCreditPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /** The credits grid, re-read alongside {@link Credits} when the page is shown again. */
+    @ViewChild(EntityViewerComponent) private viewer?: EntityViewerComponent;
+
     /** A credit was applied. */
     @Output() Applied = new EventEmitter<void>();
 
@@ -251,9 +267,15 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Amount = 0;
     public Busy = false;
     public Error: string | null = null;
+    /** Why a selected row has no panel: it no longer holds a credit. Null otherwise. */
+    public SelectionNote: string | null = null;
+    /** Whether the viewer holds the finance reversal authorization (bc-aidp-next-golive#454). */
+    public MayReverse = false;
+    public readonly ReverseAuth = ORDER_REVERSE_AUTH;
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
+        this.MayReverse = UserCanReverse(md.CurrentUser, md);
         this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
         await this.load();
         this.cdr.detectChanges();
@@ -261,18 +283,49 @@ export class MJOAccountCreditPageComponent implements OnInit {
 
     public OnRecordSelected(event: RecordSelectedEvent): void {
         const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
-        if (id) {
-            const row = this.Credits.find((c) => c.ID === id) || ({ ID: id } as mjBizAppsOrdersOrderHeaderEntity);
-            void this.SelectSource(row);
-        }
+        if (id) void this.selectByID(id);
     }
 
     public OnRecordOpened(event: RecordOpenedEvent): void {
         const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
-        if (id) {
-            const row = this.Credits.find((c) => c.ID === id) || ({ ID: id } as mjBizAppsOrdersOrderHeaderEntity);
-            void this.SelectSource(row);
+        if (id) void this.selectByID(id);
+    }
+
+    /**
+     * The section shows this page again from its cache. Re-read the credits and the grid, since a
+     * return or a payment made elsewhere since the last visit can have created or spent one.
+     */
+    public async OnShown(): Promise<void> {
+        this.SelectionNote = null;
+        this.viewer?.RefreshInPlace();
+        await this.load();
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Select a credit by the grid row's ID.
+     *
+     * The grid reads the database itself, so it can list a credit {@link Credits} has never seen. The
+     * panel reads `Credits`, so such a row selected and showed nothing (golive #475). A row missing
+     * from the list re-reads it first; one still missing no longer holds a credit, and says so.
+     */
+    private async selectByID(id: string): Promise<void> {
+        this.SelectionNote = null;
+        const row = this.Credits.find((c) => c.ID === id);
+        if (row) {
+            await this.SelectSource(row);
+            return;
         }
+        // `load` keeps the selected credit, targets included, when the re-read finds it.
+        this.SourceID = id;
+        await this.load();
+        if (this.SourceID !== id) {
+            this.SourceID = null;
+            this.Targets = [];
+            this.TargetID = null;
+            this.SelectionNote = 'That order no longer holds a credit. The list has been refreshed.';
+        }
+        this.cdr.detectChanges();
     }
 
     public get Source(): mjBizAppsOrdersOrderHeaderEntity | undefined {
@@ -297,7 +350,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public get CanApply(): boolean {
-        return !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
+        return this.MayReverse && !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
     }
 
     public get TotalDisplay(): string {
@@ -381,19 +434,20 @@ export class MJOAccountCreditPageComponent implements OnInit {
      */
     private async load(): Promise<void> {
         const credits = await GetOrders({ Preset: 'credits' });
-        const first = !this.SourceID ? credits[0] : undefined;
+        // Keep the credit already selected when it still holds one; otherwise the first. Its targets
+        // are re-read either way, since their balances are as stale as the credits were.
+        const source = (this.SourceID ? credits.find((c) => c.ID === this.SourceID) : undefined) ?? credits[0];
 
-        const targets = first
-            ? OwnCreditTargets(first, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(first) }))
+        const targets = source
+            ? OwnCreditTargets(source, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(source) }))
             : [];
 
         this.Credits = credits;
-        if (first) {
-            this.SourceID = first.ID;
-            this.Targets = targets;
-            this.TargetID = targets[0]?.ID ?? null;
-            this.Amount = Math.min(this.Available, targets[0]?.Balance ?? 0);
-        }
+        this.SourceID = source?.ID ?? null;
+        this.Targets = targets;
+        const keptTarget = targets.find((t) => t.ID === this.TargetID);
+        this.TargetID = (keptTarget ?? targets[0])?.ID ?? null;
+        this.Amount = Math.min(this.Available, (keptTarget ?? targets[0])?.Balance ?? 0);
         this.cdr.detectChanges();
     }
 }

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
@@ -73,7 +74,7 @@ describe('deciding a concession re-measures its share of the order', () => {
         expect(values.DecidedByUserID).toBe(APPROVER.ID);
     });
 
-    it('counts every concession on the order that is not Rejected, this one included', async () => {
+    it('counts every concession on the order still Pending or Approved, this one included', async () => {
         gate.OrderNetTotal.mockResolvedValue(20000);
         gate.OrderConcessionTotal.mockResolvedValue(8500);
         const { row, values } = pendingConcession('Approved');

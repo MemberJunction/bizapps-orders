@@ -54,8 +54,21 @@ export function CanSend(
     rows: readonly ExternalInvoiceLike[],
     hasRail: boolean,
     billedOnSchedule = false,
+    balance?: number | null,
 ): boolean {
-    return orderStatus === 'Confirmed' && SendApplies(rows, hasRail, billedOnSchedule);
+    return orderStatus === 'Confirmed' && SendApplies(rows, hasRail, billedOnSchedule, balance);
+}
+
+/**
+ * Whether the order's open balance leaves nothing to invoice.
+ *
+ * An order paid in full, or priced at nothing, needs no invoice, and a Send button on it invites a
+ * person to bill a customer for $0 (bc-aidp-next-golive#457). Only an exact zero counts: a negative
+ * balance is a credit owed to the customer, which still shows so finance can see the rail's side of
+ * it, and an unknown balance (not loaded, or never computed) is not evidence of anything.
+ */
+export function NothingToBill(balance: number | null | undefined): boolean {
+    return balance !== null && balance !== undefined && Number(balance) === 0;
 }
 
 /**
@@ -64,10 +77,19 @@ export function CanSend(
  *
  * The toolbar shows Send on every order this is true for and greys it out until the order is
  * confirmed, so a person sees where the step is before they can take it. Where this is false the
- * button is not shown, because no amount of waiting makes it usable from here.
+ * button is not shown, because no amount of waiting makes it usable from here: the order has no rail,
+ * bills in instalments, already has a unit live on the rail, or has nothing left to bill.
  */
-export function SendApplies(rows: readonly ExternalInvoiceLike[], hasRail: boolean, billedOnSchedule = false): boolean {
+export function SendApplies(
+    rows: readonly ExternalInvoiceLike[],
+    hasRail: boolean,
+    billedOnSchedule = false,
+    balance?: number | null,
+): boolean {
     if (!hasRail) return false;
+    // NOTHING OWED, NOTHING TO SEND. A paid-in-full or free order shows no button rather than a greyed
+    // one: there is no later moment at which invoicing it becomes the right step. See {@link NothingToBill}.
+    if (NothingToBill(balance)) return false;
     // AN ORDER BILLED IN INSTALMENTS IS NEVER SENT FROM HERE. This button sends the WHOLE-ORDER unit,
     // and a scheduled order has none — the server refuses it with "name the instalment", correctly,
     // after the person has clicked. The case that made this visible: an order whose only rail invoice

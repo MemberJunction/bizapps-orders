@@ -143,6 +143,15 @@ describe('FindUnansweredHeldLines', () => {
         expect((subsCall?.[0] as RunViewParams).ExtraFilter).toContain(`Status IN ('Active', 'Trialing', 'Paused')`);
     });
 
+    it('reads held subscriptions and their terms past the view row cap, since confirm refuses on them', async () => {
+        const p = provider(held);
+        await FindUnansweredHeldLines(order, [line()], p);
+        const call = (entity: string) =>
+            p.RunView.mock.calls.find(([params]) => (params as RunViewParams).EntityName === entity)?.[0] as RunViewParams;
+        expect(call('MJ_BizApps_Orders: Subscriptions').IgnoreMaxRows).toBe(true);
+        expect(call('MJ_BizApps_Orders: Subscription Terms').IgnoreMaxRows).toBe(true);
+    });
+
     it('reads three times however many lines there are', async () => {
         const p = provider(held);
         const found = await FindUnansweredHeldLines(order, [line(), line({ ID: 'b', LineNumber: 2 }), line({ ID: 'c', LineNumber: 3 })], p);
@@ -240,8 +249,8 @@ describe('a paused holding: what "extend" does (golive #339)', () => {
 
     it('an active holding is extended: next term from the day after coverage ends', () => {
         const text = ExtendChoiceTextFor(holding({ Status: 'Active' }), day);
-        expect(text.Choice).toBe('Add as next term (starts 2027-10-01)');
-        expect(text.Hint).toContain('adds a term to SUB-1');
+        expect(text.Choice).toBe('Renew SUB-1 (starts 2027-10-01)');
+        expect(text.Hint).toBe("Confirm adds this line to SUB-1 as its next term, at this line's price.");
     });
 
     it('a paused holding whose type reactivates is described as a reactivation, not a next term', () => {

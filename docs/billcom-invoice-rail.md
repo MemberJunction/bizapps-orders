@@ -48,8 +48,9 @@ BILL has no payment-received event; a verified BILL invoice event only starts th
 One BILL invoice is one billing unit: an order, the company that bills it, and an instalment or none.
 
 - **An order with no payment schedule** is one unit, sent through the rail of the order's company
-  (`OrderHeader.CompanyID`) whatever company owns each product. It is invoiceable once `Confirmed` and
-  numbered as the order. Its BILL invoice has one line per printed invoice row plus `Charges` and
+  (`OrderHeader.CompanyID`) whatever company owns each product. It is invoiceable once `Confirmed` with
+  a balance above zero, and numbered as the order; a paid-in-full or free order is not on the worklist,
+  and the order form shows no Send button for it (bc-aidp-next-golive#457). Its BILL invoice has one line per printed invoice row plus `Charges` and
   `Tax`, totalling the order's gross to the cent (`TIE_FAILED` otherwise). An order with money already
   applied is refused (`PART_PAID`), since the invoice would bill that money again.
 - **An order with a payment schedule** has one unit per `OrderHeaderPaymentSchedule` row, sent through
@@ -114,7 +115,7 @@ needs `orders:read`, the others `orders:write`.
 
 | Operation | What it does |
 |---|---|
-| `Orders.IssueExternalInvoice` | Sends one unit. Creates the BILL customer if needed (BILL requires an email), then writes a `Sending` row before asking BILL for the invoice, so a second send fails on `UQ_ExternalInvoice_LiveUnit`; reads the invoice back and archives it if the total does not tie. A transient failure leaves the row `Sending` (`UNCERTAIN`) instead of retrying. `Preview` writes nothing. |
+| `Orders.IssueExternalInvoice` | Sends one unit. Finds the BILL customer by the party's `ExternalCustomer` row, else by an active BILL customer whose `accountNumber` is the party's account number or id (more than one is refused as ambiguous); creates one only when `BillComCreateCustomerOnSend` is on (BILL requires an email). Then writes a `Sending` row before asking BILL for the invoice, so a second send fails on `UQ_ExternalInvoice_LiveUnit`; reads the invoice back and archives it if the total does not tie. A transient failure leaves the row `Sending` (`UNCERTAIN`) instead of retrying. Once sent, raises a "review and send" task for holders of `BillComInvoiceReadyNotifyRole` and posts to `BillComInvoiceReadyWebhookURL` (10-second timeout), each when set; a failed notice is logged and never undoes the send. `Preview` writes nothing. |
 | `Orders.CancelExternalInvoice` | Archives a `Sent` invoice. Refused when money is applied to the unit in Orders (`HAS_PAYMENT`) or BILL shows money not yet polled (`PAYMENT_PENDING_ON_RAIL`). Books nothing. |
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
@@ -128,6 +129,10 @@ also rebuilds every open `Unmatched` payment from its stored BILL record, and ca
 have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
+payment that would apply more to an order or instalment than Orders still shows open is `Held`, not
+captured, with a reason saying it is already paid here (golive #148): it is usually the same receipt
+also recorded by hand in Orders. It is re-decided every pass, so voiding the duplicate in Orders lets
+the next pass capture it; **Set aside** keeps the one recorded in Orders. A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
 corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
 Each payment that pass moved into one of those states (or from one to another) gets one
@@ -166,7 +171,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 | Table | Holds |
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
-| `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. |
+| `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. `scripts/load-billcom-customer-map.mjs` loads these rows for customers already in BILL (dry run unless `--apply`). |
 | `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 
@@ -207,8 +212,10 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
 - **Payments left for a person:** a currency other than the company's functional one (`Refused`), an
   invoice Orders did not send (`Unmatched`), an invoice sent before 5.27.0 by a product company other
   than the order's (`Refused` by `Orders.CapturePayment`; #333), and a void or re-application after capture.
-- **Double entry is a process rule** (design §12 Q4): a BILL payment also recorded by hand in Orders is
-  booked twice, since `Orders.CapturePayment` accepts over-payment.
+- **Double entry is caught only by balance** (design §12 Q4; golive #148): a BILL payment also recorded
+  by hand in Orders is held when the order or instalment has nothing left open for it. A partial hand-recorded
+  payment that leaves enough open for the BILL one is not caught, and Orders never marks the BILL
+  invoice paid. A held payment raises no `Payment Needs Review` notice.
 - **Smaller gaps.** Retries are decided from error text (`BILLCOM_TRANSIENT`), not the HTTP status.
   After a capture covering several invoices, BILL's status and due amount can be stored on the wrong
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The
