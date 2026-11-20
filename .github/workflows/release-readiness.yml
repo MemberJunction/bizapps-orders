@@ -144,10 +144,11 @@ jobs:
       - name: No already-released migration may be edited
         env:
           MIGRATION_IMMUTABILITY_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'migration-immutability-exempt') }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           # A full fetch, not a shallow one: the three-dot compare needs history on both sides.
-          git fetch --no-tags origin "${{ github.base_ref }}"
-          ./ci/check-migration-immutability.sh "origin/${{ github.base_ref }}"
+          git fetch --no-tags origin "$BASE_REF"
+          ./ci/check-migration-immutability.sh "origin/$BASE_REF"
 
   # Would a publish abort on this tree? `changeset publish` can only publish a package that
   # already exists on npm, because a trusted publisher is configured per package on npmjs.com

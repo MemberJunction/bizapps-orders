@@ -688,4 +688,24 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.isLockedEmail(1, 'email')).toBe(false);
         });
     });
+
+    describe('secure session key generation', () => {
+        it('refuses to initialize when no secure random source is available instead of falling back to Math.random', () => {
+            const originalCrypto = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+            try {
+                Object.defineProperty(globalThis, 'crypto', {
+                    value: undefined,
+                    configurable: true,
+                    writable: true,
+                });
+                const insecure = new MJCheckoutWidgetComponent();
+                insecure.ngOnInit();
+                expect(insecure.internalErrorMessage()).toContain('secure random source');
+            } finally {
+                if (originalCrypto) {
+                    Object.defineProperty(globalThis, 'crypto', originalCrypto);
+                }
+            }
+        });
+    });
 });

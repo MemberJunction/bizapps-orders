@@ -2541,7 +2541,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ ID: string; Code: string }>(
             {
                 EntityName: CHARGE_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${unique.map((id) => `'${EscapeSQLString(id)}'`).join(',')})`,
+                ExtraFilter: `ID IN (${RequireUUIDs(unique, 'ChargeTypeID').map((id) => `'${id}'`).join(',')})`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser as UserInfo,
@@ -4716,7 +4716,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             {
                 EntityName: RELATIONSHIP_ENTITY,
                 ExtraFilter:
-                    `FromPersonID='${personID}' AND ToOrganizationID IS NOT NULL ` +
+                    `FromPersonID='${RequireUUID(personID, 'FromPersonID')}' AND ToOrganizationID IS NOT NULL ` +
                     `AND Status='Active' ` +
                     `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
                     `AND (EndDate IS NULL OR EndDate >= '${date}') ` +

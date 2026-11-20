@@ -299,3 +299,28 @@ describe('the read-failure codes and the checkout classifier', () => {
         }
     });
 });
+
+describe('idempotency key length guard and required scope', () => {
+    it('refuses an IdempotencyKey longer than 200 characters before querying or writing', async () => {
+        const over = 'k'.repeat(201);
+        const { out, write, codes } = await run(input([ORDER_A], { IdempotencyKey: over }));
+        expect(out.Success).toBe(false);
+        expect(codes).toEqual(['IdempotencyKeyTooLong']);
+        expect(out.Blockers?.[0]?.Message).toContain('201');
+        expect(mocks.calls).toHaveLength(0);
+        expect(write).not.toHaveBeenCalled();
+        expect(TERMINAL_CAPTURE_BLOCKER_CODES.has('IdempotencyKeyTooLong')).toBe(true);
+        expect(isCaptureRefusalRetryable(codes)).toBe(false);
+    });
+
+    it('accepts an IdempotencyKey of exactly 200 characters', async () => {
+        const exact = 'k'.repeat(200);
+        const { out, write } = await run(input([ORDER_A], { IdempotencyKey: exact }));
+        expect(out.Success).toBe(true);
+        expect(write).toHaveBeenCalledTimes(1);
+    });
+
+    it('requires the orders:payments:write scope', () => {
+        expect(new CapturePaymentOperation().RequiredScope).toBe('orders:payments:write');
+    });
+});
