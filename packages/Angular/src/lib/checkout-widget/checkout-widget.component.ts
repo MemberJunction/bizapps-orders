@@ -205,7 +205,7 @@ declare global {
 })
 export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public readonly widgetInstanceId: string = 'mj-cw-' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 9));
-    private _fallbackSessionKey: string = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'ck_sess_' + Math.random().toString(36).substring(2, 15);
+    private _fallbackSessionKey: string = MJCheckoutWidgetComponent.secureSessionKey();
     private _config = signal<CheckoutWidgetConfig | null>(null);
     private _lastMountedJS: string | null = null;
     /** Hooks this widget's own `customUI.js` registered; cleared on destroy (#779). */
@@ -216,6 +216,23 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         private el?: ElementRef,
         private renderer?: Renderer2
     ) {}
+
+    /**
+     * The session key is the bearer credential for the checkout session, so it must come from a
+     * secure RNG — never Math.random. Returns '' when no secure source exists; ngOnInit then
+     * refuses to initialize, the same way the public host page does.
+     */
+    private static secureSessionKey(): string {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            return crypto.randomUUID();
+        }
+        if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+            const b = new Uint8Array(16);
+            crypto.getRandomValues(b);
+            return 'ck_sess_' + Array.from(b, (n) => n.toString(16).padStart(2, '0')).join('');
+        }
+        return '';
+    }
 
     @Input()
     public set config(val: CheckoutWidgetConfig | null) {
@@ -537,6 +554,10 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     });
 
     public ngOnInit(): void {
+        if (!this.sessionKey && !this._fallbackSessionKey) {
+            this.internalErrorMessage.set('Checkout requires a secure random source. Open this page over HTTPS.');
+            return;
+        }
         this.applyPrefillEmail();
         this.syncUnits();
         this.applyCustomCSS(this.activeCSS());

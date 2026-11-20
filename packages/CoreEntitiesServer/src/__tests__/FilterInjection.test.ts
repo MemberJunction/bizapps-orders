@@ -111,8 +111,17 @@ describe('sql guards', () => {
         expect(() => RequireOptionalDay(new Date('garbage'), 'AsOf')).toThrow('AsOf is not a valid date.');
     });
 
-    it('escapes free text by doubling the quote', () => {
+    it('escapes free text by doubling quotes and stripping null bytes', () => {
         expect(EscapeText("O'Brien")).toBe("O''Brien");
+        expect(EscapeText("O'Brien\0admin")).toBe("O''Brienadmin");
+    });
+
+    it('keeps hand-rolled quote doubling out of CoreEntitiesServer source', () => {
+        const offenders = readdirSync(SRC, { recursive: true })
+            .map(String)
+            .filter((f) => f.endsWith('.ts') && !f.includes('__tests__'))
+            .filter((f) => readFileSync(join(SRC, f), 'utf8').includes(`.replace(/'/g`));
+        expect(offenders).toEqual([]);
     });
 });
 

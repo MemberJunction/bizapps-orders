@@ -2641,7 +2641,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const billing = { Country: 'US', StateProvince: 'IL', PostalCode: '60601' };
                 const lines = [{ ProductID: f.Products.SubRolling, Quantity: 1 }];
 
-                const key = `it-gw-${widgetID.slice(0, 8)}`;
+                const key = `it-gw-${widgetID}`;
                 const init = await CheckoutSessionService.InitializeSession(slug, key, ctx.User);
                 Assert(init.Success, `a session opens: ${init.ErrorMessage}`);
                 const draft = await CheckoutSessionService.UpdateDraft(init.SessionID!, key, email, lines, billing, ctx.User);
@@ -2689,7 +2689,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 });
                 const slug = `${f.Run.toLowerCase()}-trk-${widgetID.slice(0, 8).toLowerCase()}`;
                 await createViaEntity(ctx, CHECKOUT_WIDGET_DISTRIBUTION_ENTITY, { CheckoutWidgetID: widgetID, Slug: slug, Status: 'Active' });
-                const key = `it-trk-${widgetID.slice(0, 8)}`;
+                const key = `it-trk-${widgetID}`;
                 const init = await CheckoutSessionService.InitializeSession(slug, key, ctx.User);
                 Assert(init.Success, `a session opens: ${init.ErrorMessage}`);
                 const email = `trk-it-${widgetID.slice(0, 8).toLowerCase()}@example.com`;

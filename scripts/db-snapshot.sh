@@ -35,7 +35,9 @@ LABEL="${2:-good}"
 BACKUP_DIR="/var/opt/mssql/backup"
 FILE="${BACKUP_DIR}/${DB}.${LABEL}.bak"
 
-SQLCMD="sqlcmd -S ${DB_HOST},${DB_PORT:-1433} -U ${DB_USERNAME} -P ${DB_PASSWORD} -C -N o -b"
+# Password via SQLCMDPASSWORD, not -P: a command-line argument is visible to every process on the host.
+export SQLCMDPASSWORD="${DB_PASSWORD}"
+SQLCMD="sqlcmd -S ${DB_HOST},${DB_PORT:-1433} -U ${DB_USERNAME} -C -N o -b"
 
 case "${1:-}" in
   save)

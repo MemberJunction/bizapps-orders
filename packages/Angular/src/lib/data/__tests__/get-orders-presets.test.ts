@@ -33,4 +33,12 @@ describe('GetOrders presets', () => {
         await GetOrders({ Preset: 'booked', MaxRows: 10, User: {} as never });
         expect(filterOf()).toBe(`Status = 'Confirmed'`);
     });
+
+    it('escapes SQL quotes, null bytes, and LIKE wildcards in Search fragments', async () => {
+        await GetOrders({ Search: "50% [test]_O'Neil\0", MaxRows: 10, User: {} as never });
+        const filter = filterOf();
+        expect(filter).toContain("50[%] [[]test][_]");
+        expect(filter).toContain("O''Neil");
+        expect(filter).not.toContain('\0');
+    });
 });

@@ -1,4 +1,5 @@
 import { RunQuery, RunView, type IMetadataProvider, type IRunQueryProvider } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import type { MJOSummaryFigure } from '../panels/summary-strip.component';
 import { FormatMoney } from '../panels/money-format';
 import { MJO_ENTITIES } from '../data/entity-names';
@@ -112,7 +113,7 @@ async function loadCountFigures(
 ): Promise<MJOSummaryFigure[]> {
     const partyCol = kind === 'person' ? 'BillToPersonID' : 'BillToOrganizationID';
     const subCol = kind === 'person' ? 'BeneficiaryPersonID' : 'HolderOrganizationID';
-    const id = partyId.replace(/'/g, "''");
+    const id = EscapeSQLString(partyId);
 
     const specs: CountSpec[] = [
         {

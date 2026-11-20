@@ -34,6 +34,7 @@ export const TERMINAL_CAPTURE_BLOCKER_CODES: ReadonlySet<string> = new Set([
     'UnknownTender',
     'ReversalTender',
     'OrderCompanyMismatch',
+    'IdempotencyKeyTooLong',
 ]);
 
 export const TERMINAL_CAPTURE_PRECHECKS: ReadonlySet<string> = new Set([
