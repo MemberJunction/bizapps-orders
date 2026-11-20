@@ -15,6 +15,8 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
     test: {
+        // Relative to the repo root, so a package's own `test` script passes `--root ../..` and a
+        // `packages/<Name>/` filter; a bare `vitest run` from a package directory finds nothing (#892).
         include: ['packages/*/src/**/*.test.ts'],
         // Each package's tests are independent and none of them touch a database, so there is no
         // ordering requirement to preserve here.

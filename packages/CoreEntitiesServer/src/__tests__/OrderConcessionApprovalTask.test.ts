@@ -12,6 +12,8 @@ const approval = vi.hoisted(() => ({
     ConcessionSummary: vi.fn(),
 }));
 vi.mock('../ConcessionApprovalTask.js', () => approval);
+const acknowledgment = vi.hoisted(() => ({ RaiseConcessionAcknowledgment: vi.fn() }));
+vi.mock('../ConcessionAcknowledgment.js', () => acknowledgment);
 
 const { OrderConcessionEntityServer } = await import('../OrderConcessionEntityServer.js');
 
@@ -37,6 +39,7 @@ function concession(opts: { saved: boolean; status: string; statusDirty?: boolea
     Object.defineProperty(instance, 'ID', { value: CONCESSION_ID });
     Object.defineProperty(instance, 'OrderHeaderID', { value: ORDER_ID });
     Object.defineProperty(instance, 'RequestedByUserID', { value: USER.ID });
+    Object.defineProperty(instance, 'SalesRuleID', { value: 'rule-1' });
     Object.defineProperty(instance, 'IsSaved', { value: opts.saved });
     Object.defineProperty(instance, 'Fields', { value: [] });
     Object.defineProperty(instance, 'ContextCurrentUser', { value: USER });
@@ -66,7 +69,7 @@ describe('OrderConcessionEntityServer.Save and the approval task', () => {
         expect(await row.Save()).toBe(true);
         expect(base).toHaveBeenCalledTimes(1);
         expect(approval.RouteConcessionToApproval).toHaveBeenCalledWith(
-            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: USER.ID },
+            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: USER.ID, SalesRuleID: 'rule-1' },
             'role-1',
             '25% discount, 3,000.00',
             expect.objectContaining({ User: USER }),
@@ -87,12 +90,35 @@ describe('OrderConcessionEntityServer.Save and the approval task', () => {
         );
     });
 
-    it('raises no task for a concession approved on save', async () => {
+    it('raises no approval task for a concession approved on save, only accounting\'s acknowledgment (golive #268)', async () => {
         vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
         const { row } = concession({ saved: false, status: 'Approved' });
 
         expect(await row.Save()).toBe(true);
         expect(approval.RouteConcessionToApproval).not.toHaveBeenCalled();
+        expect(acknowledgment.RaiseConcessionAcknowledgment).toHaveBeenCalledWith(
+            expect.objectContaining({ ID: CONCESSION_ID, OrderHeaderID: ORDER_ID }),
+            expect.objectContaining({ User: USER }),
+        );
+    });
+
+    it('raises no acknowledgment for a rejected concession', async () => {
+        vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
+        const { row } = concession({ saved: true, status: 'Rejected', statusDirty: true });
+
+        expect(await row.Save()).toBe(true);
+        expect(acknowledgment.RaiseConcessionAcknowledgment).not.toHaveBeenCalled();
+    });
+
+    it('closes the approval task before raising the acknowledgment, so the acknowledgment stays open', async () => {
+        vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
+        const order: string[] = [];
+        approval.CloseConcessionTasks.mockImplementationOnce(async () => void order.push('close'));
+        acknowledgment.RaiseConcessionAcknowledgment.mockImplementationOnce(async () => void order.push('acknowledge'));
+        const { row } = concession({ saved: true, status: 'Approved', statusDirty: true });
+
+        expect(await row.Save()).toBe(true);
+        expect(order).toEqual(['close', 'acknowledge']);
     });
 
     it('closes the concession\'s task when it is decided on its record', async () => {

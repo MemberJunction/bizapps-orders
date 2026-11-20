@@ -9,6 +9,7 @@
       "DefaultIsTaxable": 1,
       "ProductExtensionEntity": "MJ_BizApps_Orders: Event Products",
       "OrderLineExtensionEntity": "MJ_BizApps_Orders: Event Order Lines",
+      "Configuration": "{\"unitMode\":\"perUnit\"}",
       "IsActive": 1,
       "DefaultEntitlementGrantTiming": "OnConfirm",
       "DefaultEntitlementQuantityMode": "PerUnit",

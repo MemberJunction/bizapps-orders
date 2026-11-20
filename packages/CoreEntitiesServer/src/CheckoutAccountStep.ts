@@ -6,8 +6,8 @@
  * subclass registered through the ClassFactory. Once `/complete` has confirmed the order, the widget
  * asks for the account step through `/checkout/account`, and the host is asked to ensure an account
  * for the buyer. It answers one of:
- *   - `Created` — a new account; the buyer may set its password in the widget, once. The account
- *     must not sign in until the host has verified the buyer's e-mail (see the class doc).
+ *   - `Created` — a new account; the buyer may set its password in the widget, once. By default
+ *     the account must not sign in until the host has verified the buyer's e-mail (see the class doc).
  *   - `Exists`  — an account was already there; it is never touched, and the buyer is told to sign in.
  *   - `Failed`  — the host could not answer; the buyer is shown the host's message.
  *   - `NotApplicable` — this checkout is not one the host makes accounts for (another company's
@@ -29,11 +29,14 @@ import { RequireUUID } from './sql-guards.js';
 const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
 /** How many times a buyer may try a password the host refuses before the step closes. */
 export const MAX_CHECKOUT_PASSWORD_ATTEMPTS = 5;
 /** Longest password passed to the host. The host's own policy decides what is acceptable. */
 export const MAX_CHECKOUT_PASSWORD_LENGTH = 256;
+/** Shortest password passed to the host — a floor, not a policy; the host may still demand more. */
+export const MIN_CHECKOUT_PASSWORD_LENGTH = 8;
 /** Default minutes after the account is created during which the buyer may set its password here. */
 export const DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES = 5;
 /** Default seconds Orders waits for the host before treating a call as unanswered. */
@@ -68,8 +71,19 @@ export interface CheckoutAccountResult {
     /** Shown to the buyer. Worded for the buyer, never containing secrets. */
     Message?: string;
     /**
-     * @deprecated Ignored. Every `Created` account must stay unable to sign in until the host has
-     * verified the e-mail, so the widget always tells the buyer to use the verification link (#395).
+     * `Created` only: the note shown with the password form, and when no form shows. Omitted, the
+     * widget tells the buyer to use the verification link sent to the e-mail. `null` or an empty
+     * string shows no note, for a host that lets the account sign in before verification (see the
+     * class doc).
+     */
+    VerificationNote?: string | null;
+    /**
+     * `Created` only: shown once the buyer has set the password. Omitted, the widget tells the buyer
+     * to verify the e-mail and then sign in.
+     */
+    PasswordSetMessage?: string;
+    /**
+     * @deprecated Ignored. Use `VerificationNote` to change or remove the verification wording.
      */
     VerificationRequired?: boolean;
 }
@@ -90,11 +104,15 @@ export interface CheckoutPasswordResult {
  * `PasswordWindowMinutes` of that answer. Orders cannot see the identity provider, and the checkout
  * never proves the buyer owns the e-mail, so these rules are the host's to hold:
  *   - Never change an account the checkout did not create for this purchase, in either method.
- *   - An account answered `Created` must not sign in until the host has verified the buyer's e-mail,
- *     for example with a link sent to it. Anyone can check out with someone else's e-mail and set
- *     the password here; verification is what keeps that from becoming a working login.
- *   - Until the e-mail is verified, do not link the new login to `PersonID`. That Person was
- *     matched by e-mail alone, and may be an existing member with orders and memberships.
+ *   - An account answered `Created` should not sign in until the host has verified the buyer's
+ *     e-mail, for example with a link sent to it. Anyone can check out with someone else's e-mail
+ *     and set the password here; verification is what keeps that from becoming a working login.
+ *     A host may let the account sign in before verification as its own choice, taking that risk
+ *     on; it then words the step itself through `VerificationNote` and `PasswordSetMessage`, since
+ *     the default wording tells the buyer to verify first.
+ *   - Until the e-mail is verified, do not link the new login to `PersonID`, whether or not the
+ *     account can already sign in. That Person was matched by e-mail alone, and may be an existing
+ *     member with orders and memberships.
  *   - When `EnsureAccount` finds an account it created earlier for the same `SessionID`, answer
  *     `Created`, not `Exists`. A call Orders gave up on (`HostTimeoutSeconds`) is recorded as
  *     `Failed` and asked again, and the host may have finished creating the account meanwhile.
@@ -146,6 +164,10 @@ interface StoredAccountState {
     Message?: string;
     DecidedAt: string;
     VerificationRequired?: boolean;
+    /** The host's `VerificationNote`, kept only when it gave one (`null` included). */
+    VerificationNote?: string | null;
+    /** The host's `PasswordSetMessage`, kept only when it gave one. */
+    PasswordSetMessage?: string;
     PasswordSet?: boolean;
     PasswordAttempts?: number;
     /**
@@ -161,8 +183,12 @@ export interface CheckoutAccountStatus {
     Message?: string;
     /** True while the buyer may still set a password: the outcome was `Created` and none is set yet. */
     CanSetPassword: boolean;
-    /** True for every `Created` account: the buyer must verify the e-mail before the account signs in. */
+    /** True for every `Created` account. */
     VerificationRequired: boolean;
+    /** The host's wording for the verification note; absent means the widget's default, `null` none. */
+    VerificationNote?: string | null;
+    /** The host's wording once the password is set; absent means the widget's default. */
+    PasswordSetMessage?: string;
 }
 
 export interface CheckoutAccountResponse {
@@ -170,6 +196,20 @@ export interface CheckoutAccountResponse {
     ErrorMessage?: string;
     /** Absent when no host step is registered — the checkout has no account step. */
     Account?: CheckoutAccountStatus;
+    /**
+     * What the confirmation screen shows and where it leaves to, sent with `Account` so a reload
+     * that returns to the account step does not need `/initialize` (#858). Absent with no `Account`.
+     */
+    Confirmation?: CheckoutConfirmationView;
+}
+
+/** The confirmed checkout's order number and the widget's post-sale settings. */
+export interface CheckoutConfirmationView {
+    OrderNumber: string | null;
+    /** The widget's `redirectUrl`, followed once the account step settles. */
+    RedirectUrl: string | null;
+    /** The widget's `successMessage`. */
+    SuccessMessage: string | null;
 }
 
 const GENERIC_FAILURE = 'We could not set up your account just now. Your order is confirmed. Please try again in a moment.';
@@ -260,7 +300,19 @@ function toStatus(state: StoredAccountState & { Outcome: CheckoutAccountOutcome 
             (state.PasswordAttempts ?? 0) < MAX_CHECKOUT_PASSWORD_ATTEMPTS &&
             withinPasswordWindow(state, step),
         VerificationRequired: state.Outcome === 'Created',
+        ...(state.Outcome === 'Created' && state.VerificationNote !== undefined ? { VerificationNote: state.VerificationNote } : {}),
+        ...(state.Outcome === 'Created' && state.PasswordSetMessage ? { PasswordSetMessage: state.PasswordSetMessage } : {}),
     };
+}
+
+/** The host's `Created` wording as it is kept: a string or `null` note, a non-empty password-set message. */
+function hostWording(result: CheckoutAccountResult | undefined): Pick<StoredAccountState, 'VerificationNote' | 'PasswordSetMessage'> {
+    const wording: Pick<StoredAccountState, 'VerificationNote' | 'PasswordSetMessage'> = {};
+    const note = result?.VerificationNote;
+    if (note === null || typeof note === 'string') wording.VerificationNote = note?.trim() ? note.trim() : null;
+    const passwordSet = result?.PasswordSetMessage;
+    if (typeof passwordSet === 'string' && passwordSet.trim()) wording.PasswordSetMessage = passwordSet.trim();
+    return wording;
 }
 
 /** The recorded state, unless the step does not apply to this session. */
@@ -355,7 +407,7 @@ async function ensureAccount(
     if (existing?.Outcome === 'NotApplicable') return { Success: true };
     const shown = buyerFacing(existing);
     if (shown && shown.Outcome !== 'Failed') {
-        return { Success: true, Account: toStatus(shown, step) };
+        return { Success: true, Account: toStatus(shown, step), Confirmation: await readConfirmation(session, contextUser) };
     }
 
     const context = await buildContext(session, contextUser);
@@ -388,11 +440,40 @@ async function ensureAccount(
         Message: result?.Message ?? (outcome === 'Failed' ? GENERIC_FAILURE : undefined),
         DecidedAt: new Date().toISOString(),
         VerificationRequired: outcome === 'Created',
+        ...(outcome === 'Created' ? hostWording(result) : {}),
         PasswordSet: false,
         PasswordAttempts: 0,
     };
     await saveAccountState(session, state);
-    return { Success: true, Account: toStatus(state, step) };
+    return { Success: true, Account: toStatus(state, step), Confirmation: await readConfirmation(session, contextUser) };
+}
+
+/**
+ * The confirmed order's number and the widget's `redirectUrl` and `successMessage`. Fail-soft: a
+ * value that cannot be read is null, and the confirmation screen shows its generic wording.
+ */
+async function readConfirmation(session: mjBizAppsOrdersCheckoutSessionEntity, contextUser?: UserInfo): Promise<CheckoutConfirmationView> {
+    const view: CheckoutConfirmationView = { OrderNumber: null, RedirectUrl: null, SuccessMessage: null };
+    const md = new Metadata();
+    const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    try {
+        const order = await md.GetEntityObject(ORDER_HEADER_ENTITY, contextUser);
+        if (session.DraftOrderID && (await order.InnerLoad(CompositeKey.FromID(session.DraftOrderID)))) {
+            view.OrderNumber = text(order.Get('OrderNumber'));
+        }
+        const widget = await md.GetEntityObject(CHECKOUT_WIDGET_ENTITY, contextUser);
+        if (session.CheckoutWidgetID && (await widget.InnerLoad(CompositeKey.FromID(session.CheckoutWidgetID)))) {
+            const raw = widget.Get('Configuration');
+            const config: unknown = typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : null;
+            if (config && typeof config === 'object' && !Array.isArray(config)) {
+                view.RedirectUrl = text((config as Record<string, unknown>).redirectUrl);
+                view.SuccessMessage = text((config as Record<string, unknown>).successMessage);
+            }
+        }
+    } catch (err) {
+        LogError(`[CheckoutAccountStep] Could not read the confirmation for session ${session.ID}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return view;
 }
 
 /**
@@ -444,6 +525,15 @@ async function setPassword(
     }
     if (typeof password !== 'string' || password.length === 0 || password.length > MAX_CHECKOUT_PASSWORD_LENGTH) {
         return { Success: false, ErrorMessage: 'Please enter a password.', Account: toStatus(state, step) };
+    }
+    // Refused BEFORE the attempt is recorded: a too-short password never reaches the host, so it
+    // does not spend one of the buyer's attempts.
+    if (password.length < MIN_CHECKOUT_PASSWORD_LENGTH) {
+        return {
+            Success: false,
+            ErrorMessage: `Please choose a password of at least ${MIN_CHECKOUT_PASSWORD_LENGTH} characters.`,
+            Account: toStatus(state, step),
+        };
     }
 
     const pending: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {

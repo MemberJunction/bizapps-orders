@@ -98,3 +98,20 @@ describe('BizAppsEventOrderLineFormComponent.LineEvent', () => {
         expect(form.LineEvent).toBeNull();
     });
 });
+
+describe('Event Order Line attendee picker (bc-aidp-next-golive#372)', () => {
+    it('renders the attendee as the fast party picker in the form edit mode', () => {
+        const html = readFileSync(
+            join(here, '../lib/custom/EventOrderLine/event-order-line-form.component.html'),
+            'utf8',
+        );
+        const tag = [...html.matchAll(/<(mj-form-field|bizapps-party-field)\b[^>]*>/g)]
+            .map((m) => m[0])
+            .find((t) => t.includes('FieldName="PersonID"'));
+        expect(tag).toMatch(/^<bizapps-party-field\b/);
+        expect(tag).toContain('Kind="Person"');
+        expect(tag).toContain('[EditMode]="EditMode"');
+        expect(tag).toContain('[FormContext]="formContext"');
+        expect(tag).toContain('(Navigate)="OnFormNavigate($event)"');
+    });
+});

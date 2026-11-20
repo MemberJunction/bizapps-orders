@@ -52,10 +52,16 @@ import {
     type ExtensionInitResult,
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
-import { MountPaymentWebhook } from '@mj-biz-apps/orders-core-entities-server';
+import { CheckPaymentWebhookEndpoints, MountPaymentWebhook } from '@mj-biz-apps/orders-core-entities-server';
 
 /** Stripe's largest documented event payload is well under this; the cap keeps the door narrow. */
 const MAX_BODY = '1mb';
+
+/**
+ * How long after start the webhook endpoint drift check runs (#477). Late enough that the metadata
+ * provider and the user cache are ready; it never delays start-up.
+ */
+const DRIFT_CHECK_DELAY_MS = 60_000;
 
 @RegisterClass(BaseServerExtension, 'OrdersPaymentWebhook')
 export class PaymentWebhookExtension extends BaseServerExtension {
@@ -97,6 +103,7 @@ export class PaymentWebhookExtension extends BaseServerExtension {
         );
 
         LogStatus(`[Orders] Payment webhook route registered at POST ${route}`);
+        this.scheduleDriftCheck();
         return {
             Success: true,
             Message: 'Orders payment webhook mounted (unauthenticated, raw body, signature-verified).',
@@ -105,7 +112,29 @@ export class PaymentWebhookExtension extends BaseServerExtension {
     }
 
     public async Shutdown(): Promise<void> {
-        // Nothing held open — the route owns no connections, timers or sockets.
+        if (this.driftTimer) clearTimeout(this.driftTimer);
+    }
+
+    private driftTimer?: ReturnType<typeof setTimeout>;
+
+    /**
+     * Check once, shortly after start, that each live provider's webhook endpoint at the gateway still
+     * sends every event Orders acts on (#477). Drift is logged as an error by the check; nothing here
+     * can fail start-up, and the scheduled job repeats the check.
+     */
+    private scheduleDriftCheck(): void {
+        this.driftTimer = setTimeout(() => {
+            const user = this.resolveSystemUser();
+            if (!user) {
+                LogError('[Orders] Webhook endpoint check at start skipped: the system user does not resolve.');
+                return;
+            }
+            CheckPaymentWebhookEndpoints(Metadata.Provider, user).catch((err: unknown) =>
+                LogError(`[Orders] Webhook endpoint check at start failed: ${err instanceof Error ? err.message : String(err)}`),
+            );
+        }, DRIFT_CHECK_DELAY_MS);
+        // Never keep the process alive for this.
+        (this.driftTimer as { unref?: () => void }).unref?.();
     }
 
     public async HealthCheck(): Promise<ExtensionHealthResult> {

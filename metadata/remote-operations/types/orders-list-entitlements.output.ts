@@ -15,6 +15,10 @@ export interface ListedEntitlement {
     ValidTo?: string;
     Quantity?: number;
     GrantID?: string;
+    /** As `CheckEntitlementOutput.SuspensionReason`. */
+    SuspensionReason?: EntitlementSuspensionReason | null;
+    /** As `CheckEntitlementOutput.AccessCutoffDate`. */
+    AccessCutoffDate?: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. */
     CacheUntil: string;
 }

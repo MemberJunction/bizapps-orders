@@ -1,22 +1,46 @@
 /**
  * Read the AS-BUILT orders schema out of sys.* and emit JSON.
  *
+ *     node test-harnesses/dump-schema.mjs /tmp/orders-schema.json
+ *
  * The ERD is generated from THIS, never from prose or from the migration text — a migration
  * says what was intended, sys.tables says what is there. Run it against a database the
- * committed migrations actually built.
+ * committed migrations actually built. `scripts/rebuild-db.sh` builds one; it drops and recreates
+ * the `.env` database, so point `.env` at a throwaway one.
+ *
+ * The connection comes from the repo-root `.env`, the file `scripts/rebuild-db.sh` and
+ * `mj.config.cjs` read: DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD. A variable
+ * already set in the environment wins over the file.
+ *
+ * CHECK constraint bodies come from OBJECT_DEFINITION, which returns NULL for a login without
+ * VIEW DEFINITION on the schema. `gen-erd.mjs` then needs a checkdefs file; see its header.
  */
+import path from 'node:path';
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
 import sql from 'mssql';
-import { readFileSync, writeFileSync } from 'node:fs';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(here, '..', '.env'), quiet: true });
+
+const outPath = process.argv[2];
+if (!outPath) {
+    console.error('usage: node test-harnesses/dump-schema.mjs <output.json>');
+    process.exit(1);
+}
+
+const { DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
+const unset = Object.entries({ DB_DATABASE, DB_USERNAME, DB_PASSWORD }).filter(([, v]) => !v).map(([k]) => k);
+if (unset.length) {
+    console.error(`${unset.join(', ')} not set: put them in the repo-root .env or the environment`);
+    process.exit(1);
+}
 
 const SCHEMA = '__mj_BizAppsOrders';
-const env = Object.fromEntries(
-    readFileSync(new URL('file:///Users/marcelotorres/MJDev/instances/orders-e2e/mj/packages/MJAPI/.env'), 'utf8')
-        .split('\n').filter((l) => l.includes('=') && !l.startsWith('#'))
-        .map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, '')]; }),
-);
 const pool = await sql.connect({
-    server: 'localhost', port: +env.DB_PORT, database: env.DB_DATABASE,
-    user: env.DB_USERNAME, password: env.DB_PASSWORD,
+    server: DB_HOST || 'localhost', port: Number(DB_PORT || 1433), database: DB_DATABASE,
+    user: DB_USERNAME, password: DB_PASSWORD,
     options: { encrypt: false, trustServerCertificate: true },
 });
 const q = async (t) => (await pool.request().query(t)).recordset ?? [];
@@ -25,6 +49,10 @@ const tables = await q(`
   SELECT t.name AS TableName
     FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
    WHERE s.name = '${SCHEMA}' ORDER BY t.name`);
+if (!tables.length) {
+    console.error(`no tables in ${SCHEMA} on ${DB_DATABASE}: point .env at a database built from this repo's migrations`);
+    process.exit(1);
+}
 
 const columns = await q(`
   SELECT t.name AS TableName, c.name AS ColumnName, c.column_id AS Ord,
@@ -85,6 +113,8 @@ const views = await q(`
    WHERE s.name = '${SCHEMA}' ORDER BY v.name`);
 
 const out = { schema: SCHEMA, tables, columns, fks, checks, indexes, triggers, views };
-writeFileSync(process.argv[2], JSON.stringify(out, null, 1));
+writeFileSync(outPath, JSON.stringify(out, null, 1));
 console.log(`tables=${tables.length} columns=${columns.length} fks=${fks.length} checks=${checks.length} indexes=${indexes.length} triggers=${triggers.length} views=${views.length}`);
+const noBody = checks.filter((c) => !c.Definition).length;
+if (noBody) console.warn(`${noBody}/${checks.length} CHECK bodies came back NULL: this login lacks VIEW DEFINITION`);
 process.exit(0);

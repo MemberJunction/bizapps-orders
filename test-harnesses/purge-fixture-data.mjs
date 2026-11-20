@@ -3,8 +3,8 @@
  * Delete every fixture run's data from the database.
  *
  * The integration checks roll back, so they leave nothing — but the FIXTURE is committed (it is
- * reference data every check reads), and so is anything `seed-review-data.mjs` writes. Each run
- * mints its own companies, so those accumulate.
+ * reference data every check reads). Each run minted its own companies, so those accumulate.
+ * `seed-review-data.mjs` books on ORD-WORLD instead; remove its runs with its own `--purge`.
  *
  * That accumulation is not merely untidy. The fixture resolves GL accounts BY CODE, so leftover
  * companies from an earlier run can be matched by a later one, and checks that assert on a

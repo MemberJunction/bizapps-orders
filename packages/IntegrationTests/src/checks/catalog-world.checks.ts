@@ -35,6 +35,7 @@ const checks: NamedCheck[] = [
             Assert(!!world.Companies.BCP.Accounts.Sales, 'BCP has no Sales account');
             Assert(!!world.Companies.BCP.Accounts.Cash, 'BCP has no Cash account');
             Assert(!!world.Companies.ORPHAN.Accounts.AR, 'Orphan Ledger should still have accounts');
+            Assert(!!world.Companies.UNPAIRED?.Accounts.AR, 'Unpaired Press (IC5\'s unpaired company) missing');
 
             AssertEqual(Object.keys(world.Organizations).length, 8, 'eight customer organizations');
             Assert(Object.keys(world.People).length >= 30, `expected ≥30 people, got ${Object.keys(world.People).length}`);

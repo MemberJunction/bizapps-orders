@@ -84,7 +84,9 @@ describe('OrderPricingService.resolveTaxCharges — settled tax', () => {
         const reversal = { ProductID: 'prod-1' };
         const w = walk([reversal], new Map([[reversal, [SETTLED]]]), 'addr-now');
         w.ctx.Charges = [{ Code: 'SalesTax', Rate: 0.05 }];
+        // The walk reads which charge types are taxes to recognise the stated one.
+        const provider = { RunView: async () => ({ Success: true, Results: [{ ID: 'type-tax', Code: 'SalesTax' }] }) };
 
-        expect(await w.resolveTaxCharges([{ ID: '0', Net: -100 }], {}, {})).toEqual([]);
+        expect(await w.resolveTaxCharges([{ ID: '0', Net: -100 }], provider, {})).toEqual([]);
     });
 });

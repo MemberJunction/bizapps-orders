@@ -177,8 +177,8 @@ export class DetectOverlappingSubscriptionsOperation extends OrdersDetectOverlap
     ): Promise<OrdersDetectOverlappingSubscriptionsOutput> {
         // A day the caller named and we cannot read is refused, never replaced with today: that is
         // the one wrong answer that looks right.
-        RequireOptionalDay(input.AsOfDate, 'AsOfDate');
-        const exceptionDate = ToISODate(await CalendarDayOrToday(input.AsOfDate, provider, user)) as string;
+        const asOfDay = RequireOptionalDay(input.AsOfDate, 'AsOfDate');
+        const exceptionDate = ToISODate(await CalendarDayOrToday(asOfDay, provider, user)) as string;
 
         const out: OrdersDetectOverlappingSubscriptionsOutput = {
             Success: true,

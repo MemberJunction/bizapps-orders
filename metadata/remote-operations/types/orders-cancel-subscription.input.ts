@@ -16,6 +16,13 @@ export interface CancelSubscriptionInput {
     /** Free text, stored on the lifecycle event. */
     Reason?: string;
     /**
+     * When coverage ends, chosen by the person cancelling. `Immediate` ends coverage and access on
+     * the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's
+     * grace. Absent, the subscription type's cancellation mode and grace decide. Refund mode never
+     * changes.
+     */
+    Timing?: 'Immediate' | 'EndOfTerm';
+    /**
      * Return the decision WITHOUT writing anything — for a confirmation screen that shows
      * "you will be refunded $X, coverage ends Y" before the user commits.
      */

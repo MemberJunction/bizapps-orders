@@ -9,7 +9,8 @@
  *      cannot lose it. Nothing is sent here.
  *   2. DISPATCH — after the commit, never inside a booking. `DispatchOutboundDeliveries` claims due
  *      Pending rows with an atomic lease, calls each consumer, and records Delivered, or backs off
- *      and tries again until the row's deadline, when it is DeadLettered.
+ *      and tries again until the row's deadline, when it is DeadLettered and an alert Task, assigned
+ *      to the alert role (`AlertTaskRole`), tells a person to re-send it.
  *
  * Delivery is at least once: a consumer can see the same event twice (a timed-out call that later
  * succeeded, a crash between its success and our write). The event id is stable, so a
@@ -21,6 +22,8 @@ import { LogError, RunView, UserInfo, type EntitySaveOptions, type IMetadataProv
 import { MJGlobal } from '@memberjunction/global';
 import type { mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity } from '@mj-biz-apps/orders-entities';
 import { RequireUUID } from './sql-guards.js';
+import { raiseOutboundDeadLetterAlert } from './checkoutCaptureAlert.js';
+import { AlertSweepDue, AssignUnassignedAlertTasks } from './AlertTaskAssignment.js';
 
 export const OUTBOUND_EVENT_ENTITY = 'MJ_BizApps_Orders: Outbound Events';
 export const OUTBOUND_DELIVERY_ENTITY = 'MJ_BizApps_Orders: Outbound Deliveries';
@@ -186,8 +189,25 @@ interface ClaimedRow {
 /**
  * Deliver the due Pending rows. Never call this inside a booking transaction: it is the post-commit
  * half, and a consumer's latency or failure must not hold or undo a booking.
+ *
+ * The scheduled pass (no `OrderHeaderID`) on the quarter hours (`AlertSweepDue`) then assigns any open
+ * alert Task nobody holds yet (`AssignUnassignedAlertTasks`): a dead-letter alert whose first assignment
+ * failed, or one raised before the alert role was set. A checkout's kick skips it, so a buyer never waits on it.
  */
 export async function DispatchOutboundDeliveries(
+    input: DispatchOutboundInput,
+    provider: IMetadataProvider,
+    user: UserInfo | undefined
+): Promise<DispatchOutboundOutput> {
+    // Decided when the pass STARTS: a pass that begins at :15 and overruns (a hanging consumer, 30 s per row)
+    // still sweeps, and that is exactly when dead-letter alerts are being raised.
+    const sweepDue = !input.OrderHeaderID && !!user && AlertSweepDue(new Date());
+    const out = await dispatchDue(input, provider, user);
+    if (sweepDue && user) await AssignUnassignedAlertTasks(provider, user);
+    return out;
+}
+
+async function dispatchDue(
     input: DispatchOutboundInput,
     provider: IMetadataProvider,
     user: UserInfo | undefined
@@ -285,6 +305,22 @@ export async function DispatchOutboundDeliveries(
         if (!(await delivery.Save())) {
             out.Success = false;
             LogError(`[OutboundEvents] could not record the result of delivery ${delivery.ID}: ${delivery.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        } else if (delivery.Status === 'DeadLettered') {
+            // A person must re-send it, so a person is told (an alert Task assigned to the alert role), written
+            // through this pass's provider. Raised only once the dead letter is recorded, and it never fails
+            // the pass; it does add its own reads and writes to it (about 6 + 2 per holder per event).
+            try {
+                await raiseOutboundDeadLetterAlert(
+                    { ID: delivery.ID, ConsumerKey: delivery.ConsumerKey, Attempts: delivery.Attempts, LastError: delivery.LastError },
+                    event
+                        ? { ID: event.ID, EventType: event.EventType, OrderHeaderID: event.OrderHeaderID ?? null, EntitlementGrantID: event.EntitlementGrantID ?? null }
+                        : null,
+                    user,
+                    provider
+                );
+            } catch (err) {
+                LogError(`[OutboundEvents] delivery ${delivery.ID} was dead-lettered, but its alert could not be raised: ${err instanceof Error ? err.message : String(err)}`);
+            }
         }
     }
     if (!out.Success) out.Message = 'Some delivery results could not be recorded; those rows are retried when their lease runs out.';

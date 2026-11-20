@@ -49,6 +49,12 @@ export interface ReversalOrigin {
     /** The origin's ALLOCATED discount — an order-level promotion's share of this line (D70). */
     DiscountAmount?: number;
     /**
+     * The price rule's exact pre-discount amount for the origin (#579): Flat 100.00 at quantity 3 is
+     * 100.00, where quantity × unit price is 99.99. NULL when no rule priced the line, and on lines
+     * booked before the column existed — see {@link OriginExactAmount}.
+     */
+    ExtendedAmount?: number | null;
+    /**
      * The coverage window this line sold, as `materializeSubscriptions` settled it. Absent on a line
      * that earns at booking — an UpFront product has no window and needs none.
      */
@@ -190,30 +196,112 @@ export function ValidateReversal(
  * The cadence that cuts this window into slices is NOT returned here, because it is not a column on
  * the line — see `ReversalOrigin.SubscriptionID`.
  *
+ * THE EXACT AMOUNT, NOT QUANTITY × UNIT PRICE (#651). A Flat price that does not divide by the
+ * quantity stores a rounded unit price — Flat 100.00 at quantity 3 is 33.33 — so a return priced
+ * from the unit price alone credits 99.99 against the 100.00 booked. `ExtendedAmount` carries the
+ * return's share of the origin's exact amount, negated; null when the origin has none, and the line
+ * is then quantity × unit price as before.
+ *
+ * Both cash amounts are split by CUMULATIVE ROUNDING, as returned tax is (see
+ * `MirroredTaxCharges`), so a series of partial returns gives back exactly what was booked: 100.00
+ * over three single-unit returns credits 33.33, 33.34 and 33.33. `reversedBefore` is everything
+ * already taken from the origin — prior returns and earlier lines of this one.
+ *
  * `reversalQuantity` is what the caller intends to send back, in either sign.
  */
 export function InheritedTerms(
     origin: ReversalOrigin,
     reversalQuantity: number,
+    reversedBefore = 0,
 ): {
     UnitPrice: number;
     DiscountPct: number;
     DiscountAmount: number;
+    ExtendedAmount: number | null;
     ServicePeriodStart?: Date | string | null;
     ServicePeriodEnd?: Date | string | null;
 } {
-    const originQty = Math.abs(origin.Quantity);
-    const share = originQty > 0 ? Math.abs(reversalQuantity) / originQty : 0;
-    // Positive: the column is CHECK (DiscountAmount >= 0) and `NetAfterDiscount` reads it as a
-    // magnitude that moves the line toward zero.
-    const allocated = Math.abs(origin.DiscountAmount ?? 0) * share;
+    const exact = OriginExactAmount(origin);
     return {
         UnitPrice: origin.UnitPrice,
         DiscountPct: origin.DiscountPct ?? 0,
-        DiscountAmount: Math.round(allocated * 100) / 100,
+        // Positive: the column is CHECK (DiscountAmount >= 0) and `NetAfterDiscount` reads it as a
+        // magnitude that moves the line toward zero.
+        DiscountAmount: CumulativeSlice(Math.abs(origin.DiscountAmount ?? 0), origin.Quantity, reversedBefore, reversalQuantity),
+        // Negative: the return line's gross is a credit, as quantity × unit price would be.
+        ExtendedAmount:
+            exact === null ? null : -CumulativeSlice(Math.abs(exact), origin.Quantity, reversedBefore, reversalQuantity),
         ServicePeriodStart: origin.ServicePeriodStart,
         ServicePeriodEnd: origin.ServicePeriodEnd,
     };
+}
+
+/**
+ * The allocated `DiscountAmount` a reversal line should carry after this save (#668).
+ *
+ * RECOMPUTED UNTIL THE MONEY IS LOCKED. The share depends on the line's quantity, and a draft return
+ * can be re-saved with a different one: filled only once, a return of 4 units of a line sold 4 × 100
+ * less 50 kept all 50 after it was cut to 2, refunding −150.00 instead of −175.00.
+ *
+ * A DISCOUNT THE CALLER SET STAYS. Set in this save, it is kept as stated. Set in an earlier save,
+ * it no longer looks dirty, so it is told apart by value: an inherited one equals the share the
+ * line's PREVIOUS quantity took, within a cent (cumulative rounding can move a slice by one cent
+ * when another return of the same origin changes in between). Anything else is someone's decision.
+ *
+ * Once the money is locked, only a blank is filled, as before.
+ */
+export function RefreshedDiscountAmount(args: {
+    /** The value on the line now. */
+    Stored: number | null | undefined;
+    /** The caller set `DiscountAmount` in this save. */
+    SetThisSave: boolean;
+    /** The order's money is frozen. */
+    MoneyLocked: boolean;
+    /** The share the line's quantity before this save inherited; null when it had none. */
+    PreviousShare: number | null;
+    /** The share the line's current quantity inherits. */
+    CurrentShare: number;
+}): number | null | undefined {
+    const stored = Number(args.Stored ?? 0);
+    if (args.SetThisSave) return args.Stored;
+    if (stored <= 0) return args.CurrentShare;
+    if (args.MoneyLocked) return args.Stored;
+    if (args.PreviousShare !== null && Math.abs(stored - args.PreviousShare) <= 0.01 + 1e-9) return args.CurrentShare;
+    return args.Stored;
+}
+
+/**
+ * The origin's exact pre-discount amount, or null when quantity × unit price already is it.
+ *
+ * The stored `ExtendedAmount` when there is one. A line booked before that column existed has none,
+ * and gets the same test the invoice applies to it (`ListAmountOf`): with no discount recorded and a
+ * net within half a cent per unit of quantity × unit price, the net is the amount the rule set,
+ * because a unit price rounded to cents is off by at most that much. A larger gap is not rounding,
+ * and quantity × unit price stands.
+ */
+export function OriginExactAmount(
+    origin: Pick<ReversalOrigin, 'Quantity' | 'UnitPrice' | 'DiscountPct' | 'DiscountAmount' | 'ExtendedAmount' | 'LineTotalNet'>,
+): number | null {
+    if (origin.ExtendedAmount !== null && origin.ExtendedAmount !== undefined) return Number(origin.ExtendedAmount);
+    if (Number(origin.DiscountPct ?? 0) || Number(origin.DiscountAmount ?? 0)) return null;
+    const fromRate = Math.round(Number(origin.Quantity) * Number(origin.UnitPrice) * 100);
+    const net = Math.round(Number(origin.LineTotalNet ?? 0) * 100);
+    const gap = Math.abs(fromRate - net);
+    return gap > 0 && gap <= 0.5 * Math.abs(Number(origin.Quantity)) ? net / 100 : null;
+}
+
+/**
+ * The share of `total` that `reversalQuantity` units take back, after `reversedBefore` units already
+ * have: the rounded share through the end of this slice less the rounded share before it. Positive.
+ * Clamped to the origin quantity, so a slice never takes more than what is left.
+ */
+function CumulativeSlice(total: number, originQuantity: number, reversedBefore: number, reversalQuantity: number): number {
+    const originQty = Math.abs(originQuantity);
+    if (originQty <= 0) return 0;
+    const before = Math.min(originQty, Math.abs(reversedBefore));
+    const through = Math.min(originQty, before + Math.abs(reversalQuantity));
+    const cents = (share: number): number => Math.round(total * (share / originQty) * 100);
+    return (cents(through) - cents(before)) / 100;
 }
 
 /**
@@ -241,14 +329,8 @@ export function MirroredTaxCharges(
     reversedBefore: number,
     reversalQuantity: number,
 ): MirroredTaxCharge[] {
-    const originQty = Math.abs(origin.Quantity);
-    if (originQty <= 0) return [];
-    const before = Math.min(originQty, Math.abs(reversedBefore));
-    const through = Math.min(originQty, before + Math.abs(reversalQuantity));
-    const slice = (total: number): number => {
-        const cents = (share: number): number => Math.round(total * (share / originQty) * 100);
-        return -(cents(through) - cents(before)) / 100;
-    };
+    if (Math.abs(origin.Quantity) <= 0) return [];
+    const slice = (total: number): number => -CumulativeSlice(total, origin.Quantity, reversedBefore, reversalQuantity);
 
     const sources: OriginTaxCharge[] = charges.length
         ? charges

@@ -297,6 +297,12 @@ describe('RenewalDueDate (#305 review)', () => {
         expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-01')).toBe('2026-10-03');
     });
 
+    it('is the order date (the term start) when the subscription has a renewal card (#289)', () => {
+        // The card is charged on the term start, so the past-due count starts there too.
+        expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-31', true)).toBe('2027-01-01');
+        expect(RenewalDueDate('2026-10-03', '2027-01-01', null, true)).toBe('2027-01-01');
+    });
+
     it('reads Date cells as well as strings', () => {
         expect(RenewalDueDate('2026-10-03', new Date('2027-01-01T00:00:00Z'), new Date('2027-01-16T00:00:00Z'))).toBe('2026-10-18');
     });

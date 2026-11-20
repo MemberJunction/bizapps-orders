@@ -1,5 +1,6 @@
 /**
- * @fileoverview Pure decisions for money that arrives on an external rail (Bill.com), read by
+ * @fileoverview Pure decisions for money that arrives on an external rail (Bill.com, HubSpot
+ * Payments), read by
  * `Orders.PollExternalPayments`. No I/O, no entities — every rule here is a table or a function of
  * its arguments, so it can be tested exhaustively and read by a finance reviewer.
  *
@@ -22,7 +23,12 @@
 
 export type ExternalPaymentDisposition = 'Captured' | 'Held' | 'Unmatched' | 'Refused' | 'Ignored' | 'Reapplied' | 'ReversalNeeded';
 
-export type RailPaymentClass = 'Cleared' | 'Pending' | 'Reversed';
+/**
+ * What a rail's payment status means for cash. `Attention` is a payment that cleared and then had
+ * something happen to it that a person has to book (a refund in flight, a partial refund, an open
+ * dispute): never captured while it reads that way, and reported for a person if it was captured.
+ */
+export type RailPaymentClass = 'Cleared' | 'Pending' | 'Reversed' | 'Attention';
 
 /**
  * Bill.com `receivable-payments.status` → what it means for cash. Keys are upper-cased.
@@ -49,9 +55,72 @@ export const BILLCOM_PAYMENT_STATUS: Readonly<Record<string, RailPaymentClass>> 
     ESCHEATED: 'Reversed',
 });
 
-export function ClassifyPaymentStatus(status: string | null | undefined): RailPaymentClass | 'Unknown' {
+/**
+ * HubSpot `commerce_payments.hs_latest_status` → what it means for cash. Keys are upper-cased.
+ *
+ * HubSpot documents ten values. `SUCCEEDED` is the only one that is money collected and kept.
+ * `FAILED` never collected anything; `REFUNDED` and `DISPUTED_LOST` gave all of it back. The rest are
+ * `Attention`: `PARTIALLY_REFUNDED` kept some of the money, and a refund in flight or an open dispute
+ * may still go either way. `DISPUTED_WON` is absent on purpose: it is reached only after a dispute,
+ * which the payment's earlier `Attention` status already put in front of a person, so it falls to
+ * `Unknown` and holds rather than capturing on its own.
+ */
+export const HUBSPOT_PAYMENT_STATUS: Readonly<Record<string, RailPaymentClass>> = Object.freeze({
+    SUCCEEDED: 'Cleared',
+    PROCESSING: 'Pending',
+    FAILED: 'Reversed',
+    REFUNDED: 'Reversed',
+    DISPUTED_LOST: 'Reversed',
+    PARTIALLY_REFUNDED: 'Attention',
+    PROCESSING_REFUND: 'Attention',
+    DISPUTED_ACTION_REQUIRED: 'Attention',
+    DISPUTED_AWAITING_DECISION: 'Attention',
+});
+
+/** One rail's status table, with the names the decision's reasons use for it. */
+export interface PaymentStatusVocabulary {
+    /** The rail as a person knows it, e.g. `Bill.com`. */
+    RailName: string;
+    /** The constant to extend when a status turns up that the table does not know. */
+    TableName: string;
+    Table: Readonly<Record<string, RailPaymentClass>>;
+    /**
+     * True when the rail reports which of our invoices a payment was applied to (Bill.com's
+     * `invoicePayments[]`). Only then can a captured payment be checked for re-application; a rail
+     * that reports none would read every captured payment as moved.
+     */
+    ReportsInvoiceApplications: boolean;
+}
+
+export const BILLCOM_STATUS_VOCABULARY: PaymentStatusVocabulary = Object.freeze({
+    RailName: 'Bill.com',
+    TableName: 'BILLCOM_PAYMENT_STATUS',
+    Table: BILLCOM_PAYMENT_STATUS,
+    ReportsInvoiceApplications: true,
+});
+
+export const HUBSPOT_STATUS_VOCABULARY: PaymentStatusVocabulary = Object.freeze({
+    RailName: 'HubSpot',
+    TableName: 'HUBSPOT_PAYMENT_STATUS',
+    Table: HUBSPOT_PAYMENT_STATUS,
+    ReportsInvoiceApplications: false,
+});
+
+/**
+ * The status vocabulary for a payment provider type. Keyed by the type's `Code`, which is also the
+ * rail's ClassFactory key. A type with no table of its own reads Bill.com's, which was the only rail
+ * before HubSpot Payments.
+ */
+export function PaymentStatusVocabularyFor(typeCode: string | null | undefined): PaymentStatusVocabulary {
+    return typeCode === 'HubSpotPayments' ? HUBSPOT_STATUS_VOCABULARY : BILLCOM_STATUS_VOCABULARY;
+}
+
+export function ClassifyPaymentStatus(
+    status: string | null | undefined,
+    table: Readonly<Record<string, RailPaymentClass>> = BILLCOM_PAYMENT_STATUS,
+): RailPaymentClass | 'Unknown' {
     if (!status) return 'Unknown';
-    return BILLCOM_PAYMENT_STATUS[status.trim().toUpperCase()] ?? 'Unknown';
+    return table[status.trim().toUpperCase()] ?? 'Unknown';
 }
 
 export interface PaymentSeen {
@@ -69,6 +138,8 @@ export interface PaymentSeen {
     ApplicationsChanged?: boolean;
     /** What the last pass did with this payment, or null when it has never been seen. */
     PriorDisposition: ExternalPaymentDisposition | null;
+    /** The rail's status table and names. Bill.com's when omitted. */
+    Vocabulary?: PaymentStatusVocabulary;
 }
 
 export type ExternalPaymentAction = 'Capture' | 'Hold' | 'Ignore' | 'Reapplied' | 'ReversalNeeded';
@@ -94,7 +165,9 @@ export interface ExternalPaymentDecision {
 }
 
 export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
-    const cls = ClassifyPaymentStatus(p.Status);
+    const vocab = p.Vocabulary ?? BILLCOM_STATUS_VOCABULARY;
+    const rail = vocab.RailName;
+    const cls = ClassifyPaymentStatus(p.Status, vocab.Table);
     const ref = p.ExternalPaymentRef;
 
     // A CAPTURED PAYMENT AND A RE-APPLIED ONE ARE THE SAME QUESTION, asked a poll apart. Both have
@@ -106,7 +179,15 @@ export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
     // hour after it was raised — leaving the wrong allocation in place with nothing flagging it.
     if (p.PriorDisposition === 'Captured' || p.PriorDisposition === 'Reapplied') {
         if (cls === 'Reversed') {
-            return { Action: 'ReversalNeeded', Reason: `${ref} was captured and Bill.com now reports it '${p.Status}'. The cash has to be reversed (bank-return path, O-US13); nothing is changed automatically.` };
+            return { Action: 'ReversalNeeded', Reason: `${ref} was captured and ${rail} now reports it '${p.Status}'. The cash has to be reversed (bank-return path, O-US13); nothing is changed automatically.` };
+        }
+        if (cls === 'Attention') {
+            // A refund or dispute against cash already booked. Not a full reversal, and not something
+            // to ignore: the refund or the chargeback has to be booked by a person.
+            return {
+                Action: 'ReversalNeeded',
+                Reason: `${ref} was captured and ${rail} now reports it '${p.Status}' (a refund or a dispute). Book the refund or chargeback against the captured payment; nothing is changed automatically.`,
+            };
         }
         // THE RAIL CAN MOVE MONEY WE ALREADY RECORDED. Bill.com lets Finance re-apply a receipt:
         // 700.00 recorded against invoice A last week becomes 300.00 on A and 400.00 on B today, or
@@ -161,13 +242,18 @@ export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
         case 'Cleared':
             return { Action: 'Capture', Reason: `${ref} is '${p.Status}': cleared and not yet captured.` };
         case 'Pending':
-            return { Action: 'Hold', Reason: `${ref} is '${p.Status}': promised, not yet banked. Held until Bill.com reports it cleared.` };
+            return { Action: 'Hold', Reason: `${ref} is '${p.Status}': promised, not yet banked. Held until ${rail} reports it cleared.` };
         case 'Reversed':
             return { Action: 'Ignore', Reason: `${ref} is '${p.Status}' and was never captured; there is nothing to reverse.` };
+        case 'Attention':
+            return {
+                Action: 'Hold',
+                Reason: `${ref} is '${p.Status}' (a refund or a dispute) and was never captured. Held: record what was kept by hand, or wait for ${rail} to settle it.`,
+            };
         default:
             return {
                 Action: 'Hold',
-                Reason: `${ref} has an unknown Bill.com status '${p.Status ?? '(none)'}'. Held rather than guessed — add the status to BILLCOM_PAYMENT_STATUS once its meaning is confirmed.`,
+                Reason: `${ref} has an unknown ${rail} status '${p.Status ?? '(none)'}'. Held rather than guessed — add the status to ${vocab.TableName} once its meaning is confirmed.`,
             };
     }
 }
@@ -288,4 +374,23 @@ export function TenderFor(p: { OnlinePayment: boolean | null; ReceivablesType: s
     const mapped = BILLCOM_TENDER[(p.ReceivablesType ?? '').trim().toUpperCase()];
     if (mapped) return mapped;
     return 'ACH';
+}
+
+/**
+ * HubSpot `hs_payment_method_type` → an Orders `PaymentType.Code`. `card` is a card; the bank debits
+ * HubSpot Payments offers (`ach`, and `sepa`, `bacs`, `pads` outside the US) book as `ACH`, Orders'
+ * bank-debit type. Anything else (`cash`, `check`, `wire_transfer`, `other`) is a payment recorded in
+ * HubSpot and collected elsewhere, which the HubSpot rail sets aside before a tender is needed, so
+ * null here means "not a HubSpot-collected method".
+ */
+const HUBSPOT_TENDER: Readonly<Record<string, OrdersTenderCode>> = Object.freeze({
+    CARD: 'CreditCard',
+    ACH: 'ACH',
+    SEPA: 'ACH',
+    BACS: 'ACH',
+    PADS: 'ACH',
+});
+
+export function HubSpotTenderFor(methodType: string | null | undefined): OrdersTenderCode | null {
+    return HUBSPOT_TENDER[(methodType ?? '').trim().toUpperCase()] ?? null;
 }

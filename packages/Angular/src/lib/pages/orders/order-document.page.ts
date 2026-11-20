@@ -1,10 +1,10 @@
-import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnChanges, OnInit, SimpleChanges, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
-import { ParseAddressSnapshot, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { ParseAddressSnapshot, Today, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { FormatSoldAddress } from '../../custom/OrderHeader/order-header-prefs';
 
 /** Who issued the bill. */
@@ -41,7 +41,7 @@ export interface MJOIssuer {
 @Component({
     selector: 'mjo-order-document-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJEmptyStateComponent],
     template: `
         <div class="mjo-doc__toolbar no-print">
             <button type="button" mjButton variant="outline" (click)="print()">
@@ -189,11 +189,10 @@ export interface MJOIssuer {
                 </footer>
             </article>
         } @else {
-            <div class="mj-empty mjo-doc__empty">
-                <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
-                <div class="t">No document yet</div>
-                <div class="small">An invoice is available once the order is confirmed.</div>
-            </div>
+            <mj-empty-state
+                Icon="fa-regular fa-file-lines"
+                Title="No document yet"
+                Message="An invoice is available once the order is confirmed." />
         }
     `,
     styles: [
@@ -224,9 +223,6 @@ export interface MJOIssuer {
                 display: flex;
                 gap: var(--mj-space-6);
                 flex-wrap: wrap;
-            }
-            .mjo-doc__empty {
-                padding: var(--mj-space-12);
             }
 
             @media (max-width: 760px) {
@@ -270,7 +266,7 @@ export interface MJOIssuer {
         `,
     ],
 })
-export class MJOOrderDocumentPageComponent implements OnInit {
+export class MJOOrderDocumentPageComponent implements OnInit, OnChanges {
     /**
      * Render what was just loaded.
      *
@@ -296,13 +292,52 @@ export class MJOOrderDocumentPageComponent implements OnInit {
 
     public Order: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: mjBizAppsOrdersOrderLineEntity[] = [];
-    public readonly today = new Date().toISOString().slice(0, 10);
+    public readonly today = Today();
+
+    /** Bumped by every load; a load that is no longer the newest drops its results. */
+    private loadToken = 0;
 
     public async ngOnInit(): Promise<void> {
-        if (!this.OrderID) return;
-        const orders = await GetOrders({ Preset: 'all' });
-        this.Order = orders.find((o) => o.ID === this.OrderID) ?? null;
-        if (this.Order) this.Lines = await GetOrderLines(this.Order.ID);
+        await this.load();
+    }
+
+    /**
+     * THE INPUT CAN ARRIVE AFTER CONSTRUCTION, and `ngOnInit` runs once (#832).
+     *
+     * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
+     * and nothing else, so loading only in `ngOnInit` kept showing the first order.
+     */
+    public async ngOnChanges(changes: SimpleChanges): Promise<void> {
+        if (changes['OrderID'] && !changes['OrderID'].firstChange) {
+            await this.load();
+        }
+    }
+
+    /** Load `OrderID`'s order and lines by id, or clear the page when there is none. */
+    private async load(): Promise<void> {
+        // A slower earlier load must not overwrite a newer one, so every assignment after an await
+        // checks that this pass is still the newest.
+        const token = ++this.loadToken;
+        const current = (): boolean => token === this.loadToken;
+
+        this.Order = null;
+        this.Lines = [];
+        if (!this.OrderID) {
+            this.cdr.detectChanges();
+            return;
+        }
+        let order: mjBizAppsOrdersOrderHeaderEntity | null;
+        try {
+            const orders = await GetOrders({ OrderHeaderID: this.OrderID });
+            order = orders[0] ?? null;
+        } catch {
+            order = null;
+        }
+        if (!current()) return;
+        const lines = order ? await GetOrderLines(order.ID) : [];
+        if (!current()) return;
+        this.Order = order;
+        this.Lines = lines;
         this.cdr.detectChanges();
     }
 

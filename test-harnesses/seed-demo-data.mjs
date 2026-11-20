@@ -135,6 +135,7 @@ if (doReset) {
         `DISABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
         `DISABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
         `DISABLE TRIGGER ${ORDERS}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS}.OrderHeader`,
+        `DISABLE TRIGGER ${ORDERS}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS}.OrderHeaderPaymentSchedule`,
         `UPDATE ${ORDERS}.OrderLine SET JournalEntryID=NULL WHERE OrderHeaderID IN (${orders})`,
         `UPDATE ${ORDERS}.PaymentHeader SET JournalEntryID=NULL WHERE ReceivingCompanyID IN (${scope})`,
         `UPDATE ${ORDERS}.PaymentLine SET BookedAt=NULL WHERE OrderHeaderID IN (${orders})`,
@@ -205,6 +206,7 @@ if (doReset) {
         `ENABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
         `ENABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
         `ENABLE TRIGGER ${ORDERS}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS}.OrderHeader`,
+        `ENABLE TRIGGER ${ORDERS}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS}.OrderHeaderPaymentSchedule`,
     ];
     const warnings = [];
     for (const s of statements) {
@@ -519,9 +521,10 @@ async function confirmOrder({ lines, customer, orderDate, initialPayment, note }
     if (!(await order.Save())) {
         throw new Error(`confirm failed: ${order.LatestResult?.CompleteMessage ?? 'unknown'}`);
     }
-    const row = (await q(`SELECT OrderNumber, TotalGross, AmountPaid, Balance, PaymentStatus
-                          FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
-    say(`  ${row.OrderNumber}  gross ${row.TotalGross}  paid ${row.AmountPaid}  balance ${row.Balance}  ${row.PaymentStatus}`);
+    // IsOverdue comes from the view (D32); the stored PaymentStatus column was dropped in V202608241300.
+    const row = (await q(`SELECT OrderNumber, TotalGross, AmountPaid, Balance, IsOverdue
+                          FROM ${ORDERS}.vwOrderHeaders WHERE ID='${order.ID}'`))[0];
+    say(`  ${row.OrderNumber}  gross ${row.TotalGross}  paid ${row.AmountPaid}  balance ${row.Balance}${row.IsOverdue ? '  overdue' : ''}`);
     return order;
 }
 

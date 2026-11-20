@@ -16,11 +16,18 @@
  * Most specific wins; the first link found at any level ends the walk. Nothing resolves → we
  * FAIL LOUDLY (plan D5: "fail loudly" — never silently book to a default account).
  *
- * COMPANY INVARIANT (plan D6): the resolved account MUST belong to the order line's company.
- * Accounting derives a JE's company from `GLAccount.CompanyID` and takes no CompanyID in its
- * contract (their CH-2), so a mis-resolved account would silently book revenue to the wrong
+ * COMPANY INVARIANT (plan D6): the resolved account MUST belong to the order line company's
+ * LEGAL ENTITY — the company itself, unless it is a Division, Department or Branch, which uses the
+ * books of the first company above it of any other type (`AccountingEngineBase.LegalEntityFor`,
+ * golive #313). Accounting derives a JE's company from `GLAccount.CompanyID` and takes no CompanyID
+ * in its contract (their CH-2), so a mis-resolved account would silently book revenue to the wrong
  * legal entity with nothing downstream to catch it. This class is therefore the ONLY place that
- * invariant can be enforced, and it hard-blocks — cross-company mapping is refused entirely.
+ * invariant can be enforced, and it hard-blocks — mapping across legal entities is refused entirely.
+ *
+ * A Division owns no accounts, so every lookup is scoped to its legal entity's accounts, and the
+ * company-level default is looked for on the Division's own company record first, then on its legal
+ * entity's. Its entries therefore carry the legal entity's accounts, and the line's dimension tags
+ * keep its revenue separable.
  *
  * CONNECTS TO:
  *   PRIMITIVE: AccountingEngineBase.ResolveLinkedAccount (@mj-biz-apps/accounting-engine-base)
@@ -235,6 +242,43 @@ export interface LinkedAccountHit {
     RequiredDimensions?: RequiredDimension[];
     /** The account as a person reads it (code and name); the id when the account is not cached. */
     AccountLabel?: string;
+    /** The account's code and name, separately, for a screen that lays them out apart. */
+    AccountCode?: string;
+    AccountName?: string;
+}
+
+/**
+ * A level of the walk, most specific first. `ParentCategory` is any ancestor of the product's
+ * category; `LegalEntity` appears only for a Division, Department or Branch, whose company default
+ * is looked for on its own record and then on its legal entity's.
+ */
+export type GLWalkLevel = 'Product' | 'Category' | 'ParentCategory' | 'ProductType' | 'Company' | 'LegalEntity';
+
+/** One lookup the walk made, and what it found. */
+export interface GLWalkStep {
+    Level: GLWalkLevel;
+    /** The record whose links were looked up. */
+    RecordID: string;
+    /** The link in force at this level for the role, or null when there is none. */
+    Hit: LinkedAccountHit | null;
+    /** True for the step booking stops on: the first one with a link. */
+    Won: boolean;
+}
+
+/** What {@link GLAccountResolver.Explain} answers for one role. */
+export interface GLRoleExplanation {
+    Role: GLRole;
+    /**
+     * Every level of the walk, in the order booking tries them. Booking stops at the winner; the
+     * steps after it are still looked up so a reader can see what a more specific link overrides.
+     */
+    Steps: GLWalkStep[];
+    /** The account booking would use; null when it would refuse. */
+    GLAccountID: string | null;
+    /** Why booking would refuse, or null when the role resolves. */
+    Failure: Exclude<GLAccountResolutionFailure, 'MissingDimensions'> | null;
+    /** Booking's own refusal, word for word, or null when the role resolves. */
+    Message: string | null;
 }
 
 /** One successful resolution, as {@link GLAccountResolver.TakeResolved} hands it back. */
@@ -341,6 +385,12 @@ export class GLAccountResolver {
             /** When given, only links whose ACCOUNT belongs to this company are considered (D71). */
             forCompanyID?: string,
         ) => LinkedAccountHit | null,
+        /**
+         * The company whose books a company uses (`AccountingEngineBase.LegalEntityFor`). Throws,
+         * naming the company, when a Division's setup is incomplete. Defaults to the company itself,
+         * which is every company until its profile says otherwise.
+         */
+        private readonly _legalEntityFor: (companyID: string) => string = (companyID) => companyID,
     ) {}
 
     /** Every successful resolution since the last {@link TakeResolved}, for the dimension check. */
@@ -388,45 +438,153 @@ export class GLAccountResolver {
         asOf: Date,
         productTypeID?: string | null,
     ): Promise<string> {
-        const company = expectedCompanyID;
-        const hit: LinkedAccountHit | null =
-            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, company) : null) ??
-            (await this.resolveUpCategoryTree(role, productCategoryID, asOf, company)) ??
-            (productTypeID
-                ? this._resolveLink(this._entityIDs.ProductType, productTypeID, role, asOf, company)
-                : null) ??
-            this._resolveLink(this._entityIDs.Company, expectedCompanyID, role, asOf, company);
-
-        if (!hit) {
-            throw new GLAccountResolutionError(
-                role,
-                productID,
-                'NotLinked',
-                productID
-                    ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
-                      `tree, its product type, and the company default for company ${expectedCompanyID}. ` +
-                      `Link an account for this role (product, category, product type, or company) before booking.`
-                    : `No GL account is linked for role '${role}' at the company level for company ` +
-                      `${expectedCompanyID}. This role is resolved company-wide (there is no product ` +
-                      `involved), so link an account to the company before booking.`,
-            );
+        // The accounts must be the legal entity's: a Division books on its parent's books.
+        const books = this._legalEntityFor(expectedCompanyID);
+        let hit: LinkedAccountHit | null = null;
+        for await (const step of this.walk(role, productID, productCategoryID, expectedCompanyID, books, asOf, productTypeID)) {
+            if (step.Hit) {
+                hit = step.Hit;
+                break;
+            }
         }
 
-        // Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company.
-        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
-            throw new GLAccountResolutionError(
-                role,
-                productID,
-                'CrossCompany',
-                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
-                    `${hit.CompanyID}, but this books to company ${expectedCompanyID}. ` +
-                    `Cross-company account mapping is refused — the journal entry would book revenue ` +
-                    `to the wrong legal entity.`,
-            );
-        }
-
+        if (!hit) throw this.notLinkedError(role, productID, expectedCompanyID, books);
+        const refusal = this.otherBooksError(hit, role, productID, expectedCompanyID, books);
+        if (refusal) throw refusal;
         this.record(role, hit);
         return hit.GLAccountID;
+    }
+
+    /**
+     * The same walk as {@link Resolve}, reported step by step instead of booked (golive#439).
+     *
+     * Both run {@link walk}, so the account this names as the winner is the one `Resolve` returns for
+     * the same arguments, and a refusal carries `Resolve`'s message. Nothing is recorded for the
+     * dimension check: an explanation books nothing. Every level is looked up, including those after
+     * the winner, so the reader sees what each more specific link overrides.
+     *
+     * @throws only what the legal-entity lookup throws for a Division whose setup is incomplete
+     */
+    public async Explain(
+        role: GLRole,
+        productID: string | null,
+        productCategoryID: string | null,
+        expectedCompanyID: string,
+        asOf: Date,
+        productTypeID?: string | null,
+    ): Promise<GLRoleExplanation> {
+        const books = this._legalEntityFor(expectedCompanyID);
+        const steps: GLWalkStep[] = [];
+        let winner: LinkedAccountHit | null = null;
+        for await (const step of this.walk(role, productID, productCategoryID, expectedCompanyID, books, asOf, productTypeID)) {
+            const won = !winner && !!step.Hit;
+            if (won) winner = step.Hit;
+            steps.push({ ...step, Won: won });
+        }
+
+        const refusal = winner
+            ? this.otherBooksError(winner, role, productID, expectedCompanyID, books)
+            : this.notLinkedError(role, productID, expectedCompanyID, books);
+        if (refusal) {
+            return { Role: role, Steps: steps, GLAccountID: null, Failure: refusal.Failure as 'NotLinked' | 'CrossCompany', Message: refusal.message };
+        }
+        return { Role: role, Steps: steps, GLAccountID: winner!.GLAccountID, Failure: null, Message: null };
+    }
+
+    /**
+     * The walk itself — the one copy {@link Resolve} and {@link Explain} share.
+     *
+     * Lazy: each level is looked up only when the caller asks for the next step, so `Resolve`, which
+     * stops at the first link, makes exactly the lookups it always made. Every lookup is scoped to
+     * `books`, the legal entity's accounts.
+     */
+    private async *walk(
+        role: GLRole,
+        productID: string | null,
+        productCategoryID: string | null,
+        companyID: string,
+        books: string,
+        asOf: Date,
+        productTypeID?: string | null,
+    ): AsyncGenerator<Omit<GLWalkStep, 'Won'>> {
+        const look = (level: GLWalkLevel, entityID: string, recordID: string): Omit<GLWalkStep, 'Won'> => ({
+            Level: level,
+            RecordID: recordID,
+            Hit: this._resolveLink(entityID, recordID, role, asOf, books),
+        });
+
+        if (productID) yield look('Product', this._entityIDs.Product, productID);
+
+        // Category, then each ancestor, nearest first.
+        if (productCategoryID) {
+            await this.ensureCategoriesLoaded();
+            const seen = new Set<string>();
+            let current: string | null = productCategoryID;
+            let level: GLWalkLevel = 'Category';
+            while (current && !seen.has(current)) {
+                seen.add(current); // cycle guard — the DB CHECK blocks self-parenting, not longer loops
+                yield look(level, this._entityIDs.ProductCategory, current);
+                level = 'ParentCategory';
+                current = this._categoryParent.get(current) ?? null;
+            }
+        }
+
+        if (productTypeID) yield look('ProductType', this._entityIDs.ProductType, productTypeID);
+
+        // The company default: the line company's own record, then, for a Division, its legal entity's.
+        yield look('Company', this._entityIDs.Company, companyID);
+        if (!UUIDsEqual(books, companyID)) yield look('LegalEntity', this._entityIDs.Company, books);
+    }
+
+    /** The refusal when nothing in the walk links an account for the role. */
+    private notLinkedError(
+        role: GLRole,
+        productID: string | null,
+        expectedCompanyID: string,
+        books: string,
+    ): GLAccountResolutionError {
+        const where = UUIDsEqual(books, expectedCompanyID)
+            ? `company ${expectedCompanyID}`
+            : `company ${expectedCompanyID} or its legal entity ${books}`;
+        return new GLAccountResolutionError(
+            role,
+            productID,
+            'NotLinked',
+            productID
+                ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
+                  `tree, its product type, and the company default for ${where}. ` +
+                  `Link an account for this role (product, category, product type, or company) before booking.`
+                : `No GL account is linked for role '${role}' at the company level for ${where}. ` +
+                  `This role is resolved company-wide (there is no product involved), so link an ` +
+                  `account to the company before booking.`,
+        );
+    }
+
+    /**
+     * Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company, so an account
+     * outside the line company's legal entity would post to the wrong books. Null when the account
+     * is on the right books.
+     */
+    private otherBooksError(
+        hit: { GLAccountID: string; CompanyID: string },
+        role: string,
+        productID: string | null,
+        expectedCompanyID: string,
+        books: string,
+    ): GLAccountResolutionError | null {
+        if (UUIDsEqual(hit.CompanyID, books)) return null;
+        const target = UUIDsEqual(books, expectedCompanyID)
+            ? `company ${expectedCompanyID}`
+            : `company ${expectedCompanyID}, whose legal entity is ${books}`;
+        return new GLAccountResolutionError(
+            role,
+            productID,
+            'CrossCompany',
+            `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
+                `${hit.CompanyID}, but this books to ${target}. ` +
+                `Cross-company account mapping is refused — the journal entry would book revenue ` +
+                `to the wrong legal entity.`,
+        );
     }
 
     /**
@@ -447,41 +605,13 @@ export class GLAccountResolver {
         expectedCompanyID: string,
         asOf: Date,
     ): Promise<string | null> {
-        const hit = this._resolveLink(entityID, recordID, role, asOf, expectedCompanyID);
+        const books = this._legalEntityFor(expectedCompanyID);
+        const hit = this._resolveLink(entityID, recordID, role, asOf, books);
         if (!hit) return null;
-        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
-            throw new GLAccountResolutionError(
-                role,
-                recordID,
-                'CrossCompany',
-                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ${hit.CompanyID}, ` +
-                    `but this books to company ${expectedCompanyID}. Cross-company account mapping is refused.`,
-            );
-        }
+        const refusal = this.otherBooksError(hit, role, recordID, expectedCompanyID, books);
+        if (refusal) throw refusal;
         this.record(role, hit);
         return hit.GLAccountID;
-    }
-
-    /** Category, then each ancestor, nearest first. */
-    private async resolveUpCategoryTree(
-        role: GLRole,
-        startCategoryID: string | null,
-        asOf: Date,
-        forCompanyID: string,
-    ): Promise<LinkedAccountHit | null> {
-        if (!startCategoryID) return null;
-        await this.ensureCategoriesLoaded();
-
-        const seen = new Set<string>();
-        let current: string | null = startCategoryID;
-
-        while (current && !seen.has(current)) {
-            seen.add(current); // cycle guard — the DB CHECK blocks self-parenting, not longer loops
-            const hit = this._resolveLink(this._entityIDs.ProductCategory, current, role, asOf, forCompanyID);
-            if (hit) return hit;
-            current = this._categoryParent.get(current) ?? null;
-        }
-        return null;
     }
 
     /** Category tree from OrdersEngine — pointer-chasing after this. */

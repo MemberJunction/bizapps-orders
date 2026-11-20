@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-45 - Bill.com Invoice Rail",
+    "Description": "The Bill.com invoice rail against a real database, with Bill.com replaced by an in-memory stub behind the rail's gateway seam (BR1-BR20). A BillCom provider row resolves to the rail through its Company Integration, and a live provider over a sandbox connection is refused before anything reaches Bill.com. The send sweep previews without writing, then sends: the rail's invoice and customer are recorded, a second send creates nothing, and a second order reuses the customer. Cancelling archives on Bill.com and reads it back, and is refused while Bill.com shows unpolled money. The payment poll previews without writing, captures a cleared payment once with its cash leg, advances its watermark, handles part payments, payments across two orders, scheduled payments and payments on invoices Orders did not issue. A signed webhook asks for the poll; a forged or unkeyed one is refused. The send and poll jobs ship Disabled and in Preview, and a poll asked to record cash follows its job: Disabled records nothing, Preview only previews. After one payment across two invoices, each invoice row carries its own due amount.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A sandbox BillCom provider resolves to BillComInvoiceRail and is ready; a live one over a sandbox connection is refused and writes nothing. A preview sweep reports the order PREVIEWED and writes no external invoice, customer or Bill.com record. A live sweep reports it SENT; the ExternalInvoice row is Sent with Bill.com's invoice id, total and customer, the customer is mapped, the order shows the invoice number, and its balance is unchanged. A re-send answers ALREADY_SENT with one Bill.com invoice; a second order creates no second customer. A cancel archives the invoice, reads it back, marks the row Canceled and clears the order's number; it is refused while Bill.com shows unpolled money. A preview poll writes nothing; a live poll captures one payment keyed billcom:<id>, settles the order, books a balanced cash leg and refreshes the invoice; the next poll captures nothing and reads from the watermark less one day. A part payment leaves the rest owing; one payment over two orders is one payment with two lines; a scheduled payment is Held until paid; a payment on a foreign invoice is Unmatched and the pass reports ATTENTION. A signed notification returns 202 and its poll captures the payment; a forged or unkeyed one returns 401 and polls nothing. Both jobs are Disabled and in Preview. A live-requested poll returns ERROR and reads nothing while the job is Disabled, and PREVIEWED with nothing recorded while it is in Preview. Part payments of 100 and 50 on invoices of 300 and 200 leave the rows at 200 and 150 due."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "billcom-rail"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "9310934C-AC1B-4882-B6B4-53C2182C1339"
+  }
+}

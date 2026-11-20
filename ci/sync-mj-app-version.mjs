@@ -2,13 +2,15 @@
 /**
  * Syncs `mj-app.json`'s `version` and `mjVersionRange` from the packages.
  *
- * Runs as part of `version:ci`, i.e. INSIDE the Version Packages PR. This used to happen
+ * Runs as part of `version:prepare`, i.e. INSIDE the Version Packages PR. This used to happen
  * in publish.yml, but publish no longer writes anything back to the repo except the tag —
  * so if the manifest were not synced here it would never be synced at all, and every
  * release would ship an mj-app.json still claiming the previous version.
  *
  *   version         <- packages/Entities/package.json .version (all packages are fixed-versioned)
- *   mjVersionRange  <- the @memberjunction/core dependency, as ">=<min> <nextMajor>.0.0"
+ *   mjVersionRange  <- the @memberjunction/core dependency, as ">=<min> <nextMajor>.0.0", or on a
+ *                      release line (mj-app.json has "line": "X.Y") as ">=<min> <X.(Y+1).0", so a
+ *                      line's release refuses a host on a newer MJ minor (guides/RELEASE_LINES.md)
  *
  * The range derivation deliberately keeps any prerelease suffix: `^6.1.0-edge.3` yields
  * `>=6.1.0-edge.3 <7.0.0`, not `>=6.1.0 <7.0.0`. Both behave identically through MJ's host
@@ -34,13 +36,24 @@ if (!version) {
 const mjDep = pkg.dependencies?.['@memberjunction/core'] ?? pkg.peerDependencies?.['@memberjunction/core'];
 let range = null;
 if (mjDep) {
-  const min = mjDep.replace(/^[^0-9]*/, ''); // drop ^, ~, >=, … but KEEP any -edge.N
+  // The first version in the spec: drops ^, ~, >= and any upper bound, but KEEPS any -edge.N.
+  const min = /\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?/.exec(mjDep)?.[0] ?? '';
   const major = Number.parseInt(min.split('.')[0], 10);
   if (Number.isNaN(major)) {
     console.error(`✗ could not parse a major version from @memberjunction/core dep "${mjDep}"`);
     process.exit(1);
   }
-  range = `>=${min} <${major + 1}.0.0`;
+  const line = JSON.parse(readFileSync(TARGET, 'utf8')).line;
+  if (line !== undefined) {
+    const m = /^(\d+)\.(\d+)$/.exec(String(line));
+    if (!m || Number(m[1]) !== major) {
+      console.error(`✗ ${TARGET} line "${line}" does not match the @memberjunction/core dep "${mjDep}"`);
+      process.exit(1);
+    }
+    range = `>=${min} <${m[1]}.${Number(m[2]) + 1}.0`;
+  } else {
+    range = `>=${min} <${major + 1}.0.0`;
+  }
 } else {
   console.warn(`! no @memberjunction/core dependency in ${SOURCE} — leaving mjVersionRange as-is`);
 }

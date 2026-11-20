@@ -1,0 +1,1036 @@
+-- =============================================================================================
+-- PostgreSQL counterpart of V202610131509__v5.32.x__OrderLine_CoverageOverlapReason.sql
+-- =============================================================================================
+-- `mj sql-convert --from tsql --to postgres` (MJ CLI 6.1.5) output, finished by hand:
+--   * Tables, columns, constraints, indexes, views, data and grants are the converter's.
+--   * CodeGen's CRUD procedures (spCreate/spUpdate/spDelete) and its __mj_UpdatedAt triggers are
+--     NOT here: the converter cannot translate T-SQL procedures or triggers, and this repository
+--     has no PostgreSQL baseline to run MJ CodeGen against. A PostgreSQL host runs `mj codegen`
+--     after installing, which generates them natively. The converter's notes for them remain,
+--     fully commented out.
+--   * CodeGen's hierarchy functions for Order Lines are left to `mj codegen` as well; the
+--     converter's table-valued-function output is kept, commented out.
+--   * 6 string values restored verbatim from the T-SQL: the converter re-indents text inside string
+--     literals, which would change stored validator code, constraint text and settings JSON.
+-- Schema names are written unquoted, as the converter emits them, so they fold to the lowercase
+-- schema a PostgreSQL install uses.
+-- =============================================================================================
+
+SET standard_conforming_strings = on;
+
+-- ============================================================================
+-- MemberJunction PostgreSQL Migration
+-- Converted from SQL Server using TypeScript conversion pipeline
+-- ============================================================================
+
+-- Extensions
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- Schema
+--
+-- The schema name is emitted UNQUOTED, so PostgreSQL folds it to lowercase. That is deliberate and
+-- self-consistent: everything downstream in a converted migration refers to it unquoted too, so
+-- both definition and lookup land on the same folded name.
+--
+-- DOWNSTREAM NOTE for the build engineer: a PostgreSQL database that was populated by an EARLIER
+-- converter — one that emitted a quoted, case-preserved name — already holds that mixed-case
+-- schema: for a target named MySchema_Name, the quoted "MySchema_Name". Re-converting against
+-- that database creates a SECOND, empty schema myschema_name rather than reusing the existing
+-- one, because IF NOT EXISTS compares the folded name and finds no match. The repo's own committed
+-- migrations-pg files are unaffected (the only quoted CREATE SCHEMAs there are the four pg_dump
+-- baselines, which this path does not produce), so this is an open-app / downstream concern, not
+-- one for this repo's Flyway history.
+CREATE SCHEMA IF NOT EXISTS __mj_bizappsorders;
+SET search_path TO __mj_bizappsorders, public;
+
+-- Ensure backslashes in string literals are treated literally (not as escape sequences)
+SET standard_conforming_strings = on;
+
+-- NOTE: Earlier converter versions made INTEGER to BOOLEAN cast implicit by
+-- modifying the system catalog so SS-style INSERT INTO bool_col VALUES (1)
+-- would work. That modification required pg_catalog write privileges, which
+-- managed PG (RDS, Aurora, Cloud SQL, Azure) does not grant. As of v5.30 all
+-- bulk INSERTs are emitted with native TRUE/FALSE values directly, so the
+-- cast modification is no longer needed. Removed to support managed-PG
+-- installs out of the box.
+
+
+-- ===================== DDL: Tables, PKs, Indexes =====================
+
+-- =============================================================================
+-- V202610131509 — OrderLine.CoverageOverlapReason: why a line runs alongside
+-- existing coverage (bizapps-orders#511)
+-- =============================================================================
+-- A line that sets AcknowledgesCoverageOverlap books a second band of a
+-- subscription family over coverage the holder already has, and both are
+-- billed. The flag records that the rep was told, not why the overlap is
+-- intended. This column holds that reason.
+--
+-- NULLABLE, NO CHECK CONSTRAINT. The reason is required only when the line
+-- confirms with the acknowledgment set, and a draft line may be saved with the
+-- box ticked before the reason is typed. Confirm refuses an acknowledged line
+-- whose reason is blank; a constraint here would refuse those drafts and would
+-- fail on lines acknowledged before this column existed.
+-- =============================================================================
+
+ALTER TABLE __mj_BizAppsOrders."OrderLine"
+ ADD COLUMN IF NOT EXISTS "CoverageOverlapReason" VARCHAR(1000) NULL;
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_OrderHeaderID" ON __mj_BizAppsOrders."OrderLine" ("OrderHeaderID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ProductID" ON __mj_BizAppsOrders."OrderLine" ("ProductID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_CompanyID" ON __mj_BizAppsOrders."OrderLine" ("CompanyID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ProductPriceID" ON __mj_BizAppsOrders."OrderLine" ("ProductPriceID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ShipToAddressID" ON __mj_BizAppsOrders."OrderLine" ("ShipToAddressID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ShipToOrganizationID" ON __mj_BizAppsOrders."OrderLine" ("ShipToOrganizationID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ShipToPersonID" ON __mj_BizAppsOrders."OrderLine" ("ShipToPersonID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ReversesOrderLineID" ON __mj_BizAppsOrders."OrderLine" ("ReversesOrderLineID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_SourceBundleProductID" ON __mj_BizAppsOrders."OrderLine" ("SourceBundleProductID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_ParentOrderLineID" ON __mj_BizAppsOrders."OrderLine" ("ParentOrderLineID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_SubscriptionID" ON __mj_BizAppsOrders."OrderLine" ("SubscriptionID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_JournalEntryID" ON __mj_BizAppsOrders."OrderLine" ("JournalEntryID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_DimensionID" ON __mj_BizAppsOrders."OrderLine" ("DimensionID");
+
+CREATE INDEX IF NOT EXISTS "IDX_AUTO_MJ_FKEY_OrderLine_DimensionValueID" ON __mj_BizAppsOrders."OrderLine" ("DimensionValueID");
+
+
+-- ===================== Helper Functions (fn*) =====================
+-- CodeGen's hierarchy functions for Order Lines.ParentOrderLineID. The converter cannot translate
+-- T-SQL table-valued functions; `mj codegen` generates them natively on a PostgreSQL host. The
+-- converter's output is kept below, commented out.
+
+-- CREATE FUNCTION __mj_BizAppsOrders."fnOrderLineParentOrderLineID_GetHierarchyMeta"
+-- (
+--     p_RecordID UUID,
+--     p_ParentID UUID
+-- )
+-- RETURNS TABLE
+-- AS
+-- RETURN
+-- (
+--     WITH CTE_Ancestors AS (
+--         SELECT
+--             "ID",
+--             "ParentOrderLineID",
+--             0 AS "Depth",
+--             CAST('/' || CAST("ID" AS VARCHAR(36)) || '/' AS TEXT) AS "Path"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine"
+--         WHERE
+--             "ID" = p_RecordID
+
+--         UNION ALL
+
+--         SELECT
+--             p."ID",
+--             p."ParentOrderLineID",
+--             c."Depth" + 1 AS "Depth",
+--             CAST('/' || CAST(p."ID" AS VARCHAR(36)) || c."Path" AS TEXT) AS "Path"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine" p
+--         INNER JOIN
+--             CTE_Ancestors c ON p."ID" = c."ParentOrderLineID"
+--         WHERE
+--             c."Depth" < 100
+--     )
+--     SELECT         a."ID" AS "RootID",
+--         (SELECT MAX("Depth") FROM CTE_Ancestors) AS "Depth",
+--         (SELECT "Path" FROM CTE_Ancestors ORDER BY "Depth" DESC
+-- LIMIT 1) AS "Path",
+--         CAST(CASE WHEN EXISTS (SELECT 1 FROM __mj_BizAppsOrders."OrderLine" WHERE "ParentOrderLineID" = p_RecordID) THEN 0 ELSE 1 END AS BOOLEAN) AS "IsLeaf",
+--         (SELECT COUNT(1) FROM __mj_BizAppsOrders."OrderLine" WHERE "ParentOrderLineID" = p_RecordID) AS "ChildCount"
+--     FROM
+--         CTE_Ancestors a
+--     WHERE
+--         a."ParentOrderLineID" IS NULL OR p_ParentID IS NULL
+--     ORDER BY
+--         a."Depth" DESC
+
+-- LIMIT 1);
+
+-- CREATE FUNCTION __mj_BizAppsOrders."fnOrderLineParentOrderLineID_GetDescendants"
+-- (
+--     p_RootID UUID,
+--     p_MaxDepth INTEGER = NULL
+-- )
+-- RETURNS TABLE
+-- AS
+-- RETURN
+-- (
+--     WITH CTE_Descendants AS (
+--         SELECT
+--             "ID",
+--             "ParentOrderLineID",
+--             0 AS "RelativeDepth",
+--             CAST('/' || CAST("ID" AS VARCHAR(36)) || '/' AS TEXT) AS "Path"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine"
+--         WHERE
+--             "ID" = p_RootID
+
+--         UNION ALL
+
+--         SELECT
+--             c."ID",
+--             c."ParentOrderLineID",
+--             p."RelativeDepth" || 1 AS "RelativeDepth",
+--             CAST(p."Path" || CAST(c."ID" AS VARCHAR(36)) || '/' AS TEXT) AS "Path"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine" c
+--         INNER JOIN
+--             CTE_Descendants p ON c."ParentOrderLineID" = p."ID"
+--         WHERE
+--             (p_MaxDepth IS NULL OR p."RelativeDepth" < p_MaxDepth)
+--             AND p."RelativeDepth" < 100
+--     )
+--     SELECT
+--         d."ID" AS "ID",
+--         d."RelativeDepth" AS "Depth",
+--         d."Path",
+--         CAST(CASE WHEN EXISTS (SELECT 1 FROM __mj_BizAppsOrders."OrderLine" WHERE "ParentOrderLineID" = d."ID") THEN 0 ELSE 1 END AS BOOLEAN) AS "IsLeaf",
+--         (SELECT COUNT(1) FROM __mj_BizAppsOrders."OrderLine" WHERE "ParentOrderLineID" = d."ID") AS "ChildCount"
+--     FROM
+--         CTE_Descendants d
+-- );
+
+-- CREATE FUNCTION __mj_BizAppsOrders."fnOrderLineParentOrderLineID_GetAncestors"
+-- (
+--     p_RecordID UUID
+-- )
+-- RETURNS TABLE
+-- AS
+-- RETURN
+-- (
+--     WITH CTE_Ancestors AS (
+--         SELECT
+--             "ID",
+--             "ParentOrderLineID",
+--             0 AS "LevelUp",
+--             CAST('/' || CAST("ID" AS VARCHAR(36)) || '/' AS TEXT) AS "Path"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine"
+--         WHERE
+--             "ID" = p_RecordID
+
+--         UNION ALL
+
+--         SELECT
+--             p."ID",
+--             p."ParentOrderLineID",
+--             c."LevelUp" + 1 AS "LevelUp",
+--             CAST('/' || CAST(p."ID" AS VARCHAR(36)) || c."Path" AS TEXT) AS "Path"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine" p
+--         INNER JOIN
+--             CTE_Ancestors c ON p."ID" = c."ParentOrderLineID"
+--         WHERE
+--             c."LevelUp" < 100
+--     )
+--     SELECT
+--         a."ID" AS "ID",
+--         a."LevelUp",
+--         a."Path"
+--     FROM
+--         CTE_Ancestors a
+-- );
+
+-- CREATE FUNCTION __mj_BizAppsOrders."fnOrderLineParentOrderLineID_GetRootID"
+-- (
+--     p_RecordID UUID,
+--     p_ParentID UUID
+-- )
+-- RETURNS TABLE
+-- AS
+-- RETURN
+-- (
+--     WITH CTE_RootParent AS (
+--         SELECT
+--             "ID",
+--             "ParentOrderLineID",
+--             "ID" AS "RootParentID",
+--             0 AS "Depth"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine"
+--         WHERE
+--             "ID" = COALESCE(p_ParentID, p_RecordID)
+
+--         UNION ALL
+
+--         SELECT
+--             c."ID",
+--             c."ParentOrderLineID",
+--             c."ID" AS "RootParentID",
+--             p."Depth" + 1 AS "Depth"
+--         FROM
+--             __mj_BizAppsOrders."OrderLine" c
+--         INNER JOIN
+--             CTE_RootParent p ON c."ID" = p."ParentOrderLineID"
+--         WHERE
+--             p."Depth" < 100
+--     )
+--     SELECT         "RootParentID" AS RootID
+--     FROM
+--         CTE_RootParent
+--     WHERE
+--         "ParentOrderLineID" IS NULL
+--     ORDER BY
+--         "RootParentID"
+
+-- LIMIT 1);
+
+
+-- ===================== Views =====================
+
+DO $do$
+DECLARE
+  v_target_schema CONSTANT TEXT := '__mj_BizAppsOrders';
+  v_target_name CONSTANT TEXT := 'vwEventOrderLines';
+  vsql CONSTANT TEXT := $vsql$CREATE OR REPLACE VIEW __mj_BizAppsOrders."vwEventOrderLines"
+AS SELECT
+    e.*,
+    __mj_isa_p1."OrderHeaderID",
+    __mj_isa_p1."ProductID",
+    __mj_isa_p1."CompanyID",
+    __mj_isa_p1."LineNumber",
+    __mj_isa_p1."Quantity",
+    __mj_isa_p1."UnitPrice",
+    __mj_isa_p1."ProductPriceID",
+    __mj_isa_p1."DiscountPct",
+    __mj_isa_p1."DiscountAmount",
+    __mj_isa_p1."LineTotalNet",
+    __mj_isa_p1."ChargeAmount",
+    __mj_isa_p1."LineTax",
+    __mj_isa_p1."LineTotalGross",
+    __mj_isa_p1."ShipToAddressID",
+    __mj_isa_p1."ShipToOrganizationID",
+    __mj_isa_p1."ShipToPersonID",
+    __mj_isa_p1."RenewsSubscriptionID",
+    __mj_isa_p1."ServicePeriodStart",
+    __mj_isa_p1."ServicePeriodEnd",
+    __mj_isa_p1."FulfillmentStatus",
+    __mj_isa_p1."ReversesOrderLineID",
+    __mj_isa_p1."SourceBundleProductID",
+    __mj_isa_p1."ParentOrderLineID",
+    __mj_isa_p1."IsRollupParent",
+    __mj_isa_p1."IsQuantityOverridden",
+    __mj_isa_p1."SubscriptionID",
+    __mj_isa_p1."Description",
+    __mj_isa_p1."JournalEntryID",
+    __mj_isa_p1."PriceOverridden",
+    __mj_isa_p1."PriceOverrideReason",
+    __mj_isa_p1."DimensionID",
+    __mj_isa_p1."DimensionValueID",
+    __mj_isa_p1."BilledToDate",
+    __mj_isa_p1."RecognizedToDate",
+    __mj_isa_p1."ShipToAddressSnapshot",
+    __mj_isa_p1."SubscriptionAction",
+    __mj_isa_p1."AcknowledgesCoverageOverlap",
+    __mj_isa_p1."ExtendedAmount",
+    __mj_isa_p1."CoverageOverlapReason",
+    "mjBizAppsCommonPerson_PersonID"."DisplayName" AS "Person"
+FROM
+    __mj_BizAppsOrders."EventOrderLine" AS e
+INNER JOIN
+    __mj_BizAppsOrders."OrderLine" AS __mj_isa_p1
+  ON
+    e."ID" = __mj_isa_p1."ID"
+INNER JOIN
+    __mj_BizAppsCommon."Person" AS "mjBizAppsCommonPerson_PersonID"
+  ON
+    e."PersonID" = "mjBizAppsCommonPerson_PersonID"."ID"$vsql$;
+  v_target_oid OID;
+  v_dep RECORD;
+  v_captured JSONB[] := ARRAY[]::JSONB[];
+  v_n INTEGER;
+BEGIN
+  EXECUTE vsql;
+EXCEPTION WHEN invalid_table_definition THEN
+  -- Column list changed; need CASCADE. Preserve dependent views first.
+  SELECT c.oid INTO v_target_oid
+  FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+  WHERE n.nspname = v_target_schema AND c.relname = v_target_name AND c.relkind = 'v';
+  IF v_target_oid IS NOT NULL THEN
+    FOR v_dep IN
+      WITH RECURSIVE deps AS (
+        SELECT c.oid, c.relname AS name, n.nspname AS schema, 1 AS depth
+        FROM pg_rewrite r
+        JOIN pg_depend d ON d.objid = r.oid
+        JOIN pg_class c ON c.oid = r.ev_class
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE d.refobjid = v_target_oid AND d.deptype = 'n'
+          AND c.oid <> v_target_oid AND c.relkind = 'v'
+        UNION
+        SELECT c.oid, c.relname, n.nspname, p.depth + 1
+        FROM deps p
+        JOIN pg_rewrite r ON TRUE
+        JOIN pg_depend d ON d.objid = r.oid AND d.refobjid = p.oid
+        JOIN pg_class c ON c.oid = r.ev_class
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE c.relkind = 'v' AND c.oid <> p.oid
+      )
+      SELECT oid, name, schema, MAX(depth) AS max_depth,
+             pg_catalog.pg_get_viewdef(oid, true) AS viewdef
+      FROM deps GROUP BY oid, name, schema
+      ORDER BY MAX(depth) ASC
+    LOOP
+      v_captured := v_captured || jsonb_build_object(
+        'schema', v_dep.schema, 'name', v_dep.name, 'def', v_dep.viewdef);
+    END LOOP;
+  END IF;
+  EXECUTE format('DROP VIEW IF EXISTS %I.%I CASCADE', v_target_schema, v_target_name);
+  EXECUTE vsql;
+  IF v_captured IS NOT NULL AND array_length(v_captured, 1) > 0 THEN
+    FOR v_n IN 1..array_length(v_captured, 1) LOOP
+      BEGIN
+        EXECUTE format('CREATE VIEW %I.%I AS %s',
+          v_captured[v_n]->>'schema', v_captured[v_n]->>'name', v_captured[v_n]->>'def');
+      EXCEPTION WHEN others THEN
+        RAISE WARNING 'Could not restore dependent view %.%: %',
+          v_captured[v_n]->>'schema', v_captured[v_n]->>'name', SQLERRM;
+      END;
+    END LOOP;
+  END IF;
+END;
+$do$;
+
+DO $do$
+DECLARE
+  v_target_schema CONSTANT TEXT := '__mj_BizAppsOrders';
+  v_target_name CONSTANT TEXT := 'vwOrderLines';
+  vsql CONSTANT TEXT := $vsql$CREATE OR REPLACE VIEW __mj_BizAppsOrders."vwOrderLines"
+AS SELECT
+    o.*,
+    "mjBizAppsOrdersOrderHeader_OrderHeaderID"."OrderNumber" AS "OrderHeader",
+    "mjBizAppsOrdersProduct_ProductID"."Name" AS "Product",
+    "MJCompany_CompanyID"."Name" AS "Company",
+    "mjBizAppsOrdersProductPrice_ProductPriceID"."Name" AS "ProductPrice",
+    "mjBizAppsCommonOrganization_ShipToOrganizationID"."Name" AS "ShipToOrganization",
+    "mjBizAppsCommonPerson_ShipToPersonID"."DisplayName" AS "ShipToPerson",
+    "mjBizAppsOrdersProduct_SourceBundleProductID"."Name" AS "SourceBundleProduct",
+    "mjBizAppsOrdersSubscription_SubscriptionID"."SubscriptionNumber" AS "Subscription",
+    "mjBizAppsAccountingJournalEntry_JournalEntryID"."EntryNumber" AS "JournalEntry",
+    "mjBizAppsAccountingDimension_DimensionID"."Name" AS "Dimension",
+    "mjBizAppsAccountingDimensionValue_DimensionValueID"."Name" AS "DimensionValue",
+    "hier_ParentOrderLineID"."RootID" AS "RootParentOrderLineID",
+    "hier_ParentOrderLineID"."Depth" AS "ParentOrderLineIDDepth",
+    "hier_ParentOrderLineID"."Path" AS "ParentOrderLineIDPath",
+    "hier_ParentOrderLineID"."IsLeaf" AS "ParentOrderLineIDIsLeaf",
+    "hier_ParentOrderLineID"."ChildCount" AS "ParentOrderLineIDChildCount"
+FROM
+    __mj_BizAppsOrders."OrderLine" AS o
+INNER JOIN
+    __mj_BizAppsOrders."OrderHeader" AS "mjBizAppsOrdersOrderHeader_OrderHeaderID"
+  ON
+    o."OrderHeaderID" = "mjBizAppsOrdersOrderHeader_OrderHeaderID"."ID"
+INNER JOIN
+    __mj_BizAppsOrders."Product" AS "mjBizAppsOrdersProduct_ProductID"
+  ON
+    o."ProductID" = "mjBizAppsOrdersProduct_ProductID"."ID"
+INNER JOIN
+    __mj."Company" AS "MJCompany_CompanyID"
+  ON
+    o."CompanyID" = "MJCompany_CompanyID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsOrders."ProductPrice" AS "mjBizAppsOrdersProductPrice_ProductPriceID"
+  ON
+    o."ProductPriceID" = "mjBizAppsOrdersProductPrice_ProductPriceID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsCommon."Organization" AS "mjBizAppsCommonOrganization_ShipToOrganizationID"
+  ON
+    o."ShipToOrganizationID" = "mjBizAppsCommonOrganization_ShipToOrganizationID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsCommon."Person" AS "mjBizAppsCommonPerson_ShipToPersonID"
+  ON
+    o."ShipToPersonID" = "mjBizAppsCommonPerson_ShipToPersonID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsOrders."Product" AS "mjBizAppsOrdersProduct_SourceBundleProductID"
+  ON
+    o."SourceBundleProductID" = "mjBizAppsOrdersProduct_SourceBundleProductID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsOrders."Subscription" AS "mjBizAppsOrdersSubscription_SubscriptionID"
+  ON
+    o."SubscriptionID" = "mjBizAppsOrdersSubscription_SubscriptionID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsAccounting."JournalEntry" AS "mjBizAppsAccountingJournalEntry_JournalEntryID"
+  ON
+    o."JournalEntryID" = "mjBizAppsAccountingJournalEntry_JournalEntryID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsAccounting."Dimension" AS "mjBizAppsAccountingDimension_DimensionID"
+  ON
+    o."DimensionID" = "mjBizAppsAccountingDimension_DimensionID"."ID"
+LEFT OUTER JOIN
+    __mj_BizAppsAccounting."DimensionValue" AS "mjBizAppsAccountingDimensionValue_DimensionValueID"
+  ON
+    o."DimensionValueID" = "mjBizAppsAccountingDimensionValue_DimensionValueID"."ID"
+LEFT JOIN LATERAL (SELECT * FROM __mj_BizAppsOrders."fnOrderLineParentOrderLineID_GetHierarchyMeta"(o."ID", o."ParentOrderLineID")) AS "hier_ParentOrderLineID"
+    ON TRUE$vsql$;
+  v_target_oid OID;
+  v_dep RECORD;
+  v_captured JSONB[] := ARRAY[]::JSONB[];
+  v_n INTEGER;
+BEGIN
+  EXECUTE vsql;
+EXCEPTION WHEN invalid_table_definition THEN
+  -- Column list changed; need CASCADE. Preserve dependent views first.
+  SELECT c.oid INTO v_target_oid
+  FROM pg_class c JOIN pg_namespace n ON c.relnamespace = n.oid
+  WHERE n.nspname = v_target_schema AND c.relname = v_target_name AND c.relkind = 'v';
+  IF v_target_oid IS NOT NULL THEN
+    FOR v_dep IN
+      WITH RECURSIVE deps AS (
+        SELECT c.oid, c.relname AS name, n.nspname AS schema, 1 AS depth
+        FROM pg_rewrite r
+        JOIN pg_depend d ON d.objid = r.oid
+        JOIN pg_class c ON c.oid = r.ev_class
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE d.refobjid = v_target_oid AND d.deptype = 'n'
+          AND c.oid <> v_target_oid AND c.relkind = 'v'
+        UNION
+        SELECT c.oid, c.relname, n.nspname, p.depth + 1
+        FROM deps p
+        JOIN pg_rewrite r ON TRUE
+        JOIN pg_depend d ON d.objid = r.oid AND d.refobjid = p.oid
+        JOIN pg_class c ON c.oid = r.ev_class
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        WHERE c.relkind = 'v' AND c.oid <> p.oid
+      )
+      SELECT oid, name, schema, MAX(depth) AS max_depth,
+             pg_catalog.pg_get_viewdef(oid, true) AS viewdef
+      FROM deps GROUP BY oid, name, schema
+      ORDER BY MAX(depth) ASC
+    LOOP
+      v_captured := v_captured || jsonb_build_object(
+        'schema', v_dep.schema, 'name', v_dep.name, 'def', v_dep.viewdef);
+    END LOOP;
+  END IF;
+  EXECUTE format('DROP VIEW IF EXISTS %I.%I CASCADE', v_target_schema, v_target_name);
+  EXECUTE vsql;
+  IF v_captured IS NOT NULL AND array_length(v_captured, 1) > 0 THEN
+    FOR v_n IN 1..array_length(v_captured, 1) LOOP
+      BEGIN
+        EXECUTE format('CREATE VIEW %I.%I AS %s',
+          v_captured[v_n]->>'schema', v_captured[v_n]->>'name', v_captured[v_n]->>'def');
+      EXCEPTION WHEN others THEN
+        RAISE WARNING 'Could not restore dependent view %.%: %',
+          v_captured[v_n]->>'schema', v_captured[v_n]->>'name', SQLERRM;
+      END;
+    END LOOP;
+  END IF;
+END;
+$do$;
+
+
+-- ===================== Stored Procedures (sp*) =====================
+
+-- SKIPPED: procedure (auto-conversion not supported)
+-- CREATE PROCEDURE [__mj_BizAppsOrders].[spCreateEventOrderLine]
+--     @ID UUID = NULL,
+--     @CheckInAt_Clear bit = 0,
+--     @CheckInAt datetimeoffset = NULL,
+--     @PersonID UUID,
+--     ...
+
+-- SKIPPED: procedure (auto-conversion not supported)
+-- CREATE PROCEDURE [__mj_BizAppsOrders].[spUpdateEventOrderLine]
+--     @ID UUID,
+--     @CheckInAt_Clear bit = 0,
+--     @CheckInAt datetimeoffset = NULL,
+--     @PersonID UUID = NULL,
+--     ...
+
+-- SKIPPED: procedure (auto-conversion not supported)
+-- CREATE PROCEDURE [__mj_BizAppsOrders].[spDeleteEventOrderLine]
+--     @ID UUID
+-- AS
+-- BEGIN
+--     SET NOCOUNT ON;
+-- 
+--     DELETE FROM
+--         [__mj_BizAppsOrders].[EventOrderLine]
+--     WHERE
+--         [I...
+
+-- SKIPPED: procedure (auto-conversion not supported)
+-- CREATE PROCEDURE [__mj_BizAppsOrders].[spCreateOrderLine]
+--     @ID UUID = NULL,
+--     @OrderHeaderID UUID,
+--     @ProductID UUID,
+--     @CompanyID UUID,
+--     @L...
+
+-- SKIPPED: procedure (auto-conversion not supported)
+-- CREATE PROCEDURE [__mj_BizAppsOrders].[spUpdateOrderLine]
+--     @ID UUID,
+--     @OrderHeaderID UUID = NULL,
+--     @ProductID UUID = NULL,
+--     @CompanyID UUID ...
+
+-- SKIPPED: procedure (auto-conversion not supported)
+-- CREATE PROCEDURE [__mj_BizAppsOrders].[spDeleteOrderLine]
+--     @ID UUID
+-- AS
+-- BEGIN
+--     SET NOCOUNT ON;
+-- 
+--     DELETE FROM
+--         [__mj_BizAppsOrders].[OrderLine]
+--     WHERE
+--         [ID] = @ID
+-- 
+-- ...
+
+
+-- ===================== Triggers =====================
+
+-- SKIPPED: trigger (auto-conversion not supported)
+-- CREATE TRIGGER [__mj_BizAppsOrders].trgUpdateEventOrderLine
+-- ON "__mj_BizAppsOrders"."EventOrderLine"
+-- AFTER UPDATE
+-- AS
+-- BEGIN
+--     SET NOCOUNT ON;
+--     UPDATE
+--         "__mj_BizAppsOrders"."EventOrderLine"
+
+
+-- SKIPPED: trigger (auto-conversion not supported)
+-- CREATE TRIGGER [__mj_BizAppsOrders].trgUpdateOrderLine
+-- ON "__mj_BizAppsOrders"."OrderLine"
+-- AFTER UPDATE
+-- AS
+-- BEGIN
+--     SET NOCOUNT ON;
+--     UPDATE
+--         "__mj_BizAppsOrders"."OrderLine"
+--     SET
+       
+
+
+-- ===================== Data (INSERT/UPDATE/DELETE) =====================
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM __mj."EntityField" WHERE "ID" = 'f5c3c890-e755-4f2b-9c0d-1364abba7b38' OR ("EntityID" = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND "Name" = 'CoverageOverlapReason')
+    ) THEN
+        INSERT INTO __mj."EntityField"
+        (
+        "ID",
+        "EntityID",
+        "Sequence",
+        "Name",
+        "DisplayName",
+        "Description",
+        "Type",
+        "Length",
+        "Precision",
+        "Scale",
+        "AllowsNull",
+        "DefaultValue",
+        "AutoIncrement",
+        "AllowUpdateAPI",
+        "IsVirtual",
+        "IsComputed",
+        "RelatedEntityID",
+        "RelatedEntityFieldName",
+        "IsNameField",
+        "IncludeInUserSearchAPI",
+        "IncludeRelatedEntityNameFieldInBaseView",
+        "DefaultInView",
+        "IsPrimaryKey",
+        "IsUnique",
+        "RelatedEntityDisplayType",
+        "__mj_CreatedAt",
+        "__mj_UpdatedAt"
+        )
+        VALUES
+        (
+        'f5c3c890-e755-4f2b-9c0d-1364abba7b38',
+        '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- "Entity": "MJ_BizApps_Orders": Order "Lines"
+        (SELECT COALESCE(MAX("Sequence"), 0) + 1 FROM __mj."EntityField" WHERE "EntityID" = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
+        'CoverageOverlapReason',
+        'Coverage Overlap Reason',
+        'Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.',
+        'TEXT',
+        2000,
+        0,
+        0,
+        TRUE,
+        NULL,
+        FALSE,
+        TRUE,
+        FALSE,
+        FALSE,
+        NULL,
+        NULL,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        FALSE,
+        'Search',
+        NOW(),
+        NOW()
+        );
+    END IF;
+END $$;
+
+INSERT INTO __mj."EntityField" (
+                  "ID", "EntityID", "Name", "Type", "AllowsNull",
+                  "Length", "Precision", "Scale",
+                  "Sequence", "IsVirtual", "AllowUpdateAPI",
+                  "IsPrimaryKey", "IsUnique",
+                  "__mj_CreatedAt", "__mj_UpdatedAt")
+               VALUES (
+                  '5917f1c9-292e-4718-8e8f-ddbabd89bdb9', '90A1060F-35D6-44A7-9076-A9053BBF60E6', 'CoverageOverlapReason',
+                  'TEXT', TRUE,
+                  2000, 0, 0,
+                  (SELECT COALESCE(MAX("Sequence"), 0) + 1 FROM __mj."EntityField" WHERE "EntityID" = '90A1060F-35D6-44A7-9076-A9053BBF60E6'), TRUE, TRUE, FALSE, FALSE,
+                  NOW(), NOW());
+
+/* Update entity timestamp for MJ_BizApps_Orders: Event Order Lines after IS-A field sync */
+
+UPDATE __mj."Entity" SET "__mj_UpdatedAt"=NOW() WHERE "ID"='90A1060F-35D6-44A7-9076-A9053BBF60E6';
+
+/* SQL text to update display name for field CoverageOverlapReason */
+
+UPDATE __mj."EntityField" SET "__mj_UpdatedAt"=NOW(), "DisplayName" = 'CoverageOverlapReason' WHERE "ID" = '5917F1C9-292E-4718-8E8F-DDBABD89BDB9';
+
+/* Base View SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: vwEventOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Event Order Lines
+-----               SCHEMA:      __mj_BizAppsOrders
+-----               BASE TABLE:  EventOrderLine
+-----               PRIMARY KEY: ID
+------------------------------------------------------------
+
+UPDATE __mj."EntityField"
+SET 
+   "Category" = 'Subscription Details',
+   "GeneratedFormSection" = 'Category'
+WHERE 
+   "ID" = 'F5C3C890-E755-4F2B-9C0D-1364ABBA7B38';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Lines.OrderHeader
+
+UPDATE __mj."EntityField"
+SET 
+   "Category" = 'Relationships',
+   "GeneratedFormSection" = 'Category'
+WHERE 
+   "ID" = '33E591FD-218D-4356-AAEB-9341AD2DA754';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Lines.ProductPrice
+
+UPDATE __mj."EntityField"
+SET 
+   "Category" = 'Pricing and Financials',
+   "GeneratedFormSection" = 'Category'
+WHERE 
+   "ID" = '38724E0E-AD43-4EC1-B5E2-D3DBC608FBAD';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Lines.Subscription
+
+UPDATE __mj."EntityField"
+SET 
+   "Category" = 'Subscription Details',
+   "GeneratedFormSection" = 'Category'
+WHERE 
+   "ID" = '64E21D0A-F38F-4E0C-8DBD-95CD5777CED5';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Lines.Dimension
+
+UPDATE __mj."EntityField"
+SET 
+   "Category" = 'Pricing and Financials',
+   "GeneratedFormSection" = 'Category'
+WHERE 
+   "ID" = '1F242BC2-C395-47AB-BCCD-38B75F1A2349';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Lines.DimensionValue
+
+UPDATE __mj."EntityField"
+SET 
+   "Category" = 'Pricing and Financials',
+   "GeneratedFormSection" = 'Category'
+WHERE 
+   "ID" = '27527F8B-B3F5-4C31-806F-EBDE5BB4E871';
+
+/* Generated Validation Functions for MJ_BizApps_Orders: Order Lines */
+-- CHECK constraint for MJ_BizApps_Orders: Order Lines @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM __mj."GeneratedCode" WHERE "CategoryID" = (SELECT "ID" FROM __mj."vwGeneratedCodeCategories" WHERE "Name"='CodeGen: Validators') AND "LinkedEntityID" = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND "LinkedRecordPrimaryKey" = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+    ) THEN
+        INSERT INTO __mj."GeneratedCode" ("ID", "CategoryID", "GeneratedByModelID", "GeneratedAt", "Language", "Status", "Source", "Code", "Description", "Name", "LinkedEntityID", "LinkedRecordPrimaryKey")
+        VALUES ('0b036b15-c27d-4e9f-91bc-246f03d72b43', (SELECT "ID" FROM __mj."vwGeneratedCodeCategories" WHERE "Name"='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', NOW(), 'TypeScript', 'Approved', '([DimensionID] IS NULL AND [DimensionValueID] IS NULL OR [DimensionID] IS NOT NULL AND [DimensionValueID] IS NOT NULL)', 'public ValidateDimensionIDAndDimensionValueID(result: ValidationResult) {
+	const hasDimension = this.DimensionID != null;
+	const hasDimensionValue = this.DimensionValueID != null;
+
+	if ((hasDimension && !hasDimensionValue) || (!hasDimension && hasDimensionValue)) {
+		result.Errors.push(new ValidationErrorInfo(
+			"DimensionID",
+			"Both Dimension and Dimension Value must be specified together, or both must be left empty.",
+			this.DimensionID,
+			ValidationErrorType.Failure
+		));
+	}
+}', 'Dimension and Dimension Value must either both be provided or both be left empty.', 'ValidateDimensionIDAndDimensionValueID', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '66D82C24-9C9F-4CD6-B019-53C20274AB00');
+    END IF;
+END $$;
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM __mj."GeneratedCode" WHERE "CategoryID" = (SELECT "ID" FROM __mj."vwGeneratedCodeCategories" WHERE "Name"='CodeGen: Validators') AND "LinkedEntityID" = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND "LinkedRecordPrimaryKey" = '66D82C24-9C9F-4CD6-B019-53C20274AB00'
+    ) THEN
+        INSERT INTO __mj."GeneratedCode" ("ID", "CategoryID", "GeneratedByModelID", "GeneratedAt", "Language", "Status", "Source", "Code", "Description", "Name", "LinkedEntityID", "LinkedRecordPrimaryKey")
+        VALUES ('4ca0a3e1-c9ad-4e41-b318-41418507e363', (SELECT "ID" FROM __mj."vwGeneratedCodeCategories" WHERE "Name"='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', NOW(), 'TypeScript', 'Approved', '([IsRollupParent]=(0) OR [DiscountAmount]=(0) AND [ChargeAmount]=(0) AND [LineTax]=(0))', '	public ValidateRollupParentFinancialAmounts(result: ValidationResult) {
+		if (this.IsRollupParent && (this.DiscountAmount !== 0 || this.ChargeAmount !== 0 || this.LineTax !== 0)) {
+			result.Errors.push(new ValidationErrorInfo(
+				"IsRollupParent",
+				"Rollup parent order lines cannot have a discount amount, charge amount, or line tax.",
+				this.IsRollupParent,
+				ValidationErrorType.Failure
+			));
+		}
+	}', 'Rollup parent order lines cannot have discount amounts, charge amounts, or line tax applied directly to them.', 'ValidateRollupParentFinancialAmounts', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '66D82C24-9C9F-4CD6-B019-53C20274AB00');
+    END IF;
+END $$;
+
+
+-- ===================== Grants =====================
+
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwEventOrderLines" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwEventOrderLines" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwEventOrderLines" FROM "cdp_UI"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT SELECT ON __mj_BizAppsOrders."vwEventOrderLines" TO "cdp_UI", "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* Base View Permissions SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: Permissions for vwEventOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwEventOrderLines" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwEventOrderLines" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwEventOrderLines" FROM "cdp_UI"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT SELECT ON __mj_BizAppsOrders."vwEventOrderLines" TO "cdp_UI", "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spCreate SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: spCreateEventOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR EventOrderLine
+------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateEventOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateEventOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateEventOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spCreate Permissions for MJ_BizApps_Orders: Event Order Lines */
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateEventOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateEventOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateEventOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spUpdate SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: spUpdateEventOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR EventOrderLine
+------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateEventOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateEventOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateEventOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateEventOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateEventOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateEventOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spDelete SQL for MJ_BizApps_Orders: Event Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Event Order Lines
+-- Item: spDeleteEventOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR EventOrderLine
+------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteEventOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteEventOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteEventOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spDelete Permissions for MJ_BizApps_Orders: Event Order Lines */
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteEventOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteEventOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteEventOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* Index for Foreign Keys for OrderLine */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key OrderHeaderID in table OrderLine;
+
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwOrderLines" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwOrderLines" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwOrderLines" FROM "cdp_UI"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT SELECT ON __mj_BizAppsOrders."vwOrderLines" TO "cdp_UI", "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* Base View Permissions SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: Permissions for vwOrderLines
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwOrderLines" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwOrderLines" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE SELECT ON __mj_BizAppsOrders."vwOrderLines" FROM "cdp_UI"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT SELECT ON __mj_BizAppsOrders."vwOrderLines" TO "cdp_UI", "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spCreate SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: spCreateOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- CREATE PROCEDURE FOR OrderLine
+------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spCreate Permissions for MJ_BizApps_Orders: Order Lines */
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spCreateOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spUpdate SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: spUpdateOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- UPDATE PROCEDURE FOR OrderLine
+------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spUpdateOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spDelete SQL for MJ_BizApps_Orders: Order Lines */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Lines
+-- Item: spDeleteOrderLine
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
+------------------------------------------------------------
+----- DELETE PROCEDURE FOR OrderLine
+------------------------------------------------------------;
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* spDelete Permissions for MJ_BizApps_Orders: Order Lines */
+
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteOrderLine" FROM "cdp_Developer"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN REVOKE EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteOrderLine" FROM "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+DO $$ BEGIN GRANT EXECUTE ON FUNCTION __mj_BizAppsOrders."spDeleteOrderLine" TO "cdp_Developer", "cdp_Integration"; EXCEPTION WHEN others THEN NULL; END $$;
+/* Set categories for 6 fields */
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Lines.CoverageOverlapReason;
+
+
+-- ===================== Comments =====================
+
+COMMENT ON COLUMN __mj_BizAppsOrders."OrderLine"."CoverageOverlapReason" IS 'Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.';
+
+
+-- ===================== Other =====================
+
+-- =============================================================================
+--
+--   CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE (do not hand-edit)
+--
+--   Produced by MJ CodeGen 6.1.5 for the combined PR (bizapps-orders#645) against a
+--   database built from its migrations, with the hand-authored DDL above applied.
+--   Contains the CoverageOverlapReason field registration on Order Lines and its
+--   IS-A child Event Order Lines, the rebuilt views, CRUD procs and grants for those
+--   two (they now carry ExtendedAmount, which V202610131504 added), their FK indexes
+--   and hierarchy functions, and Order Lines' validators.
+--
+--   Left out: validators the run regenerated for other entities; they are not this
+--   change's.
+--
+-- =============================================================================
+
+
+/* SQL text to insert 1 new entity field(s) */
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Event Order Lines */
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Order Lines */

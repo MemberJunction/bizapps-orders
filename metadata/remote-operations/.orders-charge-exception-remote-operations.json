@@ -1,0 +1,33 @@
+[
+  {
+    "_comments": [
+      "RESOLVE A CHARGE-WITHOUT-PAYMENT FINANCE EXCEPTION WITH AN ORDER (#567). Its own dot-json so it conflicts with",
+      "no other change to the remote operations. Called by the Orders panel on accounting's Finance Exception form."
+    ],
+    "fields": {
+      "Name": "Resolve Charge Exception",
+      "OperationKey": "Orders.ResolveChargeException",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Book a charge-without-payment finance exception as a paid order and clear it. Reads the payment provider and gateway charge from the exception, books the order through Orders.CreateOrderFromProviderPayment with the product and buyer the caller names, then clears the exception as Corrected with a note naming the order and payment. Requires the authorization to clear finance exceptions, checked before anything is booked. Refuses an exception that is not Open, is not a PROVIDER_CHARGE_MISMATCH of kind ChargeWithoutPayment, or names a charge Orders opened. A repeat call returns the order already booked and clears the exception if that had failed.",
+      "InputTypeName": "OrdersResolveChargeExceptionInput",
+      "InputTypeDefinition": "@file:types/orders-resolve-charge-exception.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersResolveChargeExceptionOutput",
+      "OutputTypeDefinition": "@file:types/orders-resolve-charge-exception.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "49BF478D-1ED6-4C69-A040-2570CD9F9810"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T21:37:12.528Z",
+      "checksum": "012b75e262ca2566f4b1b089cd5522b2fe2f7d40d29366016d5dc3c3a9e32497"
+    }
+  }
+]

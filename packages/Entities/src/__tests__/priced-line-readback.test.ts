@@ -38,4 +38,10 @@ describe('ReadPricedLineAmounts', () => {
         expect(amounts.LineTotalNet).toBe(37.5);
         expect(amounts.LineTotalGross).toBe(37.5);
     });
+
+    it('reads a Flat line at the rule figure, not quantity × the rounded unit price (#579)', () => {
+        const amounts = ReadPricedLineAmounts({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100, DiscountPct: 0.1 });
+        expect(amounts.LineTotalNet).toBe(90);
+        expect(amounts.DiscountAmount).toBe(10);
+    });
 });

@@ -62,6 +62,12 @@ export class SubscriptionTermsPanel extends BaseFormPanel<mjBizAppsOrdersSubscri
         return FormatCoverageWindow(start, end);
     }
 
+    /** The seats the term covers, as bought before any proration (#589). */
+    public TermSeats(quantity: number | null | undefined): string {
+        const seats = quantity ?? 1;
+        return `${seats} ${seats === 1 ? 'seat' : 'seats'}`;
+    }
+
     public OpenTerm(term: mjBizAppsOrdersSubscriptionTermEntity): void {
         this.FormComponent.OnFormNavigate({
             Kind: 'record',

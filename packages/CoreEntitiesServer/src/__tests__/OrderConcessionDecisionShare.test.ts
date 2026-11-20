@@ -6,13 +6,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const gate = vi.hoisted(() => ({
-    FindConcessionLimitRule: vi.fn(),
+    FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
+
+// No metadata here: the settings read is stubbed, unset (ConcessionSelfApprovalEscalation keeps self-approval).
+const settings = vi.hoisted(() => ({ OrdersSettings: { Load: vi.fn(), ConcessionSelfApprovalEscalation: [] as string[] } }));
+vi.mock('../OrdersSettings.js', () => settings);
 
 vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
@@ -48,7 +53,7 @@ function pendingConcession(decision: 'Approved' | 'Rejected') {
     Object.defineProperty(row, 'ContextCurrentUser', { value: APPROVER });
     Object.defineProperty(row, 'ProviderToUse', { value: {} });
     row.GetFieldByName = (name: string) => (name === 'Status' ? { Dirty: true, OldValue: 'Pending' } : { Dirty: false });
-    row.ApprovingRoleID = async () => 'role-1';
+    row.approvingRule = async () => ({ Name: 'Concession approval', ApprovalRequiredRoleID: 'role-1', RequiresDecisionWithinAuthority: false });
     return { row, values };
 }
 
@@ -69,7 +74,7 @@ describe('deciding a concession re-measures its share of the order', () => {
         expect(values.DecidedByUserID).toBe(APPROVER.ID);
     });
 
-    it('counts every concession on the order that is not Rejected, this one included', async () => {
+    it('counts every concession on the order still Pending or Approved, this one included', async () => {
         gate.OrderNetTotal.mockResolvedValue(20000);
         gate.OrderConcessionTotal.mockResolvedValue(8500);
         const { row, values } = pendingConcession('Approved');

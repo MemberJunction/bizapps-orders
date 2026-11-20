@@ -38,6 +38,7 @@ import type {
 import {
   ACCT_SCHEMA,
   AcknowledgeAmendmentsWith,
+  AssertTermGrantWindow,
   CreateOrdersFixture,
   createViaEntity,
   Fx,
@@ -60,7 +61,7 @@ const DAY = 86_400_000;
 const iso = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
 const addDays = (d: Date | string, n: number) => new Date(new Date(d).getTime() + n * DAY);
 
-async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, maxDays: number): Promise<void> {
+export async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, maxDays: number): Promise<void> {
   await createViaEntity(ctx, SALES_AUTHORITY_ENTITY, {
     SalesRepUserID: ctx.User.ID,
     MaxConcessionValue: maxValue,
@@ -76,7 +77,7 @@ async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, ma
  * A Pending concession's approval task is assigned to the person records of the role's other holders, and
  * one nobody could be told of is refused, so a holder is given a person record when none of them has one.
  */
-async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string) {
+export async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string) {
   const holders = await TxQuery<{ UserID: string; PersonID: string | null }>(ctx,
     `SELECT ur.UserID, (SELECT TOP 1 p.ID FROM __mj_BizAppsCommon.Person p
                          WHERE p.LinkedUserID = ur.UserID AND p.Status = 'Active') AS PersonID
@@ -104,7 +105,7 @@ async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string) {
   };
 }
 
-async function bookTerm(ctx: IntegrationCheckContext, price = 1200) {
+export async function bookTerm(ctx: IntegrationCheckContext, price = 1200) {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -119,7 +120,7 @@ async function bookTerm(ctx: IntegrationCheckContext, price = 1200) {
   return { OrderID: result.Order.ID as string, Term: term };
 }
 
-async function recordExtension(ctx: IntegrationCheckContext, termID: string, days: number) {
+export async function recordExtension(ctx: IntegrationCheckContext, termID: string, days: number) {
   const entity = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
   entity.NewRecord();
   entity.DeliveryForm = "Duration";
@@ -151,7 +152,7 @@ function byDate(rows: { EffectiveDate: Date; Net: number }[]): Map<string, numbe
   return out;
 }
 
-async function acknowledgmentOf(ctx: IntegrationCheckContext, concessionID: string) {
+export async function acknowledgmentOf(ctx: IntegrationCheckContext, concessionID: string) {
   const task = await TxOne<{ ID: string; Status: string; TypeCode: string; Description: string }>(ctx,
     `SELECT t.ID, t.Status, tt.Code AS TypeCode, t.Description
        FROM __mj_BizAppsTasks.Task t
@@ -173,6 +174,7 @@ async function assertApplied(ctx: IntegrationCheckContext, term: { ID: string; O
   AssertEqual(iso(row.EndDate), newEnd, "the term ends later");
   const line = await TxOne<{ ServicePeriodEnd: Date }>(ctx, `SELECT ServicePeriodEnd FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${term.OrderLineID}'`);
   AssertEqual(iso(line.ServicePeriodEnd), newEnd, "and the line that bought it agrees");
+  await AssertTermGrantWindow(ctx, term.ID, null, newEnd, "access runs to the end of the new last day");
 
   const entries = await recognitionOf(ctx, term.ID);
   const total = Math.round(entries.reduce((s, e) => s + Number(e.Net), 0) * 100) / 100;
@@ -372,8 +374,8 @@ export const TermExtensionChecks: NamedCheck[] = [
         AssertEqual(done.Status, "Approved", "inside authority it applies in the same call");
         await assertApplied(ctx, Term, 90);
 
-        const amount = await amend(ctx, { ...input, NewAmount: 900 });
-        Assert(!amount.Success && /amount/.test(amount.Message ?? ""), "a change of amount is refused for now");
+        const both = await amend(ctx, { ...input, NewAmount: 900 });
+        Assert(!both.Success && /amended separately/.test(both.Message ?? ""), "a change of amount is not combined with a new end");
       }),
   },
   {

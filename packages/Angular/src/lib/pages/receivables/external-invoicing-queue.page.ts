@@ -7,7 +7,13 @@ import {
     OrdersIssueExternalInvoiceOperation,
     OrdersPollExternalPaymentsOperation,
     OrdersSendExternalInvoicesOperation,
+    ClassifyPollJobGroups,
+    IsBefore,
+    LoadPollJobs,
+    PlanSetAside,
+    SetAsideExternalPayments,
     type ExternalInvoicingWorklistRow,
+    type PollJobState,
 } from '@mj-biz-apps/orders-entities';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
@@ -22,7 +28,8 @@ interface PaymentExceptionRow {
     PaymentDate: string | null;
     ExternalStatus: string | null;
     Disposition: 'Held' | 'Unmatched' | 'Refused' | 'Reapplied' | 'ReversalNeeded';
-    Reason: string | null;
+    DispositionReason: string | null;
+    PaymentHeaderID: string | null;
     LastSeenAt: string | null;
 }
 
@@ -109,6 +116,13 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
             </button>
         </div>
 
+        <div class="row mjo-xq__actions mjo-xq__poll-bar" data-testid="poll-payments-bar">
+            <button type="button" mjButton variant="outline" [disabled]="Busy || PollBlocked" (click)="RunPoll()">
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ Busy ? 'Working…' : PollJob?.State === 'Preview' ? 'Preview payment check' : 'Check for payments now' }}
+            </button>
+            <span class="small muted">{{ PollHint }}</span>
+        </div>
+
         @if (Tab === 'invoices') {
             <div class="row mjo-xq__actions">
                 <button type="button" mjButton variant="outline" [disabled]="!SelectedInvoice" (click)="OpenSelected()">
@@ -139,19 +153,35 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 (PresetChanged)="OnPreset($event)"
                 (RowClicked)="SelectedInvoice = $event" />
         } @else {
-            <div class="row mjo-xq__actions">
-                <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="RunPoll()">
-                    <i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ Busy ? 'Working…' : 'Check for payments now' }}
+            <div class="row wrap mjo-xq__actions">
+                <label class="mjo-xq__field">
+                    <span class="small muted">Paid before</span>
+                    <input type="date" [value]="PaidBefore ?? ''" (change)="OnPaidBefore($any($event.target).value)" aria-label="Show payments dated before this day">
+                </label>
+                <label class="mjo-xq__field mjo-xq__field--grow">
+                    <span class="small muted">Reason for setting aside</span>
+                    <input
+                        type="text"
+                        maxlength="400"
+                        [value]="SetAsideReason"
+                        (input)="SetAsideReason = $any($event.target).value"
+                        placeholder="e.g. Pre-go-live payment against AR not converted">
+                </label>
+                <button type="button" mjButton variant="outline" [disabled]="Busy || !CheckedIDs.length || !SetAsideReason.trim()" (click)="SetAsideChecked()">
+                    <i class="fa-solid fa-box-archive" aria-hidden="true"></i> Set aside{{ CheckedIDs.length ? ' (' + CheckedIDs.length + ')' : '' }}
                 </button>
-                <span class="small muted">Captured payments are not listed — only what the poll could not finish.</span>
             </div>
 
             <mjo-worklist-table
                 [Columns]="PaymentColumns"
-                [Rows]="Exceptions"
+                [Rows]="ShownExceptions"
                 [Presets]="[]"
                 [Searchable]="false"
                 RowKey="ID"
+                [Selectable]="true"
+                [SelectedKeys]="CheckedIDs"
+                (SelectionChanged)="CheckedIDs = $event"
+                [FootNote]="ExceptionFootNote"
                 EmptyTitle="Nothing needs attention"
                 EmptyHint="Every payment the rail reported has been recorded or set aside."
                 EmptyIcon="fa-solid fa-hand-holding-dollar" />
@@ -172,10 +202,18 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 gap: var(--mj-space-3);
                 margin-bottom: var(--mj-space-4);
             }
+            .mjo-xq__field {
+                display: flex;
+                flex-direction: column;
+                gap: var(--mj-space-1);
+            }
+            .mjo-xq__field--grow {
+                flex: 1 1 260px;
+            }
             .mjo-xq__tabs {
                 display: flex;
                 gap: var(--mj-space-2);
-                border-bottom: 1px solid var(--mj-color-border);
+                border-bottom: 1px solid var(--mj-border-default);
                 margin-bottom: var(--mj-space-4);
             }
             .mjo-xq__tabs button {
@@ -186,11 +224,11 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 padding: var(--mj-space-3) var(--mj-space-4);
                 cursor: pointer;
                 font: inherit;
-                color: var(--mj-color-text-muted);
+                color: var(--mj-text-muted);
             }
             .mjo-xq__tabs button.is-active {
-                color: var(--mj-color-text);
-                border-bottom-color: var(--mj-color-primary, #2563eb);
+                color: var(--mj-text-primary);
+                border-bottom-color: var(--mj-brand-primary);
                 font-weight: 600;
             }
             .mjo-xq__count {
@@ -198,7 +236,7 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 margin-left: var(--mj-space-2);
                 padding: 0 var(--mj-space-2);
                 border-radius: 999px;
-                background: var(--mj-color-surface-subtle, rgba(0, 0, 0, 0.06));
+                background: var(--mj-bg-surface-card);
                 font-size: 0.8em;
             }
             @media (max-width: 760px) {
@@ -228,9 +266,24 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     public Preset = 'all';
 
     public Exceptions: PaymentExceptionRow[] = [];
+    /** `Exceptions` narrowed by the "paid before" day. */
+    public ShownExceptions: PaymentExceptionRow[] = [];
+    /** The "paid before" cut day (`YYYY-MM-DD`), or null for every exception. */
+    public PaidBefore: string | null = null;
+    /** Rows checked for setting aside; always a subset of `ShownExceptions`. */
+    public CheckedIDs: string[] = [];
+    public SetAsideReason = '';
+    /** The scheduled poll job's state, which decides what the button may do. Null when it could not be read. */
+    /**
+     * The most permissive state across the poll jobs (one per provider a job names, plus the jobs that
+     * name none). The button follows it; the operation then gates each provider by its own job.
+     */
+    public PollJob: PollJobState | null = null;
+    /** The poll jobs are not all in the same state, so a check treats providers differently. */
+    public PollJobsMixed = false;
 
     public readonly InvoiceColumns: MJOColumn<ExternalInvoicingWorklistRow>[] = [
-        { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `instalment ${r.InstallmentNumber}` : 'whole order') },
+        { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `installment ${r.InstallmentNumber}` : 'whole order') },
         { Key: 'CustomerName', Label: 'Customer' },
         { Key: 'CompanyName', Label: 'Billed by', HideBelow: 1000 },
         { Key: 'Amount', Label: 'Amount', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.Amount) },
@@ -240,7 +293,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             Label: 'State',
             Kind: 'chip',
             Width: '120px',
-            ChipClass: (r) => (r.State === 'Failed' ? 'mj-chip--danger' : r.State === 'InFlight' ? 'mj-chip--info' : 'mj-chip--outline'),
+            ChipClass: (r) => (r.State === 'Failed' ? 'mjo-chip--error' : r.State === 'InFlight' ? 'mjo-chip--info' : 'mjo-chip--outline'),
             Format: (r) => (r.State === 'InFlight' ? 'In flight' : r.State),
             Secondary: (r) => r.LastError ?? null,
         },
@@ -258,7 +311,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             ChipClass: (r) => DispositionChipClass(r.Disposition),
             Format: (r) => DispositionLabel(r.Disposition),
         },
-        { Key: 'Reason', Label: 'What happened', Format: (r) => r.Reason ?? '—' },
+        { Key: 'DispositionReason', Label: 'What happened', Format: (r) => r.DispositionReason ?? '—' },
     ];
 
     public Presets: MJOPreset[] = [];
@@ -287,6 +340,34 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         const reversals = this.Exceptions.filter((e) => e.Disposition === 'ReversalNeeded').length;
         if (!this.Exceptions.length) return 'Nothing waiting';
         return reversals ? `${reversals} needing a reversal` : 'Money the poll could not place';
+    }
+
+    public get ExceptionFootNote(): string | null {
+        if (!this.PaidBefore) return null;
+        return `${this.ShownExceptions.length} of ${this.Exceptions.length} dated before ${FormatDate(this.PaidBefore, { Short: true })}.`;
+    }
+
+    /** The poll job is off or missing: the server would refuse, so the button does not offer it. */
+    public get PollBlocked(): boolean {
+        return this.PollJob?.State === 'NotInstalled' || this.PollJob?.State === 'Inactive';
+    }
+
+    public get PollHint(): string {
+        switch (this.PollJob?.State) {
+            case 'NotInstalled':
+            case 'Inactive':
+                return `Recording payments is off: ${this.PollJob.Why}.`;
+            case 'Preview':
+                return this.PollJobsMixed
+                    ? 'No poll job is live, so a check here records nothing; providers whose job is off are skipped.'
+                    : 'The scheduled poll job is in Preview, so a check here records nothing.';
+            case 'Live':
+                return this.PollJobsMixed
+                    ? 'Payments are recorded only for providers whose poll job is live; the rest are previewed or skipped.'
+                    : 'Captured payments are not listed — only what the poll could not finish.';
+            default:
+                return 'The poll job could not be read; the server decides whether a check records anything.';
+        }
     }
 
     /* ── Actions ────────────────────────────────────────────────────────── */
@@ -334,6 +415,57 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         });
     }
 
+    public OnPaidBefore(day: string): void {
+        this.PaidBefore = day || null;
+        this.applyExceptionFilter();
+    }
+
+    /**
+     * Set the checked exceptions aside (bc-aidp-next-golive#449). Permanent: a payment set aside is never
+     * captured, even once its invoice is loaded. So the confirmation says what the bulk guard leaves out
+     * (`PlanSetAside`: recent Unmatched rows that may be waiting for an invoice, rows with cash recorded),
+     * and `SetAsideExternalPayments` applies the same guard again to what the database holds.
+     */
+    public async SetAsideChecked(): Promise<void> {
+        const reason = this.SetAsideReason.trim();
+        const rows = this.ShownExceptions.filter((r) => this.CheckedIDs.includes(r.ID));
+        if (this.Busy || !rows.length || !reason) return;
+        const plan = PlanSetAside(rows, { PaidBefore: this.PaidBefore });
+        if (!plan.Eligible.length) {
+            this.Notice = { Tone: 'warning', Text: `Nothing was set aside. ${plan.Excluded.map((x) => `${x.Row.ExternalPaymentRef}: ${x.Why}`).join(' ')}` };
+            this.cdr.detectChanges();
+            return;
+        }
+        const total = plan.Eligible.reduce((s, r) => s + Number(r.Amount), 0);
+        const unmatched = plan.Eligible.filter((r) => r.Disposition === 'Unmatched').length;
+        const proceed = await this.confirm.Confirm({
+            title: `Set aside ${plan.Eligible.length} payment${plan.Eligible.length === 1 ? '' : 's'}?`,
+            message: `${FormatMoney(total)} will stop showing here and will never be recorded as cash, even if the invoice is loaded later.`,
+            detail: [
+                unmatched ? `${unmatched} of them ${unmatched === 1 ? 'is' : 'are'} Unmatched: check none is waiting for an invoice still to be loaded.` : '',
+                plan.Excluded.length ? `${plan.Excluded.length} checked row${plan.Excluded.length === 1 ? ' is' : 's are'} left out: recent Unmatched payments, or ones with cash recorded.` : '',
+                `Reason: ${reason}`,
+            ]
+                .filter(Boolean)
+                .join(' '),
+            type: 'warning',
+            confirmText: 'Set aside',
+            cancelText: 'Not yet',
+        });
+        if (!proceed) return;
+
+        await this.run(async () => {
+            const result = await SetAsideExternalPayments({ IDs: plan.Eligible.map((r) => r.ID), Reason: reason, PaidBefore: this.PaidBefore });
+            this.CheckedIDs = [];
+            if (!result.Failed.length && !result.Excluded.length) this.SetAsideReason = '';
+            this.cdr.detectChanges();
+            const left = [...result.Excluded, ...result.Failed].map((x) => `${x.ExternalPaymentRef}: ${x.Why}`);
+            const skipped = plan.Excluded.length ? ` ${plan.Excluded.length} checked row(s) were left out by the bulk guard.` : '';
+            const text = `${result.SetAside.length} payment(s) set aside.${skipped}${left.length ? ` Not set aside: ${left.join(' ')}` : ''}`;
+            return { Tone: left.length ? ('warning' as const) : ('success' as const), Text: text };
+        });
+    }
+
     /** The sweep, by hand. Never retries a unit a person has to look at — the operation decides that. */
     public async RunSweep(): Promise<void> {
         if (this.Busy) return;
@@ -359,16 +491,39 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         });
     }
 
-    /** The poll, by hand. Reports ATTENTION as a warning, because that means money is still waiting. */
+    /**
+     * The poll, by hand, following the scheduled jobs: all off → not offered; none live → a preview,
+     * no confirmation since nothing is written; any live (or unreadable) → confirm, because this
+     * records cash. The operation gates each provider by its own job on the server, so this only
+     * decides what to ask and say.
+     * Reports ATTENTION as a warning, because that means money is still waiting.
+     */
     public async RunPoll(): Promise<void> {
-        if (this.Busy) return;
+        if (this.Busy || this.PollBlocked) return;
+        const preview = this.PollJob?.State === 'Preview';
+        if (!preview) {
+            const proceed = await this.confirm.Confirm({
+                title: 'Record payments now?',
+                message: 'This reads the payments the rail reported since the last poll and records each cleared one as cash against its orders.',
+                detail: 'The scheduled poll would do this on its own at its next run.',
+                type: 'warning',
+                confirmText: 'Record payments',
+                cancelText: 'Not yet',
+            });
+            if (!proceed) return;
+        }
+
         await this.run(async () => {
-            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: false });
+            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: preview });
             const out = result.Output;
             if (!result.Success || !out) {
                 return { Tone: 'error' as const, Text: result.ErrorMessage?.trim() || 'The payment check could not run.' };
             }
-            return { Tone: out.Success ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
+            if (preview && out.Success) {
+                return { Tone: 'success' as const, Text: `Preview only, nothing was recorded. ${out.Message ?? ''}`.trim() };
+            }
+            const clean = out.Success && out.ResultCode !== 'ATTENTION';
+            return { Tone: clean ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
         });
     }
 
@@ -390,7 +545,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
-        await Promise.all([this.loadInvoices(), this.loadExceptions()]);
+        await Promise.all([this.loadInvoices(), this.loadExceptions(), this.loadPollJob()]);
         this.cdr.detectChanges();
     }
 
@@ -427,6 +582,31 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             ResultType: 'simple',
         });
         this.Exceptions = result.Success ? (result.Results ?? []) : [];
+        this.applyExceptionFilter();
+        this.cdr.detectChanges();
+    }
+
+    /** Narrow to the "paid before" day, and drop checked rows that are no longer shown. */
+    private applyExceptionFilter(): void {
+        const cut = this.PaidBefore;
+        this.ShownExceptions = cut ? this.Exceptions.filter((r) => IsBefore(r.PaymentDate, cut)) : this.Exceptions;
+        const shown = new Set(this.ShownExceptions.map((r) => r.ID));
+        this.CheckedIDs = this.CheckedIDs.filter((id) => shown.has(id));
+    }
+
+    private async loadPollJob(): Promise<void> {
+        try {
+            const groups = ClassifyPollJobGroups(await LoadPollJobs());
+            const rank: Record<PollJobState['State'], number> = { NotInstalled: 0, Inactive: 1, Preview: 2, Live: 3 };
+            this.PollJob = groups.length
+                ? groups.reduce((best, g) => (rank[g.State] > rank[best.State] ? g : best))
+                : { State: 'NotInstalled', Why: 'no scheduled poll job is installed' };
+            this.PollJobsMixed = new Set(groups.map((g) => g.State)).size > 1;
+        } catch {
+            // A user who cannot read Scheduled Jobs still gets the button; the operation decides.
+            this.PollJob = null;
+            this.PollJobsMixed = false;
+        }
         this.cdr.detectChanges();
     }
 

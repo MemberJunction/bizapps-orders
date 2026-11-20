@@ -117,6 +117,16 @@ export interface CheckoutWidgetConfiguration {
      */
     autoRenewConsentText?: string;
     /**
+     * What a buyer who already holds a subscription their payment gateway bills (one with a gateway id,
+     * `ProviderSubscriptionID`, in this widget's company) is told when they try to buy another
+     * subscription. Such a purchase is refused, whatever the plan: Orders would extend or add a term
+     * the gateway knows nothing about, and the gateway would still charge at its own renewal, so the
+     * buyer would pay twice. A purchase with no subscription product is not refused. `{renewalDate}` is
+     * replaced with the last day of that subscription's latest term (the day the gateway charges), in
+     * US English. Unset, a neutral default is shown.
+     */
+    providerBilledSubscriptionMessage?: string;
+    /**
      * When true, the widget shows a promotion-code field and the anonymous draft accepts one code
      * (validated, priced and booked server-side by the promotion engine). Absent or false: codes are
      * refused.
@@ -154,6 +164,11 @@ export interface CheckoutWidgetConfiguration {
         required?: boolean;
         placeholder?: string;
         options?: Array<string | { label: string; value: string | number }>;
+        /**
+         * True when the field identifies one attendee, so the widget's "Copy primary info to all"
+         * leaves it alone; false to copy it. Unset, the widget decides from the field name.
+         */
+        perPerson?: boolean;
     }>;
     /**
      * Questions the buyer answers before paying, such as "How did you hear about us?". Not
@@ -189,8 +204,9 @@ export interface CheckoutWidgetConfiguration {
     allowedOrigins?: string[];
     /**
      * When true, the anonymous checkout edge requires a Cloudflare Turnstile token on
-     * session initialization and completion (the edge must also be configured with a
-     * Turnstile secret for verification to run — fail-closed when it is not).
+     * session initialization and completion. The edge must be configured with a Turnstile
+     * secret and site key (fail-closed when it is not); its 403 names the site key, and the
+     * built-in clients answer it by rendering the challenge and retrying.
      */
     requireTurnstile?: boolean;
     /**

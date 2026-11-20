@@ -10,6 +10,8 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
     Today,
+    ToISODate,
+    type DateCell,
     type mjBizAppsOrdersChargeTypeEntity,
     type mjBizAppsOrdersCustomerTaxExemptionEntity,
     type mjBizAppsOrdersProductEntity,
@@ -336,7 +338,7 @@ export class MJOProductsPageComponent implements OnInit {
                                     <td class="small">{{ row['TaxJurisdiction'] ?? '—' }}</td>
                                     <td class="small">{{ row['NexusType'] ?? '—' }}</td>
                                     <td>
-                                        <span class="mj-chip" [class]="nexusClass(row)">
+                                        <span class="mjo-chip" [class]="nexusClass(row)">
                                             {{ row['Status'] ?? '—' }}
                                         </span>
                                     </td>
@@ -381,7 +383,7 @@ export class MJOProductsPageComponent implements OnInit {
                                 <td class="small mono">{{ row['CertificateRef'] ?? '—' }}</td>
                                 <td class="small">{{ dateOf(row['CertificateExpiresAt']) }}</td>
                                 <td>
-                                    <span class="mj-chip" [class]="exemptionClass(row)">
+                                    <span class="mjo-chip" [class]="exemptionClass(row)">
                                         {{ row['Status'] ?? '—' }}
                                     </span>
                                 </td>
@@ -510,10 +512,10 @@ export class MJOChargesTaxPageComponent implements OnInit {
         Category: string;
         Rate: string;
     }> {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const live = (rate: Record<string, unknown>): boolean => {
-            const from = rate['EffectiveFrom'] ? String(rate['EffectiveFrom']).slice(0, 10) : null;
-            const to = rate['EffectiveTo'] ? String(rate['EffectiveTo']).slice(0, 10) : null;
+            const from = rate['EffectiveFrom'] ? ToISODate(rate['EffectiveFrom']) : null;
+            const to = rate['EffectiveTo'] ? ToISODate(rate['EffectiveTo']) : null;
             return (!from || from <= today) && (!to || to >= today);
         };
 
@@ -547,12 +549,13 @@ export class MJOChargesTaxPageComponent implements OnInit {
         return out;
     }
 
+    /** A `date` cell (CertificateExpiresAt), passed as it is — `String()` of a `Date` reads as no date. */
     protected dateOf(value: unknown): string {
-        return value ? FormatDate(String(value), { Short: true }) : '—';
+        return value ? FormatDate(value as DateCell, { Short: true }) : '—';
     }
 
     protected nexusClass(row: Record<string, unknown>): string {
-        return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+        return row['Status'] === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline';
     }
 
     /** An expired certificate stops exempting on its own date. */
@@ -578,7 +581,7 @@ export class MJOChargesTaxPageComponent implements OnInit {
         // on the entity, and the bracket access here means the compiler never saw the mismatch. The
         // old form produced 'Mon Aug 10', which is never less than an ISO day, so an EXPIRED
         // certificate kept its ordinary chip and nobody was told to collect a new one.
-        if (IsBefore(row.CertificateExpiresAt, Today())) return 'mj-chip--warning';
-        return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+        if (IsBefore(row.CertificateExpiresAt, Today())) return 'mjo-chip--warning';
+        return row['Status'] === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline';
     }
 }

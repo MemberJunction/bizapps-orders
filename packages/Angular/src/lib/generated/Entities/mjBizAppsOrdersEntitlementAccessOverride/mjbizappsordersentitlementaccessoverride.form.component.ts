@@ -15,7 +15,11 @@ export class mjBizAppsOrdersEntitlementAccessOverrideFormComponent extends BaseF
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'overrideDetails', sectionName: 'Override Details', isExpanded: true },
+            { sectionKey: 'request', sectionName: 'Request', isExpanded: true },
+            { sectionKey: 'decision', sectionName: 'Decision', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }

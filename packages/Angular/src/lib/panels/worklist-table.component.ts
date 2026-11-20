@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MJEmptyStateComponent, MJFilterChipComponent } from '@memberjunction/ng-ui-components';
 
 /** How a column's value is rendered. */
 export type MJOColumnKind =
@@ -11,7 +12,7 @@ export type MJOColumnKind =
     | 'number'
     /** Formatted date. */
     | 'date'
-    /** A `mj-chip`; `ChipClass` picks the variant. */
+    /** A `mjo-chip`; `ChipClass` picks the variant. */
     | 'chip'
     /** Monospace — document numbers and references. */
     | 'mono';
@@ -49,7 +50,7 @@ export interface MJOColumn<TRow = any> {
 export interface MJOPreset {
     Key: string;
     Label: string;
-    /** Shown as a count pill. Omit — or pass 0 — to render no pill. */
+    /** Shown in brackets after the label. Omit — or pass 0 — to show none. */
     Count?: number | null;
     Icon?: string;
 }
@@ -80,6 +81,13 @@ export type MJORow = any;
  * without admitting it; dropping the lowest-value columns at least tells the
  * truth about what is on screen.
  *
+ * TICKING IS SEPARATE FROM CLICKING. With `Selectable` on, each row gains a
+ * checkbox and the header a tick-all for the rows on screen; ticking changes
+ * `SelectedKeys` and emits `SelectionChanged`, and never fires `RowClicked`, so
+ * a page can keep a side panel on the clicked row while a batch builds up. The
+ * host owns the set: a preset change narrows what is on screen, not what is
+ * ticked, and `SelectableRow` lets it say which rows may be ticked at all.
+ *
  * ## Example
  *
  * ```html
@@ -95,7 +103,7 @@ export type MJORow = any;
 @Component({
     selector: 'mjo-worklist-table',
     standalone: true,
-    imports: [CommonModule],
+    imports: [CommonModule, MJFilterChipComponent, MJEmptyStateComponent],
     template: `
         @if (Presets.length || Searchable) {
             <div class="mjo-wl__toolbar">
@@ -113,20 +121,13 @@ export type MJORow = any;
                 @if (Presets.length) {
                     <div class="row wrap mjo-wl__presets" role="group" aria-label="Quick filters">
                         @for (preset of Presets; track preset.Key) {
-                            <button
-                                type="button"
-                                class="mj-filter-chip"
-                                [class.is-active]="preset.Key === ActivePreset"
-                                [attr.aria-pressed]="preset.Key === ActivePreset"
-                                (click)="PresetChanged.emit(preset.Key)">
-                                @if (preset.Icon) {
-                                    <i [class]="preset.Icon" aria-hidden="true"></i>
-                                }
-                                {{ preset.Label }}
-                                @if (preset.Count) {
-                                    <span class="count">{{ preset.Count }}</span>
-                                }
-                            </button>
+                            <!-- A zero count is left off, as before: "(0)" on a preset reads as an error. -->
+                            <mj-filter-chip
+                                [Label]="preset.Label"
+                                [Icon]="preset.Icon ?? null"
+                                [Count]="preset.Count || null"
+                                [Active]="preset.Key === ActivePreset"
+                                (Clicked)="PresetChanged.emit(preset.Key)" />
                         }
                     </div>
                 }
@@ -137,6 +138,17 @@ export type MJORow = any;
             <table class="mj-table">
                 <thead>
                     <tr>
+                        @if (Selectable) {
+                            <th class="mjo-wl__tick">
+                                <input
+                                    type="checkbox"
+                                    [checked]="allVisibleSelected()"
+                                    [indeterminate]="someVisibleSelected()"
+                                    [disabled]="!selectableRows().length"
+                                    (change)="toggleAll($any($event.target).checked)"
+                                    aria-label="Select every row shown">
+                            </th>
+                        }
                         @for (column of Columns; track column.Key) {
                             <th
                                 [class.num]="column.Kind === 'money' || column.Kind === 'number'"
@@ -166,13 +178,24 @@ export type MJORow = any;
                             [class.is-clickable]="RowClicked.observed"
                             [class.is-selected]="isSelected(row)"
                             (click)="onRowClick(row)">
+                            @if (Selectable) {
+                                <td class="mjo-wl__tick" (click)="$event.stopPropagation()">
+                                    @if (canSelect(row)) {
+                                        <input
+                                            type="checkbox"
+                                            [checked]="isTicked(row)"
+                                            (change)="toggle(row, $any($event.target).checked)"
+                                            [attr.aria-label]="rowLabel(row)">
+                                    }
+                                </td>
+                            }
                             @for (column of Columns; track column.Key) {
                                 <td
                                     [class.num]="column.Kind === 'money' || column.Kind === 'number'"
                                     [class.mono]="column.Kind === 'mono'"
                                     [class]="hideClass(column)">
                                     @if (column.Kind === 'chip') {
-                                        <span class="mj-chip" [class]="column.ChipClass?.(row) ?? ''">
+                                        <span class="mjo-chip" [class]="column.ChipClass?.(row) ?? ''">
                                             {{ display(row, column) }}
                                         </span>
                                     } @else {
@@ -186,12 +209,12 @@ export type MJORow = any;
                         </tr>
                     } @empty {
                         <tr>
-                            <td [attr.colspan]="Columns.length">
-                                <div class="mj-empty mjo-wl__empty">
-                                    <i [class]="EmptyIcon" aria-hidden="true"></i>
-                                    <div class="t">{{ EmptyTitle }}</div>
-                                    <div class="small">{{ EmptyHint }}</div>
-                                </div>
+                            <td [attr.colspan]="Columns.length + (Selectable ? 1 : 0)">
+                                <mj-empty-state
+                                    Size="compact"
+                                    [Icon]="EmptyIcon"
+                                    [Title]="EmptyTitle"
+                                    [Message]="EmptyHint" />
                             </td>
                         </tr>
                     }
@@ -215,11 +238,16 @@ export type MJORow = any;
             .mjo-wl__presets {
                 gap: 6px;
             }
-            .mjo-wl__empty {
-                padding: var(--mj-space-8);
-            }
             .mjo-wl__note {
                 margin-top: var(--mj-space-3);
+            }
+            .mjo-wl__tick {
+                width: 36px;
+                text-align: center;
+            }
+            .mjo-wl__tick input {
+                cursor: pointer;
+                margin: 0;
             }
 
             /* Columns drop in a stated order rather than the table scrolling
@@ -268,6 +296,21 @@ export class MJOWorklistTableComponent {
     /** The selected row's key, if the host tracks one. */
     @Input() SelectedKey: string | null = null;
 
+    /** Show a checkbox per row and a tick-all in the header. */
+    @Input() Selectable = false;
+
+    /** The ticked rows' keys. Owned by the host; the table only proposes changes through `SelectionChanged`. */
+    @Input() SelectedKeys: ReadonlyArray<string> = [];
+
+    /** Which rows may be ticked. Omit for every row. A row this refuses shows no checkbox. */
+    @Input() SelectableRow: ((row: MJORow) => boolean) | null = null;
+
+    /**
+     * What a row's checkbox is called to assistive technology, in words a person would use (a number
+     * and a name). Omit to label it with the row's key, which is only readable when the key is one.
+     */
+    @Input() RowLabel: ((row: MJORow) => string) | null = null;
+
     @Input() EmptyTitle = 'Nothing matches';
     @Input() EmptyHint = 'Try a different filter, or clear the search.';
     @Input() EmptyIcon = 'fa-solid fa-magnifying-glass';
@@ -280,6 +323,9 @@ export class MJOWorklistTableComponent {
     @Output() SortChanged = new EventEmitter<string>();
     @Output() RowClicked = new EventEmitter<MJORow>();
 
+    /** The full set of ticked keys after a change — never a delta, so the host cannot drift from the table. */
+    @Output() SelectionChanged = new EventEmitter<string[]>();
+
     protected trackRow(index: number, row: MJORow): unknown {
         return row[this.RowKey] ?? index;
     }
@@ -290,6 +336,59 @@ export class MJOWorklistTableComponent {
 
     protected onRowClick(row: MJORow): void {
         if (this.RowClicked.observed) this.RowClicked.emit(row);
+    }
+
+    protected keyOf(row: MJORow): string {
+        return String(row[this.RowKey]);
+    }
+
+    protected rowLabel(row: MJORow): string {
+        return this.RowLabel ? this.RowLabel(row) : `Select ${row[this.RowKey] ?? ''}`;
+    }
+
+    protected canSelect(row: MJORow): boolean {
+        return this.SelectableRow ? this.SelectableRow(row) : true;
+    }
+
+    protected isTicked(row: MJORow): boolean {
+        return this.SelectedKeys.includes(this.keyOf(row));
+    }
+
+    /** The rows on screen that may be ticked. */
+    protected selectableRows(): MJORow[] {
+        return this.Rows.filter((row) => this.canSelect(row));
+    }
+
+    protected allVisibleSelected(): boolean {
+        const rows = this.selectableRows();
+        return rows.length > 0 && rows.every((row) => this.isTicked(row));
+    }
+
+    protected someVisibleSelected(): boolean {
+        const rows = this.selectableRows();
+        return rows.some((row) => this.isTicked(row)) && !rows.every((row) => this.isTicked(row));
+    }
+
+    protected toggle(row: MJORow, ticked: boolean): void {
+        const key = this.keyOf(row);
+        const next = new Set(this.SelectedKeys);
+        if (ticked) next.add(key);
+        else next.delete(key);
+        this.SelectionChanged.emit([...next]);
+    }
+
+    /**
+     * Tick or untick every selectable row ON SCREEN. Rows a preset has hidden keep their state: a
+     * tick-all that silently cleared ticks the user could not see would be a surprise either way.
+     */
+    protected toggleAll(ticked: boolean): void {
+        const visible = this.selectableRows().map((row) => this.keyOf(row));
+        const next = new Set(this.SelectedKeys);
+        for (const key of visible) {
+            if (ticked) next.add(key);
+            else next.delete(key);
+        }
+        this.SelectionChanged.emit([...next]);
     }
 
     protected hideClass(column: MJOColumn): string {

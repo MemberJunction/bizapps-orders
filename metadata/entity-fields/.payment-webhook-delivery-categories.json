@@ -1,0 +1,200 @@
+[
+  {
+    "_comments": [
+      "Sections for the Payment Webhook Deliveries form (#474). CodeGen ran without its AI layout pass when the entity was created, so every field landed in the generic Details panel; these set each field a Category. GeneratedFormSection must say Category too, or CodeGen still puts the field in Details."
+    ],
+    "fields": {
+      "Category": "Delivery Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=PaymentProviderID"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.565Z",
+      "checksum": "441586d59443557a2b10f0a1a8d34c35a524fd31e43f53b42f3c36ab62386d3d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderEventID"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.588Z",
+      "checksum": "441586d59443557a2b10f0a1a8d34c35a524fd31e43f53b42f3c36ab62386d3d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=EventKind"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.617Z",
+      "checksum": "441586d59443557a2b10f0a1a8d34c35a524fd31e43f53b42f3c36ab62386d3d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Delivery Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=OccurredAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.653Z",
+      "checksum": "441586d59443557a2b10f0a1a8d34c35a524fd31e43f53b42f3c36ab62386d3d"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment References",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=PaymentIntentID"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.683Z",
+      "checksum": "b5ee8544b206862424ddc685c680d6ee96ddc4945e2e7dc693c34ebabd59bcb3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment References",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderIntentID"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.709Z",
+      "checksum": "b5ee8544b206862424ddc685c680d6ee96ddc4945e2e7dc693c34ebabd59bcb3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment References",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderChargeID"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.734Z",
+      "checksum": "b5ee8544b206862424ddc685c680d6ee96ddc4945e2e7dc693c34ebabd59bcb3"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Outcome",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=Outcome"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.758Z",
+      "checksum": "a7a7a61dd05bcc323599c24ce588c76cb5ad2c47bdcd907c448f42d9889b26de"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Outcome",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ReasonCode"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.785Z",
+      "checksum": "a7a7a61dd05bcc323599c24ce588c76cb5ad2c47bdcd907c448f42d9889b26de"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Outcome",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=Reason"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.808Z",
+      "checksum": "a7a7a61dd05bcc323599c24ce588c76cb5ad2c47bdcd907c448f42d9889b26de"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Receipt History",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=FirstReceivedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.832Z",
+      "checksum": "cb5559b6e038f5ea59a65763f47cfb3c3ac2e82c1d5e923544ae743881dd5a08"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Receipt History",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=LastReceivedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.856Z",
+      "checksum": "cb5559b6e038f5ea59a65763f47cfb3c3ac2e82c1d5e923544ae743881dd5a08"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Receipt History",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=DeliveryCount"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.881Z",
+      "checksum": "cb5559b6e038f5ea59a65763f47cfb3c3ac2e82c1d5e923544ae743881dd5a08"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.906Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T00:10:32.931Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  }
+]

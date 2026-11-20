@@ -24,6 +24,8 @@
  *   DOC:  plans/archive/bizapps-orders-master.md D4 (GiftCard product type), D27 (beneficiary), D44
  */
 
+import { ResolveLineParty } from './LineParty.js';
+
 /** The ProductType.Code that marks a product as a gift card. Seeded per D4. */
 export const GIFT_CARD_PRODUCT_TYPE_CODE = 'GiftCard';
 
@@ -41,8 +43,10 @@ export interface GiftCardLineFacts {
     ShipToOrganizationID: string | null;
 }
 
-/** The order-level fallbacks for whoever the card is for. */
+/** The order-level fallbacks for whoever the card is for: the ship-to, then the bill-to. */
 export interface GiftCardOrderFacts {
+    ShipToPersonID: string | null;
+    ShipToOrganizationID: string | null;
     BillToPersonID: string | null;
     BillToOrganizationID: string | null;
 }
@@ -105,12 +109,11 @@ export function PlanGiftCardIssuance(
     const faceValue = Money(Number(line.UnitPrice ?? 0));
     if (!(faceValue > 0)) return EMPTY('NonPositiveFaceValue');
 
-    // WHO THE CARD IS FOR (D27). A gift card is the archetypal case of a line bought by one person
-    // for another, so the line's ship-to wins when stated. The order's bill-to is the fallback for
-    // the ordinary case of buying a card for yourself — NOT a default that overrides an explicit
-    // recipient, which is why each side falls back independently.
-    const beneficiaryPersonID = line.ShipToPersonID ?? order.BillToPersonID ?? null;
-    const beneficiaryOrganizationID = line.ShipToOrganizationID ?? order.BillToOrganizationID ?? null;
+    // WHO THE CARD IS FOR (D27, D61). A gift card is the archetypal case of a line bought by one
+    // person for another, so the line's ship-to wins when stated, then the order's ship-to, and only
+    // then the bill-to — the ordinary case of buying a card for yourself. The same fallback as the
+    // subscription holder and the entitlement beneficiary, so one order never names two recipients.
+    const { PersonID: beneficiaryPersonID, OrganizationID: beneficiaryOrganizationID } = ResolveLineParty(line, order);
 
     const cards: PlannedGiftCard[] = [];
     for (let i = 1; i <= qty; i++) {
@@ -133,6 +136,34 @@ export function PlanGiftCardVoid(reversalQuantity: number, issuedCount: number):
     // Never void more than were issued. A partial return of a three-card line voids that many, and
     // returning the whole line voids the lot.
     return Math.min(Math.floor(returned), issuedCount);
+}
+
+/**
+ * Why a gift-card return may not book, or null when it may (#830).
+ *
+ * A return credits the customer the reversal line's net, which mirrors the origin's full price, but
+ * it can only take back what the cards it voids still hold. A 90 card spent down to 30 returned
+ * for 90 hands back 60 the customer already spent; a card spent to zero (Depleted, so never voided)
+ * returned at all hands back the lot. So the credit may not exceed the remaining balances of the
+ * cards being voided. A stated amount is how a return settles for what is left, as for any other
+ * negotiated return.
+ *
+ * @param credit           the reversal line's net, any sign; its magnitude is what is credited
+ * @param voidedBalances   the remaining balance of each card the return voids
+ * @param returnedCards    how many cards the line sends back
+ */
+export function GiftCardReturnRefusal(credit: number, voidedBalances: number[], returnedCards: number, lineLabel: string): string | null {
+    const credited = Money(Math.abs(Number(credit ?? 0)));
+    const remaining = Money(voidedBalances.reduce((sum, b) => sum + Math.max(0, Number(b ?? 0)), 0));
+    if (credited <= remaining) return null;
+    const unvoidable = Math.max(0, Math.floor(Math.abs(returnedCards)) - voidedBalances.length);
+    return (
+        `${lineLabel} returns gift cards that hold ${remaining.toFixed(2)} between them but credits ${credited.toFixed(2)}. ` +
+        (unvoidable > 0 ? `${unvoidable} of the returned cards ${unvoidable === 1 ? 'is' : 'are'} already spent or voided. ` : '') +
+        (remaining > 0
+            ? `A return can only take back what the cards still hold: state the line's amount as ${remaining.toFixed(2)} or less.`
+            : `They hold nothing to take back, so they cannot be returned for a credit.`)
+    );
 }
 
 /**

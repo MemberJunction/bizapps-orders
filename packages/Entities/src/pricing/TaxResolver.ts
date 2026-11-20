@@ -1,5 +1,5 @@
 /**
- * TaxResolver — turn a ship-to address into the tax charges that actually apply (plan D72).
+ * TaxResolver — turn a ship-to address into the tax charges that actually apply (plan D73).
  *
  * WHAT THIS REPLACES
  * Charges could already compute tax, but the RATE came from the caller. That proves the arithmetic

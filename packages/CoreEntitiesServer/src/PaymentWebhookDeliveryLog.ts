@@ -1,0 +1,226 @@
+/**
+ * PaymentWebhookDeliveryLog — the durable record of every verified webhook delivery (#474).
+ *
+ * Before this, a delivery the handler chose not to apply left only a log line: a payment taken from
+ * the gateway's dashboard, an event kind Orders does not act on, a body with no event id. Nothing in
+ * the database showed the event had arrived, so monitoring could not see it.
+ *
+ * ONE ROW PER EVENT, NOT PER DELIVERY. The gateway's event id is unique per provider; a redelivery
+ * updates the row (`LastReceivedAt`, `DeliveryCount`, the latest outcome) instead of adding one. A
+ * verified body with no event id cannot be matched to anything, so each one gets its own row.
+ *
+ * ONLY VERIFIED DELIVERIES. The route is unauthenticated (D19). Recording a request whose signature
+ * failed would let any caller write rows here, so the handler records only after the signature check.
+ *
+ * RECORDING NEVER CHANGES THE ANSWER. A failure to write the row is logged and the gateway gets the
+ * same response it would have got without this module: the payment notification matters more than
+ * its audit row, and a 500 caused by the audit row alone would make the gateway redeliver an event
+ * that was applied correctly.
+ *
+ * ITS OWN PROVIDER (#939). The row is written on an isolated provider (`WithIsolatedProvider`). On
+ * the shared `Metadata.Provider` the insert ran inside whatever transaction another request had
+ * open on it at that moment, and was committed or rolled back with that request's work. When the
+ * page finished the same purchase in the same second, the webhook answered 2xx and left no row, so
+ * the gateway did not redeliver and nothing showed the event had been applied. On its own instance
+ * the insert commits by itself.
+ *
+ * CONNECTS TO:
+ *   ROUTE:  ./PaymentWebhookHandler.ts
+ *   TABLE:  __mj_BizAppsOrders.PaymentWebhookDelivery
+ */
+import {
+    LogError,
+    RunView,
+    type IMetadataProvider,
+    type IRunViewProvider,
+    type UserInfo,
+} from '@memberjunction/core';
+import { mjBizAppsOrdersPaymentWebhookDeliveryEntity } from '@mj-biz-apps/orders-entities';
+import type { WebhookAction, WebhookReasonCode } from './PaymentProviderBehavior.js';
+import { EscapeSQLString } from './sql-guards.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
+
+const DELIVERY_ENTITY = 'MJ_BizApps_Orders: Payment Webhook Deliveries';
+
+/** `PaymentWebhookDelivery.Outcome` — the CHECK-constrained set. */
+export type WebhookDeliveryOutcome = mjBizAppsOrdersPaymentWebhookDeliveryEntity['Outcome'];
+
+/**
+ * `PaymentWebhookDelivery.ReasonCode`. Short and stable so a view can filter on it; the words live
+ * in `Reason`.
+ */
+export type WebhookDeliveryReasonCode =
+    | WebhookReasonCode
+    | 'unreadable'
+    | 'apply_failed'
+    /** An applied `charge.refunded` event whose refund Orders could not book (#872). */
+    | 'refund_not_booked'
+    /** A subscription event (E3) for a gateway subscription no Orders subscription records, on a mapped price. */
+    | 'unknown_subscription'
+    /** A subscription event (E3) for a gateway subscription on a price Orders does not sell here: not ours. */
+    | 'not_ours'
+    /** A subscription event (E3) whose sync failed; the gateway redelivers. */
+    | 'sync_failed';
+
+/**
+ * An applied `charge.refunded` event whose refund Orders could not book (#872). The event is still
+ * `Applied` (the gateway must not resend it, and the money has already left), so this code is what
+ * lets the "Not Applied" view list it next to the deliveries that need attention.
+ */
+export const REFUND_NOT_BOOKED_REASON_CODE = 'refund_not_booked' satisfies WebhookDeliveryReasonCode;
+
+/** What the handler decided about one delivery. */
+export interface WebhookDeliveryRecord {
+    PaymentProviderID: string;
+    ProviderEventID?: string | null;
+    EventKind?: string | null;
+    /** Our `PaymentIntent.ID`, when the event names an intent we opened. */
+    PaymentIntentID?: string | null;
+    ProviderIntentID?: string | null;
+    ProviderChargeID?: string | null;
+    Outcome: WebhookDeliveryOutcome;
+    ReasonCode?: WebhookDeliveryReasonCode | null;
+    Reason?: string | null;
+    OccurredAt?: Date | null;
+}
+
+/** The decision's action as a stored outcome. */
+export function DeliveryOutcomeFor(action: WebhookAction): WebhookDeliveryOutcome {
+    switch (action) {
+        case 'Apply':
+            return 'Applied';
+        case 'AlreadyApplied':
+            return 'AlreadyApplied';
+        case 'Ignore':
+            return 'Ignored';
+        case 'Reject':
+            return 'Rejected';
+    }
+}
+
+/** The fields of an earlier delivery of the same event the handler reads. */
+export interface PriorDelivery {
+    ID: string;
+    Outcome: WebhookDeliveryOutcome;
+}
+
+/**
+ * Whether the recorded row shows this event was applied by an earlier delivery.
+ *
+ * A redelivery rewrites the row's outcome to `AlreadyApplied`, so that outcome counts as applied too:
+ * otherwise only the first redelivery is recognized from the row and every later one falls through to
+ * the intent stamp and the event-order rule (#873).
+ */
+export function PriorDeliveryWasApplied(prior: Pick<PriorDelivery, 'Outcome'> | null | undefined): boolean {
+    return prior?.Outcome === 'Applied' || prior?.Outcome === 'AlreadyApplied';
+}
+
+/**
+ * The row already recorded for this event, if any. Null for an event with no id.
+ *
+ * Read before the decision so the duplicate check is exact: an event this table records as applied
+ * is a duplicate even when a later event has since replaced the id stamped on the intent.
+ */
+export async function FindPriorDelivery(
+    paymentProviderID: string,
+    providerEventID: string | null | undefined,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<PriorDelivery | null> {
+    if (!providerEventID) return null;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const result = await rv.RunView<PriorDelivery>(
+        {
+            EntityName: DELIVERY_ENTITY,
+            ExtraFilter:
+                `PaymentProviderID = '${EscapeSQLString(paymentProviderID)}' AND ` +
+                `ProviderEventID = '${EscapeSQLString(providerEventID)}'`,
+            Fields: ['ID', 'Outcome'],
+            ResultType: 'simple',
+            // A redelivery can arrive moments after the first delivery wrote its row.
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!result.Success) {
+        throw new Error(`Could not read earlier deliveries of event ${providerEventID}: ${result.ErrorMessage}`);
+    }
+    return result.Results?.[0] ?? null;
+}
+
+/**
+ * Write or update the row for one delivery, on its own provider. Never throws — see the header.
+ *
+ * @param prior the row `FindPriorDelivery` returned for this event, so the common case is one write
+ * @param provider the caller's provider; the row is written on an independent instance of it. Only a
+ *   provider with no `CreateIndependentInstance` is written on directly; when making the instance
+ *   throws, the error is logged and no row is written
+ */
+export async function RecordWebhookDelivery(
+    record: WebhookDeliveryRecord,
+    prior: PriorDelivery | null,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    try {
+        const failure = await WithIsolatedProvider(async (own): Promise<string | null> => {
+            const first = await saveDelivery(record, prior, own, user);
+            if (first === null) return null;
+            // Two deliveries of the same new event raced and the other one inserted first; the unique
+            // key refused ours. Update the row it wrote.
+            const raced = await FindPriorDelivery(record.PaymentProviderID, record.ProviderEventID, own, user);
+            if (!prior && raced) {
+                const retry = await saveDelivery(record, raced, own, user);
+                if (retry === null) return null;
+                return `${first}; then, as an update of ${raced.ID}: ${retry}`;
+            }
+            return first;
+        }, provider);
+        if (failure === null) return;
+        LogError(`Could not record webhook delivery ${record.ProviderEventID ?? '(no event id)'} as ${record.Outcome}: ${failure}`);
+    } catch (err) {
+        LogError(
+            `Could not record webhook delivery ${record.ProviderEventID ?? '(no event id)'} as ${record.Outcome}: ` +
+                `${err instanceof Error ? err.message : String(err)}`,
+        );
+    }
+}
+
+/** Write the row. Null when it saved, otherwise why it did not, for the log line. */
+async function saveDelivery(
+    record: WebhookDeliveryRecord,
+    prior: PriorDelivery | null,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const row = await provider.GetEntityObject<mjBizAppsOrdersPaymentWebhookDeliveryEntity>(DELIVERY_ENTITY, user);
+    const now = new Date();
+    if (prior) {
+        if (!(await row.Load(prior.ID))) return `the earlier row ${prior.ID} could not be read`;
+        row.DeliveryCount = (row.DeliveryCount ?? 0) + 1;
+    } else {
+        row.NewRecord();
+        row.PaymentProviderID = record.PaymentProviderID;
+        row.ProviderEventID = record.ProviderEventID ?? null;
+        row.FirstReceivedAt = now;
+        row.DeliveryCount = 1;
+    }
+    row.LastReceivedAt = now;
+    // A duplicate of an event whose refund was not booked keeps that reason: the redelivery does not
+    // re-run the booking, so the refund is still unbooked and the row must stay on the view (#872).
+    const keepRefundFlag =
+        prior != null && record.Outcome === 'AlreadyApplied' && row.ReasonCode === REFUND_NOT_BOOKED_REASON_CODE;
+    row.Outcome = record.Outcome;
+    if (!keepRefundFlag) {
+        row.ReasonCode = record.ReasonCode ?? null;
+        row.Reason = record.Reason ? record.Reason.slice(0, 1000) : null;
+    }
+    // Facts about the event only ever fill in; a later delivery that knows less does not erase them.
+    if (record.EventKind) row.EventKind = record.EventKind;
+    if (record.PaymentIntentID) row.PaymentIntentID = record.PaymentIntentID;
+    if (record.ProviderIntentID) row.ProviderIntentID = record.ProviderIntentID;
+    if (record.ProviderChargeID) row.ProviderChargeID = record.ProviderChargeID;
+    if (record.OccurredAt) row.OccurredAt = record.OccurredAt;
+    if (await row.Save()) return null;
+    return row.LatestResult?.CompleteMessage || 'the save gave no reason';
+}

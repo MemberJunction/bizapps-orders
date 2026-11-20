@@ -15,7 +15,10 @@ export class mjBizAppsOrdersDimensionDefaultFormComponent extends BaseFormCompon
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true }
+            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'defaultAssignment', sectionName: 'Default Assignment', isExpanded: true },
+            { sectionKey: 'statusAndPeriod', sectionName: 'Status and Period', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
         ]);
     }
 }

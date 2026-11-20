@@ -2,16 +2,19 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, OnInit, i
 import { CommonModule } from '@angular/common';
 import { CompositeKey, RunQuery, RunView, type IMetadataProvider, type IRunQueryProvider, type IRunViewProvider } from '@memberjunction/core';
 import { NavigationService } from '@memberjunction/ng-shared';
-import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent, BaseFormsModule } from '@memberjunction/ng-base-forms';
 import {
     MJCardGridComponent,
     MJCardComponent,
     MJCardActionsDirective,
     MJCardToolsDirective,
     MJCardFooterDirective,
+    MJEmptyStateComponent,
 } from '@memberjunction/ng-ui-components';
+import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { FormatMoney } from './money-format';
+import { FormatDate, FormatMoney } from './money-format';
+import { Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import type { PartyKind } from '../form-panels/party-order-stats';
 
 interface OrderRow {
@@ -61,6 +64,9 @@ interface TimelineItem {
     standalone: true,
     imports: [
         CommonModule,
+        BaseFormsModule,
+        SharedGenericModule,
+        MJEmptyStateComponent,
         MJCardGridComponent,
         MJCardComponent,
         MJCardToolsDirective,
@@ -70,8 +76,7 @@ interface TimelineItem {
         <div class="mjo-overview">
             @if (Loading) {
                 <div class="mjo-overview__loading">
-                    <div class="mjo-overview__spinner"></div>
-                    <span>Loading account overview &amp; order intelligence...</span>
+                    <mj-loading text="Loading account overview &amp; order intelligence..." size="small"></mj-loading>
                 </div>
             } @else {
                 <mj-card-grid [(MaximizedCardId)]="MaximizedCardId" [Columns]="2" Gap="var(--mj-space-4, 16px)">
@@ -100,10 +105,10 @@ interface TimelineItem {
                                     }
                                 </div>
                             } @else {
-                                <div class="mjo-chart__empty">
-                                    <i class="fa-solid fa-chart-line"></i>
-                                    <span>No completed orders in the last 6 months</span>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    Icon="fa-solid fa-chart-line"
+                                    Message="No completed orders in the last 6 months" />
                             }
                         </div>
 
@@ -136,7 +141,7 @@ interface TimelineItem {
                         <div class="mjo-sub-list">
                             @if (Subscriptions.length > 0) {
                                 @for (sub of Subscriptions; track sub.ID) {
-                                    <div class="mjo-sub-item" (click)="OnSubClick(sub.ID)">
+                                    <div class="mjo-sub-item" mjRecordLink [EntityName]="SubscriptionEntity" [RecordID]="sub.ID" [DisplayName]="sub.Product || sub.SubscriptionType || ('Subscription #' + sub.SubscriptionNumber)" [HandleClick]="false" (click)="OnSubClick(sub.ID)">
                                         <div class="mjo-sub-item__info">
                                             <h4>{{ sub.Product || sub.SubscriptionType || ('Subscription #' + sub.SubscriptionNumber) }}</h4>
                                             <p>
@@ -155,10 +160,10 @@ interface TimelineItem {
                                     </div>
                                 }
                             } @else {
-                                <div class="mjo-empty-state" style="padding: 20px 12px;">
-                                    <i class="fa-solid fa-rotate"></i>
-                                    <p>No active subscriptions on file for this {{ Mode }}.</p>
-                                </div>
+                                <mj-empty-state
+                                    Size="inline"
+                                    Icon="fa-solid fa-rotate"
+                                    [Message]="'No active subscriptions on file for this ' + Mode + '.'" />
                             }
                         </div>
 
@@ -205,7 +210,7 @@ interface TimelineItem {
                                     </thead>
                                     <tbody>
                                         @for (ord of Orders; track ord.ID) {
-                                            <tr (click)="OnOrderClick(ord.ID)">
+                                            <tr mjRecordLink [EntityName]="OrderHeaderEntity" [RecordID]="ord.ID" [DisplayName]="ord.OrderNumber" [HandleClick]="false" (click)="OnOrderClick(ord.ID)">
                                                 <td class="mjo-table__order-num" [title]="ord.OrderNumber">{{ ord.OrderNumber }}</td>
                                                 <td>{{ FormatDate(ord.OrderDate) }}</td>
                                                 <td class="mjo-table__amount">{{ FormatCurrency(ord.TotalGross) }}</td>
@@ -228,10 +233,10 @@ interface TimelineItem {
                                 </table>
                             </div>
                         } @else {
-                            <div class="mjo-empty-state">
-                                <i class="fa-solid fa-shopping-cart"></i>
-                                <p>No orders on file yet for this {{ Mode }}.</p>
-                            </div>
+                            <mj-empty-state
+                                Size="compact"
+                                Icon="fa-solid fa-shopping-cart"
+                                [Message]="'No orders on file yet for this ' + Mode + '.'" />
                         }
                     </mj-card>
 
@@ -246,6 +251,11 @@ interface TimelineItem {
                                 @for (item of Timeline; track item.Title + item.TimeAgo) {
                                     <div class="mjo-timeline__item"
                                          [class.mjo-timeline__item--clickable]="!!item.EntityName && !!item.RecordID"
+                                         mjRecordLink
+                                         [EntityName]="item.EntityName ?? ''"
+                                         [RecordID]="item.RecordID ?? ''"
+                                         [DisplayName]="item.Title"
+                                         [HandleClick]="false"
                                          (click)="OnTimelineItemClick(item)">
                                         <div class="mjo-timeline__icon mjo-timeline__icon--{{ item.Tone }}">
                                             <i [class]="item.Icon"></i>
@@ -263,10 +273,10 @@ interface TimelineItem {
                                     </div>
                                 }
                             } @else {
-                                <div class="mjo-empty-state">
-                                    <i class="fa-solid fa-bolt-lightning"></i>
-                                    <p>No recent touchpoints recorded.</p>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    Icon="fa-solid fa-bolt-lightning"
+                                    Message="No recent touchpoints recorded." />
                             }
                         </div>
                     </mj-card>
@@ -298,26 +308,13 @@ interface TimelineItem {
             font-size: 13px;
         }
 
-        .mjo-overview__spinner {
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--mj-border-default);
-            border-top-color: var(--mj-brand-primary, #38bdf8);
-            border-radius: 50%;
-            animation: mjo-spin 0.8s linear infinite;
-        }
-
-        @keyframes mjo-spin {
-            to { transform: rotate(360deg); }
-        }
-
         .mjo-card__count {
             font-size: 11.5px;
             font-weight: 700;
             color: var(--mj-text-muted);
             background: var(--mj-bg-surface-sunken);
             padding: 2px 8px;
-            border-radius: var(--mj-radius-pill, 9999px);
+            border-radius: var(--mj-radius-full);
         }
 
         /* ── Chart ── */
@@ -394,18 +391,6 @@ interface TimelineItem {
 
         .mjo-chart__bar-group:hover .mjo-chart__tooltip {
             opacity: 1;
-        }
-
-        .mjo-chart__empty {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            color: var(--mj-text-muted);
-            font-size: 12px;
         }
 
         .mjo-chart__footer {
@@ -546,13 +531,13 @@ interface TimelineItem {
         }
 
         .mjo-table tr:hover td {
-            background: var(--mj-bg-hover, rgba(255, 255, 255, 0.04));
+            background: var(--mj-bg-surface-hover);
             color: var(--mj-text-primary);
             cursor: pointer;
         }
 
         .mjo-table__order-num {
-            font-family: var(--mj-font-mono, monospace);
+            font-family: var(--mj-font-family-mono);
             font-weight: 600;
             color: var(--mj-brand-primary, #38bdf8);
             max-width: 140px;
@@ -562,7 +547,7 @@ interface TimelineItem {
         }
 
         .mjo-table__amount {
-            font-family: var(--mj-font-mono, monospace);
+            font-family: var(--mj-font-family-mono);
             font-weight: 700;
             color: var(--mj-text-primary);
         }
@@ -693,7 +678,7 @@ interface TimelineItem {
             gap: 4px;
         }
 
-        .mjo-badge--pill { border-radius: var(--mj-radius-pill, 9999px); }
+        .mjo-badge--pill { border-radius: var(--mj-radius-full); }
         .mjo-badge--green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
         .mjo-badge--blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
         .mjo-badge--amber { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
@@ -726,20 +711,6 @@ interface TimelineItem {
         .mjo-btn--ghost:hover {
             color: var(--mj-text-primary);
         }
-
-        .mjo-empty-state {
-            padding: 32px 16px;
-            text-align: center;
-            color: var(--mj-text-muted);
-            font-size: 12px;
-        }
-
-        .mjo-empty-state i {
-            font-size: 24px;
-            margin-bottom: 8px;
-            opacity: 0.5;
-            display: block;
-        }
     `]
 })
 export class PartyOrdersOverviewComponent implements OnInit {
@@ -751,6 +722,9 @@ export class PartyOrdersOverviewComponent implements OnInit {
 
     private navigationService = inject(NavigationService, { optional: true });
     private cdr = inject(ChangeDetectorRef);
+
+    public readonly OrderHeaderEntity = MJO_ENTITIES.OrderHeader;
+    public readonly SubscriptionEntity = MJO_ENTITIES.Subscription;
 
     public Loading = true;
     public MaximizedCardId: string | null = null;
@@ -887,17 +861,19 @@ export class PartyOrdersOverviewComponent implements OnInit {
     private ProcessSpendTrajectory(months?: MonthSpend[]): void {
         const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const fullNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-        const now = new Date();
+        // The window ends at the BUSINESS month, not the browser's: at 10 PM Central on Oct 31 a
+        // viewer in Pune is already in November, and the chart slid a month ahead of the books.
+        const [todayYear, todayMonth] = Today().split('-').map(Number);
 
         const monthBuckets: MonthSpend[] = [];
         const monthMap = new Map<string, MonthSpend>();
 
         for (let i = 5; i >= 0; i--) {
-            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            const d = new Date(Date.UTC(todayYear, todayMonth - 1 - i, 1));
+            const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
             const item: MonthSpend = {
-                MonthLabel: `${fullNames[d.getMonth()]} ${d.getFullYear()}`,
-                MonthShort: monthNames[d.getMonth()],
+                MonthLabel: `${fullNames[d.getUTCMonth()]} ${d.getUTCFullYear()}`,
+                MonthShort: monthNames[d.getUTCMonth()],
                 Amount: 0,
                 HeightPct: 4,
                 IsPeak: false,
@@ -919,10 +895,11 @@ export class PartyOrdersOverviewComponent implements OnInit {
         // Aggregate orders to ensure live correctness for current and previous months
         if (this.Orders && this.Orders.length > 0) {
             this.Orders.forEach(o => {
-                if (!o.OrderDate) return;
-                const d = o.OrderDate instanceof Date ? o.OrderDate : new Date(o.OrderDate);
-                if (isNaN(d.getTime())) return;
-                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                // `OrderDate` is a `date` column: its month is read off the day it names (UTC parts
+                // of a driver Date, or the ISO string), never local getters — an order dated Oct 1
+                // filed under September for every viewer west of Greenwich.
+                const key = ToISODate(o.OrderDate)?.slice(0, 7);
+                if (!key) return;
                 const found = monthMap.get(key);
                 if (found) {
                     const amt = Number(o.TotalGross) || 0;
@@ -1050,10 +1027,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
     }
 
     public FormatDate(d: Date | string | null | undefined): string {
-        if (!d) return '—';
-        const date = d instanceof Date ? d : new Date(d);
-        if (isNaN(date.getTime())) return '—';
-        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        return FormatDate(d);
     }
 
     public GetPaymentStatus(ord: OrderRow): string {

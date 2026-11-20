@@ -482,6 +482,41 @@ export const ChargeChecks: NamedCheck[] = [
         AssertEqual(Number(all.N), 1, "one charge row, not two");
       }),
   },
+  {
+    Id: "charges.CH15",
+    Name: "CH15: shipping requested on a draft is charged once when the same order is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+
+        // A server caller that saves a draft and confirms the same object. The request is consumed
+        // by the save that applied it; restated on the confirm, it was written a second time and
+        // booking credited the shipping twice.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          Charges: [{ Code: "Shipping", Amount: 25 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const r = await TxOne<{ N: number; Amount: number; OnLines: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N, ISNULL(SUM(c.Amount),0) AS Amount,
+                  (SELECT ISNULL(SUM(ChargeAmount),0) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${built.Order.ID}') AS OnLines
+             FROM ${ORDERS_SCHEMA}.OrderCharge c
+             JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+            WHERE c.OrderHeaderID='${built.Order.ID}' AND t.Code='Shipping'`,
+        );
+        AssertEqual(Number(r.N), 1, "one shipping charge row");
+        AssertEqual(Number(r.Amount), 25, "for the amount requested");
+        AssertEqual(Number(r.OnLines), 25, "and the line carries it once");
+      }),
+  },
 ];
 
 for (const check of ChargeChecks) {

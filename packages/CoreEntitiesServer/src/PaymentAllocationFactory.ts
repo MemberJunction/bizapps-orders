@@ -48,6 +48,14 @@
  * A MISSING PAIR IS FATAL. There is no fallback account, because a guessed intercompany account
  * still balances — the misposting would be invisible until two entities' books disagree.
  *
+ * INTERCOMPANY IS BETWEEN LEGAL ENTITIES, NOT COMPANIES (golive #313). A Division, Department or
+ * Branch uses the books of its legal entity (`AccountingEngineBase.LegalEntityFor`). When the
+ * collector and a line's company share a legal entity, that share is the collector's own: its
+ * receivable is credited in the collector's entry, on the legal entity's AR account, tagged with the
+ * line's dimensions so its revenue stays separable. No Due To / Due From is raised, because both
+ * would land in one ERP company. Between different legal entities the pair is looked up by the
+ * LEGAL ENTITY pair, so the match rows for the legal entities cover every company under them.
+ *
  * CONNECTS TO:
  *   LOOKUP:   AccountingEngineBase.ResolveIntercompanyAccounts (BA-D26, bizapps-accounting)
  *   RESOLVER: GLAccountResolver (./GLAccountResolver.ts)
@@ -56,6 +64,7 @@
  */
 import { GL_ROLE, IsRoleNotLinked, RefuseUnlinkedCustomerDeposits, type GLAccountResolver } from './GLAccountResolver.js';
 import { SplitExactly } from './BundleBehavior.js';
+import { CustomerPart } from './JournalEntryCustomer.js';
 import type { PaymentJEDraft, PaymentJELine, PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 /** One order line's contribution, as far as allocation is concerned. */
@@ -117,10 +126,22 @@ export type IntercompanyLookup = (
     asOf: Date,
 ) => IntercompanyPair | null;
 
+/**
+ * The company whose books a company uses (`AccountingEngineBase.LegalEntityFor`). Throws, naming
+ * the company, when a Division's setup is incomplete. Injected for the same reason as the lookup.
+ */
+export type LegalEntityLookup = (companyID: string) => string;
+
 export interface PaymentLineAllocationContext {
     PaymentLineID: string;
     PaymentNumber: string;
     OrderNumber: string;
+    /**
+     * The order's customer (billing organization, else billing person), named in each entry's
+     * description so accounting's batch view shows whose cash it is (bc-aidp-next-golive#452).
+     * Absent or null, the description names the payment and order only.
+     */
+    CustomerName?: string | null;
     /** What this payment line applies to the order. Always positive; `IsReversal` sets direction. */
     Amount: number;
     /** Where the cash landed. */
@@ -150,6 +171,14 @@ export interface PaymentLineAllocationContext {
      * product walk the sale used. Account credit and every other tender leave it unset.
      */
     GiftCardSale?: GiftCardSaleLine | null;
+    /**
+     * Set when the tender is ACCOUNT CREDIT (`PaymentDetail.SourceOrderHeaderID`): a credit one order
+     * holds is being spent on another. No cash moves, so the leg that would debit Cash sits on the
+     * collector's receivable instead, and lines that then cancel on one account and tag set are
+     * dropped. Applying a credit inside one set of books therefore posts nothing, and an application
+     * that crosses books or lands on a customer deposit posts only the lines that are left.
+     */
+    AccountCredit?: boolean;
 }
 
 /** What the sale's Gift Card Liability lookup walked from: the selling line's product and company. */
@@ -202,6 +231,42 @@ function dims(list: PaymentJELineDimension[]): { Dimensions?: PaymentJELineDimen
 function mirrorIf(reverse: boolean, lines: PaymentJELine[]): PaymentJELine[] {
     if (!reverse) return lines;
     return lines.map((l) => ({ ...l, DebitAmount: l.CreditAmount, CreditAmount: l.DebitAmount }));
+}
+
+/**
+ * What an entry and its lines call the event. An account credit is neither a payment nor a refund:
+ * nothing was received and nothing went back, so naming it either way misdescribes the entry to
+ * whoever reads the ledger.
+ */
+function LabelFor(ctx: Pick<PaymentLineAllocationContext, 'IsReversal' | 'AccountCredit'>): string {
+    if (ctx.AccountCredit) return ctx.IsReversal ? 'Credit spent' : 'Credit applied';
+    return ctx.IsReversal ? 'Refund' : 'Payment';
+}
+
+/**
+ * Net debits against credits per (account, dimension set), keeping what is left on the side it is
+ * left on and dropping what nets to zero.
+ *
+ * Pure and exported for unit tests. Lines keep their first-seen order and the description of the
+ * first line in each group, so an entry that nets nothing comes back line for line as it went in
+ * when no two of its lines share an account and tag set.
+ */
+export function NetOffsettingLines(lines: PaymentJELine[]): PaymentJELine[] {
+    const groups = new Map<string, { First: PaymentJELine; Net: number }>();
+    for (const l of lines) {
+        const k = `${key(l.GLAccountID)}#${dimKey(l.Dimensions)}`;
+        const signed = money((l.DebitAmount ?? 0) - (l.CreditAmount ?? 0));
+        const group = groups.get(k);
+        if (group) group.Net = money(group.Net + signed);
+        else groups.set(k, { First: l, Net: signed });
+    }
+    const out: PaymentJELine[] = [];
+    for (const { First, Net } of groups.values()) {
+        if (Net === 0) continue;
+        const { DebitAmount: _debit, CreditAmount: _credit, ...rest } = First;
+        out.push(Net > 0 ? { ...rest, DebitAmount: Net } : { ...rest, CreditAmount: -Net });
+    }
+    return out;
 }
 
 /**
@@ -403,6 +468,8 @@ export class PaymentAllocationFactory {
         private readonly _resolver: GLAccountResolver,
         private readonly _intercompany: IntercompanyLookup,
         private readonly _paymentLineEntityID: string,
+        /** Defaults to every company being its own legal entity, the state before profiles are set. */
+        private readonly _legalEntityFor: LegalEntityLookup = (companyID) => companyID,
     ) {}
 
     /**
@@ -426,18 +493,24 @@ export class PaymentAllocationFactory {
         // the same Due To / Due From pair a cash collection would use. Equal to ReceivingCompanyID in
         // the ordinary single-company case.
         const receiving = ctx.GiftCardSale?.CompanyID || ctx.ReceivingCompanyID;
-        const label = ctx.IsReversal ? 'Refund' : 'Payment';
+        const label = LabelFor(ctx);
 
-        const ownShare = shares.find((s) => key(s.CompanyID) === key(receiving));
-        const otherShares = shares.filter((s) => key(s.CompanyID) !== key(receiving));
+        // Shares on the collector's own books (its own, and those of Divisions under the same legal
+        // entity) are settled in the collector's entry. Only other legal entities get intercompany.
+        const receivingEntity = this._legalEntityFor(receiving);
+        const sameBooks = (s: CompanyShare) => key(this._legalEntityFor(s.CompanyID)) === key(receivingEntity);
+        const ownShares = shares.filter(sameBooks);
+        const otherShares = shares.filter((s) => !sameBooks(s));
 
         // ── The receiving company's entry ────────────────────────────────────
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of resolution (D12).
+        // An account credit moves a receivable and no cash, so its debit is the collector's own
+        // receivable: the account the credit already sits on.
         const debitAccount = ctx.GiftCardSale
             ? await this.resolveGiftCardLiability(ctx.GiftCardSale, asOf, ctx)
-            : await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
-        const debitWhat = ctx.GiftCardSale ? 'gift card redeemed' : 'cash';
+            : await this._resolver.Resolve(ctx.AccountCredit ? GL_ROLE.AccountsReceivable : GL_ROLE.Cash, null, null, receiving, asOf);
+        const debitWhat = ctx.GiftCardSale ? 'gift card redeemed' : ctx.AccountCredit ? 'receivable moved' : 'cash';
 
         // Every share, split again by the tags of the lines it settles (issue #238). An order whose
         // lines carry no dimensions yields one slice per company, and the entries below are then
@@ -521,29 +594,30 @@ export class PaymentAllocationFactory {
             ...dims(slice.Dimensions),
         }));
 
-        if (ownShare) {
-            receivingLines.push(...(await customerCreditLines(ownShare, slicesFor(ownShare))));
+        for (const share of ownShares) {
+            receivingLines.push(...(await customerCreditLines(share, slicesFor(share))));
         }
-        // No `else` and no error: a shared-services entity collecting purely on others' behalf owns
-        // no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
+        // No error when there are none: a shared-services entity collecting purely on others' behalf
+        // owns no line, so it has no receivable to clear. Its entry is Dr Cash / Cr Due To …, which is
         // correct and must be supported rather than treated as a malformed allocation.
 
         const drafts: PaymentJEDraft[] = [];
         const otherDrafts: PaymentJEDraft[] = [];
 
         for (const share of otherShares) {
-            const pair = this._intercompany(receiving, share.CompanyID, asOf);
+            const ownerEntity = this._legalEntityFor(share.CompanyID);
+            const pair = this._intercompany(receivingEntity, ownerEntity, asOf);
             if (!pair) {
                 throw new IntercompanyPairMissingError(
-                    receiving,
-                    share.CompanyID,
+                    receivingEntity,
+                    ownerEntity,
                     `Payment ${ctx.PaymentNumber} applies ${share.Amount} of company ${share.CompanyID}'s ` +
                         `revenue to cash collected by company ${receiving}, but no active ` +
-                        `IntercompanyAccountMatch is configured for that direction as of ` +
-                        `${isoDate(asOf)}. Booking is refused rather than defaulted: a guessed ` +
+                        `IntercompanyAccountMatch is configured for that direction between their legal ` +
+                        `entities as of ${isoDate(asOf)}. Booking is refused rather than defaulted: a guessed ` +
                         `intercompany account would still balance, so the misposting would not surface ` +
                         `until the two companies' books disagreed. Configure the pair ` +
-                        `(Source=${receiving}, Target=${share.CompanyID}) and retry.`,
+                        `(Source=${receivingEntity}, Target=${ownerEntity}) and retry.`,
                 );
             }
 
@@ -580,7 +654,14 @@ export class PaymentAllocationFactory {
         drafts.push(...otherDrafts);
 
         for (const draft of drafts) this.assertBalanced(draft, ctx);
-        return { Drafts: drafts, Shares: shares };
+        if (!ctx.AccountCredit) return { Drafts: drafts, Shares: shares };
+
+        // Account credit only: a debit and a credit on one account and tag set say nothing, and an
+        // entry made only of such pairs is no entry. Every other tender keeps its lines as built.
+        const netted = drafts
+            .map((draft) => ({ ...draft, Lines: NetOffsettingLines(draft.Lines) }))
+            .filter((draft) => draft.Lines.length > 0);
+        return { Drafts: netted, Shares: shares };
     }
 
     /**
@@ -614,7 +695,9 @@ export class PaymentAllocationFactory {
             EffectiveDate: isoDate(ctx.PaymentDate),
             // Accounting's own vocabulary, not ours to extend (D-ENTRYTYPE).
             EntryType: ctx.IsReversal ? 'Refund' : 'PaymentReceipt',
-            Description: `${ctx.IsReversal ? 'Refund' : 'Payment'} ${ctx.PaymentNumber} — order ${ctx.OrderNumber} (company ${companyID})`,
+            Description:
+                `${LabelFor(ctx)} ${ctx.PaymentNumber}${CustomerPart(ctx.CustomerName)} — ` +
+                `order ${ctx.OrderNumber} (company ${companyID})`,
             // D25 provenance: the PAYMENT LINE is the causal record, so an auditor can walk from
             // any of these entries back to the one allocation that produced them.
             LinkedEntityID: this._paymentLineEntityID,

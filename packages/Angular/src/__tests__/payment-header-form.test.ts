@@ -1,5 +1,7 @@
 import '@angular/compiler';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import '../public-api';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
@@ -10,6 +12,18 @@ import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../lib/generated/Enti
 import { BizAppsPaymentHeaderFormComponent } from '../lib/custom/PaymentHeader/payment-header-form.component';
 import { PaymentHeaderPanel } from '../lib/form-panels/payment-header.panel';
 import { PaymentJournalsPanel } from '../lib/form-panels/payment-journals.panel';
+
+// The captured view labels line-level allocations from the order's lines; the read is stubbed so no
+// provider is needed. Everything else in the module stays real.
+vi.mock('../lib/data/orders-queries', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../lib/data/orders-queries')>();
+    return {
+        ...actual,
+        GetOrderLinesForOrders: vi.fn(async () => new Map([
+            ['ord-2', [{ ID: 'LINE-5', LineNumber: 2, Product: 'Annual Dues' }]],
+        ])),
+    };
+});
 
 describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters', () => {
     it('subclasses the generated mjBizAppsOrdersPaymentHeaderFormComponent', () => {
@@ -387,6 +401,31 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(instance.record.Amount).toBe(300);
     });
 
+    it('picks the instrument panel by tender code, so Gift Card and Account Credit are not cards (#846)', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        const types = [
+            { ID: 't-card', Code: 'CreditCard', Name: 'Credit Card', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-ach', Code: 'ACH', Name: 'ACH', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-check', Code: 'Check', Name: 'Check', RequiresInstrument: true, RequiresReference: true },
+            { ID: 't-wire', Code: 'Wire', Name: 'Wire', RequiresInstrument: false, RequiresReference: true },
+            { ID: 't-gift', Code: 'GiftCard', Name: 'Gift Card / Stored Value', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-credit', Code: 'AccountCredit', Name: 'Account Credit', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-cash', Code: 'Cash', Name: 'Cash', RequiresInstrument: false, RequiresReference: false },
+        ];
+        (instance as unknown as { PaymentTypes: unknown[] }).PaymentTypes = types;
+        const panelFor = (id: string) => {
+            instance.record = { PaymentTypeID: id } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+            return instance.InstrumentPanel;
+        };
+        expect(panelFor('t-card')).toBe('card');
+        expect(panelFor('t-ach')).toBe('ach');
+        expect(panelFor('t-check')).toBe('check');
+        expect(panelFor('t-wire')).toBe('reference');
+        expect(panelFor('t-gift')).toBe('giftcard');
+        expect(panelFor('t-credit')).toBe('none');
+        expect(panelFor('t-cash')).toBe('none');
+    });
+
     it('properly reads and writes tender-specific instrument details on PaymentDetailID_Object', () => {
         const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
         let mockDetail: mjBizAppsOrdersPaymentDetailEntity | null = null;
@@ -600,6 +639,41 @@ describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
         expect(instance.CaptureError).toContain('Receiving Company cannot be null');
     });
 
+    it('shows the payment an earlier attempt saved when the idempotency key refuses a retry (#847)', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+        const loadByKey = vi.fn(async () => {
+            record.IsSaved = true;
+            record.Status = 'Captured';
+            return true;
+        });
+        Object.assign(record, { SaveRefusedAsDuplicateKey: true, LoadByIdempotencyKey: loadByKey });
+        (instance as unknown as { loadPaymentJournalRollup: () => Promise<void> }).loadPaymentJournalRollup = vi.fn(async () => undefined);
+
+        await instance.CapturePayment();
+        expect(record.Save).toHaveBeenCalledOnce();
+        expect(loadByKey).toHaveBeenCalledOnce();
+        expect(instance.CaptureError).toBeNull();
+        expect(record.Status).toBe('Captured');
+    });
+
+    it('asks for another press when the earlier attempt saved only a draft (#847)', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+        Object.assign(record, {
+            SaveRefusedAsDuplicateKey: true,
+            LoadByIdempotencyKey: vi.fn(async () => {
+                record.IsSaved = true;
+                record.Status = 'Pending';
+                return true;
+            }),
+        });
+        (instance as unknown as { populateExistingAllocations: () => void }).populateExistingAllocations = vi.fn();
+
+        await instance.CapturePayment();
+        expect(instance.CaptureError).toContain('already saved this payment as a draft');
+    });
+
     it('shows an over-applied order as a negative balance and the credit it creates', () => {
         const { instance } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 5000 }]);
         const order = instance.OpenOrders[0];
@@ -610,5 +684,150 @@ describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
 
         instance.SetOrderAllocation('ord-1', 4000);
         expect(instance.FormatLeavesCredit(order)).toBe('');
+    });
+});
+
+/**
+ * The open-orders table counted days overdue from the UTC clock (golive #341): after 7 PM Central
+ * the UTC date has rolled over, so an order due today read "1d overdue" and every other one a day
+ * too many. The Date column also printed the due date.
+ */
+describe('BizAppsPaymentHeaderFormComponent open-orders dates (golive #341)', () => {
+    const engine = BusinessTimeZoneEngine.Instance as unknown as {
+        _configurations: InstanceConfigurationRow[];
+        _loaded: boolean;
+    };
+    const saved = { rows: engine._configurations, loaded: engine._loaded };
+
+    beforeEach(() => {
+        engine._configurations = [
+            {
+                FeatureKey: 'BizApps.BusinessTimeZone',
+                Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}',
+                DefaultValue: '{"iana":"UTC","sql":"UTC"}',
+            },
+        ];
+        engine._loaded = true;
+        vi.useFakeTimers();
+        // 00:43 UTC on the 14th = 19:43 CDT on the 13th.
+        vi.setSystemTime(new Date('2026-10-14T00:43:00.000Z'));
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        engine._configurations = saved.rows;
+        engine._loaded = saved.loaded;
+    });
+
+    const form = () => Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+    const order = (fields: Record<string, unknown>) => fields as unknown as mjBizAppsOrdersOrderHeaderEntity;
+
+    it('counts days overdue on the business calendar', () => {
+        const instance = form();
+        // A DATE column arrives as midnight UTC.
+        expect(instance.GetOrderDaysOverdue(order({ DueDate: new Date('2026-10-13T00:00:00Z') }))).toBe(0);
+        expect(instance.GetOrderDaysOverdue(order({ DueDate: new Date('2026-10-07T00:00:00Z') }))).toBe(6);
+    });
+
+    it('never reports a negative number for an order not yet due', () => {
+        const instance = form();
+        expect(instance.GetOrderDaysOverdue(order({ DueDate: new Date('2026-10-20T00:00:00Z') }))).toBe(0);
+        expect(instance.GetOrderDaysOverdue(order({ DueDate: null }))).toBe(0);
+    });
+
+    it('prints the order date in the Date column, not the due date', () => {
+        const instance = form();
+        const o = order({ OrderDate: new Date('2026-09-01T00:00:00Z'), DueDate: new Date('2026-10-01T00:00:00Z') });
+        expect(instance.FormatOrderDate(o)).toBe(instance.FormatOrderDueDate(order({ DueDate: o.OrderDate })));
+        expect(instance.FormatOrderDate(o)).not.toBe(instance.FormatOrderDueDate(o));
+        expect(instance.FormatOrderDate(order({ OrderDate: null }))).toBe('—');
+    });
+});
+
+/**
+ * A captured payment's Payment & Allocation tab read open orders, which no longer include the
+ * orders it paid, so it showed none and "remaining to allocate before capturing" (golive #342).
+ * It now reads the payment's own lines.
+ */
+describe('BizAppsPaymentHeaderFormComponent captured payment (golive #342)', () => {
+    function capturedForm() {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        instance.record = {
+            IsSaved: true,
+            Status: 'Captured',
+            Amount: 500,
+            BillToOrganizationID: 'org-1',
+            BillToPersonID: null,
+            Lines: {
+                IsLoaded: false,
+                Load: vi.fn(async function (this: { IsLoaded: boolean }) {
+                    this.IsLoaded = true;
+                }),
+                Items: [
+                    { OrderHeaderID: 'ord-1', OrderHeader: 'ORD-1001', OrderLineID: null, Amount: 300, BookedAt: new Date('2026-10-02T15:00:00Z') },
+                    { OrderHeaderID: 'ord-2', OrderHeader: 'ORD-1002', OrderLineID: 'line-5', Amount: 150, BookedAt: new Date('2026-10-02T15:00:00Z') },
+                ],
+            },
+        } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+        instance.AppliedLines = [];
+        return instance;
+    }
+
+    it('lists what the payment was applied to, with order numbers and line labels', async () => {
+        const instance = capturedForm();
+        await instance.loadAppliedLines();
+
+        expect(instance.record.Lines.Load).toHaveBeenCalledOnce();
+        expect(instance.AppliedLines).toHaveLength(2);
+        expect(instance.AppliedLines[0]).toMatchObject({ OrderNumber: 'ORD-1001', OrderLineLabel: null, Amount: 300 });
+        expect(instance.AppliedLines[1]).toMatchObject({ OrderNumber: 'ORD-1002', OrderLineLabel: 'Line 2 · Annual Dues', Amount: 150 });
+        expect(instance.FormatAppliedBookedAt(instance.AppliedLines[0])).not.toBe('—');
+    });
+
+    it('totals applied and unapplied from the lines, and counts them for the header tile', async () => {
+        const instance = capturedForm();
+        await instance.loadAppliedLines();
+
+        expect(instance.AppliedTotal).toBe(450);
+        expect(instance.UnappliedAmount).toBe(50);
+        expect(instance.AppliedCount).toBe(2);
+    });
+
+    it('does not load open orders for a captured payment', () => {
+        const instance = capturedForm();
+        const load = vi.fn(async () => undefined);
+        instance.loadOpenOrdersForCustomer = load;
+
+        instance.ngDoCheck();
+        expect(load).not.toHaveBeenCalled();
+
+        instance.record.Status = 'Pending';
+        instance.ngDoCheck();
+        expect(load).toHaveBeenCalledOnce();
+    });
+});
+
+describe('BizAppsPaymentHeaderFormComponent payer pickers (bc-aidp-next-golive#372)', () => {
+    // The stock FK field lists rows on focus and scans the whole party file; the payer fields use
+    // the fast party picker and keep their mode, context and Navigate handler.
+    const html = readFileSync(
+        join(import.meta.dirname, '../lib/custom/PaymentHeader/payment-header-form.component.html'),
+        'utf8',
+    );
+    const tagFor = (field: string) =>
+        [...html.matchAll(/<(mj-form-field|bizapps-party-field)\b[^>]*>/g)]
+            .map((m) => m[0])
+            .find((tag) => tag.includes(`FieldName="${field}"`));
+
+    it.each([
+        ['BillToOrganizationID', 'Organization'],
+        ['BillToPersonID', 'Person'],
+    ])('%s is a bizapps-party-field of Kind %s', (field, kind) => {
+        const tag = tagFor(field);
+        expect(tag, field).toMatch(/^<bizapps-party-field\b/);
+        expect(tag).toContain(`Kind="${kind}"`);
+        expect(tag).toContain('[EditMode]="ComposeMode"');
+        expect(tag).toContain('[FormContext]="formContext"');
+        expect(tag).toContain('(Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()"');
     });
 });

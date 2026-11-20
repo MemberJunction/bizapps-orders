@@ -4,3 +4,4 @@ HH,Harbor House,Subsidiary,1,Second company for multi-company and intercompany o
 DEMO,DEMO Publishing Co,Subsidiary,1,Demo seller whose products still sit in the catalog
 PARTNER,DEMO Partner Press,Subsidiary,1,Second demo seller
 ORPHAN,Orphan Ledger,Subsidiary,0,Accounts exist but no GL links — confirms that include its products must refuse
+UNPAIRED,Unpaired Press,Subsidiary,1,GL-linked but in no intercompany pair — a payment across it must refuse

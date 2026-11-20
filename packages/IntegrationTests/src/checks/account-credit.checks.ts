@@ -44,6 +44,8 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  OutsideTransaction,
+  PurgeCheckoutRun,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
@@ -352,12 +354,14 @@ export const AccountCreditChecks: NamedCheck[] = [
         const after = await orderRow(ctx, target.Order.ID as string);
         AssertEqual(Number(after.Balance), 150, "the target order's balance drops by 100");
 
-        // NO CASH MOVES. The two legs' cash entries offset, which is the whole point: this
-        // re-attributes money already received rather than receiving more.
+        // NO CASH MOVES, AND NOTHING IS POSTED. Inside one company the credit and the order it settles
+        // sit on the same receivable account, so each leg would debit and credit that one account for
+        // the same amount. Such an entry says nothing, and booking it through Cash instead would put
+        // activity on a bank account that no statement will ever show.
         const lines = await allocationLines(ctx, res.PaymentHeaderID as string);
-        AssertEqual(netFor(lines, f.CoA.ID, CASH_CODE), 0, "cash nets to zero across the transfer");
+        AssertEqual(netFor(lines, f.CoA.ID, CASH_CODE), 0, "no cash line exists for the transfer");
         AssertEqual(netFor(lines, f.CoA.ID, AR_CODE), 0, "A/R nets to zero within one company");
-        AssertEqual(entryCount(lines), 2, "one entry per leg");
+        AssertEqual(entryCount(lines), 0, "a credit applied within one company posts no entry");
       }),
   },
   {
@@ -595,6 +599,59 @@ export const AccountCreditChecks: NamedCheck[] = [
         const row = await orderRow(ctx, order.Order.ID as string);
         AssertEqual(Number(row.Balance), 150, "the order's balance reopens by the refunded amount");
       }),
+  },
+  // ── two spends of one credit at once (D20 round 5: the floor now lets credit orders be spent) ──────
+  {
+    Id: "account-credit.AC-OT1",
+    Name: "AC-OT1: outside the harness transaction, two spends of one 60 credit at the same instant, each on its own provider (two workers), spend it once",
+    RequiresMutation: true,
+    Fn: async (ctx) => {
+      // Committed rows, deleted afterwards. They book on the world's company, which the fixture teardown does NOT
+      // sweep, so the check purges its own three orders and every payment on them (#989 review round 1: each run
+      // had left 3 orders and 2 payments behind).
+      const made: string[] = [];
+      return OutsideTransaction(
+        async () => {
+          // A 60 credit (100 paid 160) and two orders of the same customer owing 60 each.
+          const source = await confirmOrder(ctx, 100);
+          made.push(source.Order.ID as string);
+          const paid = await payToCoA(ctx, source.Order.ID as string, 160);
+          Assert(paid.Saved, `precondition: the over-payment saved: ${paid.Message}`);
+          const t1 = await confirmOrder(ctx, 60);
+          made.push(t1.Order.ID as string);
+          const t2 = await confirmOrder(ctx, 60);
+          made.push(t2.Order.ID as string);
+          const db = ctx.Provider as unknown as { CreateIndependentInstance: () => Promise<unknown> };
+          const workers = await Promise.all([db.CreateIndependentInstance(), db.CreateIndependentInstance()]);
+          let outcomes: Array<{ Success: boolean; Message?: string }> = [];
+          try {
+            outcomes = await Promise.all(
+              [t1, t2].map(async (t, i) => {
+                const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, CreditOutput>>(
+                  BaseRemotableOperation,
+                  "Orders.ApplyAccountCredit",
+                )!;
+                const out = await op.Execute(
+                  { SourceOrderHeaderID: source.Order.ID, TargetOrderHeaderID: t.Order.ID, Amount: 60 },
+                  { provider: workers[i] as never, user: ctx.User },
+                );
+                return (out.Output as CreditOutput) ?? { Success: false, Message: out.ErrorMessage };
+              }),
+            );
+          } finally {
+            for (const w of workers) await (w as { ReleaseIndependentInstance: () => Promise<void> }).ReleaseIndependentInstance().catch(() => undefined);
+          }
+          AssertEqual(outcomes.filter((o) => o.Success).length, 1, `one spend applies, the other is refused: ${JSON.stringify(outcomes)}`);
+          const after = await orderRow(ctx, source.Order.ID as string);
+          AssertEqual(Number(after.Balance), 0, "the 60 credit is spent once (balance 0, never -60 + 120)");
+          const owed = [Number((await orderRow(ctx, t1.Order.ID as string)).Balance), Number((await orderRow(ctx, t2.Order.ID as string)).Balance)].sort();
+          AssertEqual(JSON.stringify(owed), JSON.stringify([0, 60]), "one order settled, the other still owes 60");
+        },
+        async () => {
+          if (made.length) await PurgeCheckoutRun(ctx, { OrderIDs: made, SubscriptionIDs: [] });
+        },
+      );
+    },
   },
 ];
 

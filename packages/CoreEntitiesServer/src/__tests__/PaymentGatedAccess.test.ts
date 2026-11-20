@@ -13,6 +13,7 @@ import {
     FirstPaymentAmount,
     InitialGrantStatus,
     IsPaymentSuspension,
+    ReadTimeAccessCutoffDay,
     ReadTimeCutoffSuspension,
     ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
@@ -115,6 +116,15 @@ describe('DecideGrantStatus — OnFirstPayment, renewal', () => {
 
     it('comes back once the order is no longer past due', () => {
         expect(DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 0, Balance: 0, AmountPaid: 1200 }), 14).Status).toBe('Active');
+    });
+
+    it('a renewal suspended on the cutoff day while its capture was still booking comes back on the next nightly pass', () => {
+        // The access job runs at 03:30, the charge pass at 03:15. A capture of money already taken can
+        // book after the access job read the order and suspended it; the next pass reads it paid.
+        const suspended = DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 14 }), 14);
+        expect(suspended).toEqual({ Status: 'Suspended', Reason: 'PastDue' });
+        const nextNight = DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 0, Balance: 0, AmountPaid: 1200 }), 14);
+        expect(ReconcileGrantStatus({ Status: suspended.Status, SuspensionReason: suspended.Reason }, nextNight)).toEqual({ Status: 'Active', Reason: null });
     });
 
     it('a cutoff of 0 suspends on the first day past due, but not before', () => {
@@ -313,6 +323,35 @@ describe('ReadTimeCutoffSuspension — the cutoff a read applies before the nigh
             expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 0, Balance: 0 }), 14, [], day)).toBeNull();
             expect(ReadTimeCutoffSuspension(g, true, order({ DaysPastDue: 40 }), 14, [], day)).toBeNull();
         }
+    });
+});
+
+describe('ReadTimeAccessCutoffDay — the last day a past-due renewal keeps access (#269)', () => {
+    const active = { Status: 'Active', GrantTimingApplied: 'OnFirstPayment' } as const;
+    const defer = (through: string) => ({ OverrideType: 'DeferCutoff', EffectiveThrough: through }) as const;
+    const day = '2026-10-01';
+
+    it('is the day before the cutoff: the overdue worklist\'s grace date', () => {
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 1 }), 14, [], day)).toBe('2026-10-13');
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 13 }), 14, [], day)).toBe(day);
+    });
+
+    it('is null once cut off, before the order is past due, or with the cutoff off', () => {
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 14 }), 14, [], day)).toBeNull();
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 0 }), 14, [], day)).toBeNull();
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 5 }), null, [], day)).toBeNull();
+    });
+
+    it('moves to an approved DeferCutoff\'s last day when that is later', () => {
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 20 }), 14, [defer('2026-10-05')], day)).toBe('2026-10-05');
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 1 }), 14, [defer('2026-10-05')], day)).toBe('2026-10-13');
+        expect(ReadTimeAccessCutoffDay(active, true, order({ DaysPastDue: 20 }), 14, [defer('2026-09-30')], day)).toBeNull();
+    });
+
+    it('applies only to an Active OnFirstPayment renewal', () => {
+        expect(ReadTimeAccessCutoffDay(active, false, order({ DaysPastDue: 5 }), 14, [], day)).toBeNull();
+        expect(ReadTimeAccessCutoffDay({ Status: 'Suspended', GrantTimingApplied: 'OnFirstPayment' }, true, order({ DaysPastDue: 5 }), 14, [], day)).toBeNull();
+        expect(ReadTimeAccessCutoffDay({ Status: 'Active', GrantTimingApplied: 'OnPaidInFull' }, true, order({ DaysPastDue: 5 }), 14, [], day)).toBeNull();
     });
 });
 

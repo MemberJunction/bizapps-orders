@@ -1,0 +1,57 @@
+[
+  {
+    "_comments": [
+      "NIGHTLY CHARGE RECONCILIATION (#477). SHIPS DISABLED AND IN PREVIEW: enabling it reports mismatches in",
+      "the run output and raises nothing until Preview is set to false. The gateway key needs read access to",
+      "charges and refunds. 05:00 UTC, after the other orders jobs. ConcurrencyMode Skip, MissedRunPolicy",
+      "RunOnce: the window is a week, so a catch-up is one run. OwnerUserID / NotifyUserID unset: they name",
+      "people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders \u2014 Reconcile Payment Provider Charges (daily)",
+      "Description": "Matches the payment gateway's charges and refunds of the last seven days to Orders' payments and reports the mismatches. Ships disabled and in preview; set Preview to false to raise mismatches as PROVIDER_CHARGE_MISMATCH finance exceptions.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 0 5 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\": \"6E75392C-9267-4C29-8CEC-11F2A1058C57\", \"Params\": [{\"ActionParamID\": \"53FF7BB9-A0A3-4BDC-A20A-821976F3B07D\", \"ValueType\": \"Static\", \"Value\": \"true\"}]}"
+    },
+    "primaryKey": {
+      "ID": "88C0DB86-B2CE-4DEC-B2B6-DF7E980A9388"
+    }
+  },
+  {
+    "_comments": [
+      "WEBHOOK ENDPOINT DRIFT CHECK (#477), also run once at server start. Ships disabled like the other",
+      "orders jobs; it reads only, so enabling it is safe once a live provider exists. Hourly at :15."
+    ],
+    "fields": {
+      "Name": "Orders \u2014 Check Payment Webhook Endpoints (hourly)",
+      "Description": "Checks that each live payment provider's webhook endpoint at the gateway is enabled and sends every event kind Orders acts on. Drift fails the run. Ships disabled.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 15 * * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 10,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\": \"EAF4DCF5-D9CE-4114-9EA5-78E4D1991714\", \"Params\": []}"
+    },
+    "primaryKey": {
+      "ID": "5CEC9D50-5FE7-4478-90B9-5EACE99CCFCE"
+    }
+  }
+]

@@ -1,6 +1,7 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe } from './money-format';
+import { MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 
 /** One row of the ladder. */
 export interface MJOLadderRow {
@@ -55,7 +56,7 @@ export interface MJOLadderRow {
 @Component({
     selector: 'mjo-decomposition-ladder',
     standalone: true,
-    imports: [CommonModule, MJOMoneyPipe],
+    imports: [CommonModule, MJOMoneyPipe, MJEmptyStateComponent],
     template: `
         <div class="mj-ladder" [class.mjo-ladder--stale]="Stale" [attr.aria-busy]="Stale">
             @for (row of Rows; track $index) {
@@ -102,7 +103,7 @@ export interface MJOLadderRow {
             }
 
             @if (!Rows.length) {
-                <div class="small muted mjo-ladder__empty">{{ EmptyText }}</div>
+                <mj-empty-state Size="inline" [Message]="EmptyText" />
             }
         </div>
     `,
@@ -114,9 +115,6 @@ export interface MJOLadderRow {
             .mjo-ladder--stale {
                 opacity: 0.55;
                 transition: opacity 0.12s ease;
-            }
-            .mjo-ladder__empty {
-                padding: var(--mj-space-4) 0;
             }
             @media (max-width: 720px) {
                 :host ::ng-deep .mj-ladder-row .muted {

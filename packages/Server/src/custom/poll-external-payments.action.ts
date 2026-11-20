@@ -4,9 +4,10 @@
  * The thinnest adapter between MJ's scheduler (which dispatches Actions) and the operation that does
  * the work. No polling logic lives here. See `send-external-invoices.action.ts` for why.
  *
- * A PASS THAT LEFT MONEY FOR A PERSON IS NOT A SUCCESS. The operation reports `ATTENTION` when it
- * captured what it could but left payments unmatched or needing reversal; that is passed through as
- * Success false so a job that notifies only on failure tells somebody.
+ * A PASS THAT LEFT MONEY FOR A PERSON IS STILL A SUCCESS. The operation reports `ATTENTION` with
+ * Success true when it captured what it could but left payments waiting, and sends one
+ * `Payment Needs Review` notification per payment newly waiting (#1033). Failing the run instead
+ * re-announced the same payments on every hourly pass. The code and Success pass straight through.
  *
  * @module @mj-biz-apps/orders-server
  */

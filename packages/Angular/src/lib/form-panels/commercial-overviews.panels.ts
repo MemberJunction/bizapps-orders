@@ -13,7 +13,7 @@ import type {
 } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
-import { FormatCoverageWindow, FormatPercentFraction, PromotionValueLabel, YesNo } from './document-form.helpers';
+import { FormatCoverageWindow, FormatInstantWindow, FormatPercentFraction, PromotionValueLabel, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
 
@@ -131,7 +131,7 @@ export class PromotionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersPromoti
                     { Label: 'Minimum order', Value: this.Record.MinimumOrderAmount != null ? FormatMoney(this.Record.MinimumOrderAmount) : 'None' },
                     { Label: 'Minimum qty', Value: this.Record.MinimumQuantity != null ? String(this.Record.MinimumQuantity) : '—' },
                     { Label: 'Stacking', Value: this.Record.AllowsStacking ? 'Allowed' : 'Refused' },
-                    { Label: 'Schedule', Value: FormatCoverageWindow(this.Record.EffectiveFrom, this.Record.EffectiveTo) },
+                    { Label: 'Schedule', Value: FormatInstantWindow(this.Record.EffectiveFrom, this.Record.EffectiveTo) },
                 ],
             },
             {

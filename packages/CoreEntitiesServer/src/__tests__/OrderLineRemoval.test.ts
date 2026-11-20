@@ -28,6 +28,11 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
+vi.mock('@memberjunction/generic-database-provider', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@memberjunction/generic-database-provider')>();
+    return { ...actual, UserCache: { Instance: { GetSystemUser: () => ({ ID: 'system' }) } } };
+});
+
 const { OrderEntityServer } = await import('../OrderEntityServer.js');
 const { OrderHeaderEntity } = await import('@mj-biz-apps/orders-entities');
 
@@ -88,7 +93,18 @@ function dependentRow(label: string, log: string[], succeeds = true) {
 /** An order with the real prototype and only the removal seams supplied. */
 function orderWith(removed: FakeLine[], items: FakeLine[] = []) {
     const instance = Object.create(OrderEntityServer.prototype) as unknown as RemovalOrder;
-    Object.assign(instance, { Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true } });
+    Object.assign(instance, {
+        Lines: {
+            Removed: removed,
+            Items: items,
+            Dirty: true,
+            IsLoaded: true,
+            AcceptChanges: vi.fn(function (this: { Removed: FakeLine[] }) {
+                this.Removed = [];
+            }),
+        },
+        CheckoutAnswers: { Items: [] },
+    });
     // `ProviderToUse` and `ContextCurrentUser` are getters on BaseEntity, so they are shadowed
     // rather than assigned.
     Object.defineProperty(instance, 'ProviderToUse', { value: {}, writable: true });
@@ -157,6 +173,23 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
         expect(log).toEqual(['delete-dependent:concession:true', 'delete-line:1']);
     });
 
+    it('removes an adjustment with its draft line, which refuses a direct delete', async () => {
+        const log: string[] = [];
+        const adjustment = { ...dependentRow('adjustment', log), RemovedByOrderSave: false };
+        adjustment.Delete = vi.fn(async () => {
+            log.push(`delete-dependent:adjustment:${adjustment.RemovedByOrderSave}`);
+            return true;
+        });
+        mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
+            Success: true,
+            Results: params.EntityName === 'MJ_BizApps_Orders: Order Adjustments' ? [adjustment] : [],
+        }));
+
+        await orderWith([fakeLine(1, log)]).deleteRemovedLines();
+
+        expect(log).toEqual(['delete-dependent:adjustment:true', 'delete-line:1']);
+    });
+
     it('does no work and issues no queries when nothing was removed', async () => {
         // The hot path: every ordinary edit runs through here and must stay free.
         await orderWith([]).deleteRemovedLines();
@@ -198,6 +231,28 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
         expect(line.Delete).not.toHaveBeenCalled();
     });
 
+    it('removes and deletes a bundle\'s components before the bundle itself (#793)', async () => {
+        // Only the bundle was removed, as an API caller using `Lines.Remove` would. Its components
+        // still name it through FK_OrderLine_ParentOrderLine, which does not cascade, so they must
+        // leave the collection and be deleted first.
+        const log: string[] = [];
+        const bundle = fakeLine(1, log, { ID: 'AAAAAAAA-0000-0000-0000-000000000001' });
+        const child = { ...fakeLine(2, log, { ID: 'AAAAAAAA-0000-0000-0000-000000000002' }), ParentOrderLineID: bundle.ID };
+        const kept = fakeLine(3, log, { ID: 'AAAAAAAA-0000-0000-0000-000000000003' });
+        const order = orderWith([bundle], [child, kept]) as unknown as RemovalOrder & {
+            Lines: { Removed: FakeLine[]; Items: FakeLine[]; Remove: (l: FakeLine) => void };
+        };
+        order.Lines.Remove = (l: FakeLine) => {
+            order.Lines.Items = order.Lines.Items.filter((x) => x !== l);
+            order.Lines.Removed = [...order.Lines.Removed, l];
+        };
+
+        await order.deleteRemovedLines();
+
+        expect(log).toEqual(['delete-line:2', 'delete-line:1']);
+        expect(order.Lines.Items).toEqual([kept]);
+    });
+
     it('refuses rather than part-clearing when a table is at the row cap', async () => {
         mockRunView.mockResolvedValue({
             Success: true,
@@ -213,6 +268,11 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     const instance = orderWith(removed, retained);
     Object.assign(instance, {
         passesStatusTransition: () => true,
+        // The signed-in user's right to remove a line is its own subject (RemovalCleanupUser.test.ts).
+        passesCleanupRight: () => true,
+        // Order review and the Origin guard are their own subject (OrderReviewThroughEntity.test.ts).
+        passesOriginGuard: () => true,
+        passesOrderReviewOnChange: vi.fn().mockResolvedValue(true),
         ApplySavePartyDefaults: vi.fn().mockResolvedValue(undefined),
         willBookOnThisSave: () => false,
         deleteLineDependents: vi.fn().mockResolvedValue(undefined),
@@ -224,6 +284,10 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
         // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.
         stampLineDimensions: vi.fn().mockResolvedValue(undefined),
         savePriceComponents: vi.fn().mockResolvedValue(undefined),
+        deleteSupersededPriceComponents: vi.fn().mockResolvedValue(undefined),
+        // Replacing a draft's earlier tax and promotion rows is its own subject.
+        deleteTaxRecords: vi.fn().mockResolvedValue(undefined),
+        deletePromotionRecords: vi.fn().mockResolvedValue(undefined),
         refreshRolledUpTotals: vi.fn(async () => {
             log.push('refresh-rollups');
         }),
@@ -238,6 +302,7 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000003', writable: true });
     // A draft: the address-snapshot fill that a booked order's save runs is not this file's subject.
     Object.defineProperty(instance, 'IsBookedOrder', { value: false });
+    Object.defineProperty(instance, 'MoneyLocked', { value: false });
 
     const headerSave = vi.spyOn(OrderHeaderEntity.prototype, 'Save').mockImplementation(async () => {
         log.push('save-header');
@@ -303,5 +368,43 @@ describe('OrderEntityServer.Save — removal ordering', () => {
         // One refresh only — the unconditional one at the end of a successful save.
         expect(log.filter((entry) => entry === 'refresh-rollups')).toHaveLength(1);
         expect(log.indexOf('refresh-rollups')).toBeGreaterThan(log.indexOf('save-header'));
+    });
+
+    it('clears the pending removals once the save commits (#1045)', async () => {
+        // The deletes are issued here and the header save skips collections, so nothing in MJ
+        // empties `Lines.Removed`. Left pending, the next save of the same object saw a dirty
+        // collection, and a confirm on lines that were built rather than loaded asked `Load()` to
+        // discard the removal, which MJ refuses.
+        const log: string[] = [];
+        const { instance, headerSave } = savableOrder([fakeLine(1, log)], [fakeLine(2, log)], log);
+        const lines = (instance as unknown as { Lines: { Removed: FakeLine[]; AcceptChanges: ReturnType<typeof vi.fn> } }).Lines;
+
+        try {
+            await expect(instance.Save()).resolves.toBe(true);
+        } finally {
+            headerSave.mockRestore();
+        }
+
+        expect(lines.AcceptChanges).toHaveBeenCalledTimes(1);
+        expect(lines.Removed).toEqual([]);
+    });
+
+    it('keeps the pending removals when the save rolls back, so a retry deletes them', async () => {
+        const log: string[] = [];
+        const removed = fakeLine(1, log);
+        const { instance, headerSave } = savableOrder([removed], [], log);
+        headerSave.mockImplementation(async () => false);
+        // The failure result reads the field list a real entity loads; what it says is not this test's subject.
+        Object.assign(instance, { RegisterResultHistoryEntry: vi.fn(), buildFailureResult: vi.fn() });
+        const lines = (instance as unknown as { Lines: { Removed: FakeLine[]; AcceptChanges: ReturnType<typeof vi.fn> } }).Lines;
+
+        try {
+            await expect(instance.Save()).resolves.toBe(false);
+        } finally {
+            headerSave.mockRestore();
+        }
+
+        expect(lines.AcceptChanges).not.toHaveBeenCalled();
+        expect(lines.Removed).toEqual([removed]);
     });
 });

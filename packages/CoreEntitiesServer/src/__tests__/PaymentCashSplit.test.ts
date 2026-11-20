@@ -12,6 +12,8 @@ import {
     DepositReleasedByCompany,
     HeldDeposit,
     PlanLineDeposits,
+    ReversalDepositWorking,
+    ScheduleSliceKey,
     SplitCashForCompany,
     type InstalmentCashFacts,
 } from '../PaymentScheduleBehavior.js';
@@ -53,6 +55,11 @@ describe('SplitCashForCompany', () => {
     it('counts only what is still unpaid on an invoiced row', () => {
         const rows = [invoiced('1', 100, 40), row({ ID: '2', Amount: 200 })];
         expect(SplitCashForCompany(150, CO_A, rows)).toEqual({ Receivable: 60, Deposit: 90 });
+    });
+
+    it('counts what a credit memo credited as no longer owed on the invoice (#662)', () => {
+        const rows = [{ ...invoiced('1', 100), AmountCredited: 30 }, row({ ID: '2', Amount: 200 })];
+        expect(SplitCashForCompany(100, CO_A, rows)).toEqual({ Receivable: 70, Deposit: 30 });
     });
 
     it('a fully paid schedule has no room, so unnamed cash is a customer credit in AR (Jeremy, #234)', () => {
@@ -150,6 +157,10 @@ describe('HeldDeposit', () => {
         const rows = [row({ ID: '1', AmountPaid: 40, CompanyID: CO_B }), row({ ID: '2', AmountPaid: 40, Status: 'Canceled' })];
         expect(HeldDeposit(rows, CO_A)).toBe(0);
     });
+
+    it('holds no deposit on a paid invoice a credit memo credited: that credit is in AR (#662)', () => {
+        expect(HeldDeposit([{ ...invoiced('1', 100, 100), AmountCredited: 30 }], CO_A)).toBe(0);
+    });
 });
 
 describe('DepositReleasedByCompany', () => {
@@ -219,5 +230,46 @@ describe('PlanLineDeposits', () => {
         const start = { Facts: [row({ ID: '1' })], Released: new Map<string, number>() };
         const plan = PlanLineDeposits([{ CompanyID: CO_A.toUpperCase(), Amount: 60 }], false, null, start);
         expect(plan.Deposits.get(CO_A)).toBe(60);
+    });
+});
+
+describe('reversal deposits follow the row each line named (#812)', () => {
+    // Pay 100 naming invoiced instalment 1 and 150 naming scheduled instalment 2; refund all 250.
+    const before = [invoiced('1', 100, 100), row({ ID: '2', Amount: 200, AmountPaid: 150 })];
+    const after = [invoiced('1', 100, 0), row({ ID: '2', Amount: 200, AmountPaid: 0 })];
+
+    it('the line naming the invoiced instalment un-clears AR; the line naming instalment 2 takes the deposit', () => {
+        const start = ReversalDepositWorking(before, after, ['1', '2']);
+        const first = PlanLineDeposits([{ CompanyID: CO_A, Amount: 100 }], true, '1', start);
+        expect(first.Deposits.get(CO_A)).toBeUndefined();
+        const second = PlanLineDeposits([{ CompanyID: CO_A, Amount: 150 }], true, '2', first.Working);
+        expect(second.Deposits.get(CO_A)).toBe(150);
+    });
+
+    it('gives the same answer whichever line comes first', () => {
+        const start = ReversalDepositWorking(before, after, ['1', '2']);
+        const first = PlanLineDeposits([{ CompanyID: CO_A, Amount: 150 }], true, '2', start);
+        expect(first.Deposits.get(CO_A)).toBe(150);
+        const second = PlanLineDeposits([{ CompanyID: CO_A, Amount: 100 }], true, '1', first.Working);
+        expect(second.Deposits.get(CO_A)).toBeUndefined();
+    });
+
+    it('an unnamed line does not take the release of a row another line names', () => {
+        // 50 unnamed cash sat on instalment 3; 150 named instalment 2. Refund both, unnamed line first.
+        const b = [row({ ID: '2', Amount: 200, AmountPaid: 150 }), row({ ID: '3', Amount: 200, AmountPaid: 50 })];
+        const a = [row({ ID: '2', Amount: 200 }), row({ ID: '3', Amount: 200 })];
+        const start = ReversalDepositWorking(b, a, [null, '2']);
+        const unnamed = PlanLineDeposits([{ CompanyID: CO_A, Amount: 50 }], true, null, start);
+        expect(unnamed.Deposits.get(CO_A)).toBe(50);
+        // It came off instalment 3, which nobody named, so instalment 2's release is intact.
+        expect(unnamed.Working.ReleasedByRow?.get(ScheduleSliceKey('2', CO_A))).toBe(150);
+        const named = PlanLineDeposits([{ CompanyID: CO_A, Amount: 150 }], true, '2', unnamed.Working);
+        expect(named.Deposits.get(CO_A)).toBe(150);
+    });
+
+    it('never debits more deposit than the company released in total', () => {
+        const start = ReversalDepositWorking(before, after, []);
+        const plan = PlanLineDeposits([{ CompanyID: CO_A, Amount: 400 }], true, null, start);
+        expect(plan.Deposits.get(CO_A)).toBe(150);
     });
 });

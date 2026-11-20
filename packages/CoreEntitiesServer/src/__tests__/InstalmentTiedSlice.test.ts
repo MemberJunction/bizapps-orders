@@ -53,3 +53,45 @@ describe('TiedSlice', () => {
         expect(() => TiedSlice([100], [50, 49.99], 0)).toThrow(/cannot be sliced/);
     });
 });
+
+describe('TiedSlice with instalments already invoiced (#681)', () => {
+    // Two 600 lines in four 300 rows; row 1 invoiced 150 / 150; line A lowered by 225, so the
+    // rows not yet invoiced fall to 225 each.
+    const totals = [375, 600];
+    const rows = [300, 225, 225, 225];
+    const billed = { Amounts: [150, 150], Invoiced: [true, false, false, false] };
+
+    it('slices only what each line has left, so each line ends at its lowered amount', () => {
+        const rest = [1, 2, 3].map((i) => TiedSlice(totals, rows, i, billed));
+        rest.forEach((pieces, k) => expect(sum(pieces)).toBe(cents(rows[k + 1])));
+        expect(sum(rest.map((p) => p[0]))).toBe(cents(225));
+        expect(sum(rest.map((p) => p[1]))).toBe(cents(450));
+    });
+
+    it('re-slicing the invoiced row instead is the drift the issue reports', () => {
+        const replayed = [1, 2, 3].map((i) => TiedSlice(totals, rows, i));
+        expect(sum(replayed.map((p) => p[0]))).toBe(cents(259.62));
+    });
+
+    it('lets an instalment be invoiced out of order; the last one left takes the remainder', () => {
+        const third = TiedSlice(totals, rows, 2, billed);
+        const afterThird = { Amounts: [150 + third[0], 150 + third[1]], Invoiced: [true, false, true, false] };
+        const second = TiedSlice(totals, rows, 1, afterThird);
+        const afterSecond = { Amounts: [afterThird.Amounts[0] + second[0], afterThird.Amounts[1] + second[1]], Invoiced: [true, true, true, false] };
+        const fourth = TiedSlice(totals, rows, 3, afterSecond);
+        expect(cents(150) + sum([third[0]]) + sum([second[0]]) + sum([fourth[0]])).toBe(cents(375));
+        expect(sum(fourth)).toBe(cents(225));
+    });
+
+    it('refuses an amount already invoiced beyond what it now holds', () => {
+        expect(() => TiedSlice([100, 600], [300, 400], 1, { Amounts: [150, 150], Invoiced: [true, false] })).toThrow(/more than it now holds/);
+    });
+
+    it('refuses to slice an instalment that is already invoiced', () => {
+        expect(() => TiedSlice(totals, rows, 0, billed)).toThrow(/already invoiced/);
+    });
+
+    it('refuses rows not yet invoiced that do not total what the lines have left', () => {
+        expect(() => TiedSlice(totals, [300, 300, 225, 225], 1, billed)).toThrow(/cannot be sliced/);
+    });
+});

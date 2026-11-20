@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Filing from a Claude Code session?
+    url: https://github.com/MemberJunction/MJ/blob/next/CONTRIBUTING.md
+    about: Use the /report-issue skill. It captures the environment, searches for duplicates, and writes the same fields as this form.

@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS17).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS21).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -30,6 +30,11 @@
  *   LS15 a Holder type keeps the person: two people at one org are two subscriptions, and each re-order extends its own
  *   LS16 …but an org's Holder subscription bought with no contact is found when a re-order names one
  *   LS17 …only when the org is stated: an org inferred from the person's employer is not the holder
+ *   LS18 a subscription sold to start in the future counts as held: the deal line's lookup and the
+ *        close's unanswered-line check both find it (golive #339)
+ *   LS19 a paused subscription counts as held; a canceled one does not
+ *   LS20 a product that inherits its subscription type from its product type is a subscription to
+ *        the close's unanswered-line check, as it is at confirm (golive #339)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -54,6 +59,8 @@ import {
 } from "../fixture.js";
 import { ConfirmOrder, type LineSpec } from "../order-builder.js";
 import { OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import { FindExistingHolding, FindUnansweredHeldLines, type HoldingLine } from "@mj-biz-apps/orders-entities";
+import type { IRunViewProvider } from "@memberjunction/core";
 
 /** Create a person to receive a seat, returning its ID. */
 async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<string> {
@@ -273,6 +280,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
               Quantity: 1,
               UnitPrice: 1200,
               ShipToPersonID: person,
+              SubscriptionAction: "ExtendExisting",
             },
           ],
           OrderDate: new Date("2026-08-01T00:00:00Z"),
@@ -321,7 +329,7 @@ export const LineSubscriberChecks: NamedCheck[] = [
         const nobody = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
-          Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300 }],
+          Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, SubscriptionAction: "CreateNew" }],
         });
         Assert(!nobody.Saved, "with no person resolvable anywhere it must be refused");
         Assert(
@@ -594,7 +602,7 @@ LineSubscriberChecks.push({
       const second = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personB }],
+        Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personB, SubscriptionAction: "CreateNew" }],
       });
       Assert(second.Saved, `a seat for a DIFFERENT person must be allowed: ${second.Message}`);
 
@@ -606,7 +614,7 @@ LineSubscriberChecks.push({
       const repeat = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personA }],
+        Lines: [{ ProductID: f.Products.SubSeat, Quantity: 1, UnitPrice: 300, ShipToPersonID: personA, SubscriptionAction: "CreateNew" }],
       });
       Assert(!repeat.Saved, "a second seat for the SAME person must be refused");
       Assert(
@@ -641,7 +649,7 @@ LineSubscriberChecks.push({
       const second = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
+        Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200, SubscriptionAction: "ExtendExisting" }],
         OrderDate: new Date("2026-08-01T00:00:00Z"),
       });
       Assert(second.Saved, `second confirm failed: ${second.Message}`);
@@ -680,7 +688,7 @@ LineSubscriberChecks.push({
       const second = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
-        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 1200 }],
+        Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 1200, SubscriptionAction: "CreateNew" }],
         OrderDate: new Date("2026-08-01T00:00:00Z"),
       });
       Assert(!second.Saved, "the re-order must be refused by ConcurrencyMode=RejectDuplicate");
@@ -703,18 +711,19 @@ LineSubscriberChecks.push({
       // coworker's paid year was added to the first person's subscription and the coworker got none.
       const first = await makePerson(ctx, "HolderFirst");
       const coworker = await makePerson(ctx, "HolderCoworker");
-      const buy = (person: string, day: string) =>
+      const buy = (person: string, day: string, action?: "ExtendExisting" | "CreateNew") =>
         ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
           BillToPersonID: person,
-          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: action }],
           OrderDate: new Date(`${day}T00:00:00Z`),
         });
 
       const a = await buy(first, "2026-07-01");
       Assert(a.Saved, `first confirm failed: ${a.Message}`);
-      const b = await buy(coworker, "2026-07-15");
+      // The organization already holds the product through the first person: a new one is asked for.
+      const b = await buy(coworker, "2026-07-15", "CreateNew");
       Assert(b.Saved, `coworker confirm failed: ${b.Message}`);
       const [subA] = await subscriptionsOf(ctx, a.Order.ID as string);
       const [subB] = await subscriptionsOf(ctx, b.Order.ID as string);
@@ -722,7 +731,7 @@ LineSubscriberChecks.push({
       Assert(SameID(subB.BeneficiaryPersonID, coworker), "the coworker's subscription is the coworker's");
 
       // The same person again still finds their own and extends it.
-      const again = await buy(first, "2026-08-01");
+      const again = await buy(first, "2026-08-01", "ExtendExisting");
       Assert(again.Saved, `re-order confirm failed: ${again.Message}`);
       const [subAgain] = await subscriptionsOf(ctx, again.Order.ID as string);
       Assert(SameID(subAgain.ID, subA.ID), "the first person's re-order extends their own subscription");
@@ -754,7 +763,7 @@ LineSubscriberChecks.push({
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
         BillToPersonID: contact,
-        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: "ExtendExisting" }],
         OrderDate: new Date("2026-07-01T00:00:00Z"),
       });
       Assert(second.Saved, `second confirm failed: ${second.Message}`);
@@ -787,13 +796,186 @@ LineSubscriberChecks.push({
       const own = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToPersonID: employee,
-        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: "CreateNew" }],
         OrderDate: new Date("2026-07-01T00:00:00Z"),
       });
       Assert(own.Saved, `employee confirm failed: ${own.Message}`);
       const [ownSub] = await subscriptionsOf(ctx, own.Order.ID as string);
       Assert(!SameID(ownSub.ID, orgSub.ID), "the employee gets their own subscription");
       Assert(SameID(ownSub.BeneficiaryPersonID, employee), "and it is stored for them");
+    }),
+});
+
+/** A new, unanswered line for `productID` with no ship-to, as a deal line or draft order holds it. */
+const newLineFor = (productID: string): HoldingLine => ({
+  ID: randomUUID(),
+  LineNumber: 1,
+  ProductID: productID,
+  ShipToOrganizationID: null,
+  ShipToPersonID: null,
+  RenewsSubscriptionID: null,
+  SubscriptionAction: null,
+});
+
+/** The first day of the month after next, so the term has not started whenever the suite runs. */
+function futureStart(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1)).toISOString().slice(0, 10);
+}
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS18",
+  Name: "LS18: a subscription sold to start in the future is found as held by the deal line and at close",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const start = futureStart();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: start }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+      const facts = await TxOne<{ Status: string; StartDate: string | Date }>(
+        ctx,
+        `SELECT s.Status, MIN(t.StartDate) AS StartDate
+         FROM ${ORDERS_SCHEMA}.Subscription s
+         JOIN ${ORDERS_SCHEMA}.SubscriptionTerm t ON t.SubscriptionID = s.ID
+         WHERE s.ID = '${sub.ID}'
+         GROUP BY s.Status`,
+      );
+      Assert(new Date(facts.StartDate).getTime() > Date.now(), `the term starts in the future (${String(facts.StartDate)})`);
+
+      const rv = ctx.Provider as unknown as IRunViewProvider;
+      const subscriber = { OrganizationID: f.Customers.OrganizationID, PersonID: null };
+      // The deal line editor's lookup.
+      const holding = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
+      Assert(
+        SameID(holding?.SubscriptionID ?? null, sub.ID),
+        `the deal line finds ${sub.SubscriptionNumber} (status ${facts.Status}) as held`,
+      );
+
+      // Close Won's check: a new line for the same product on the customer's next order is asked.
+      const order = {
+        ShipToOrganizationID: null,
+        ShipToPersonID: null,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: null,
+      };
+      const unanswered = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
+      AssertEqual(unanswered.length, 1, "the close finds the unanswered line");
+      Assert(SameID(unanswered[0].Holding.SubscriptionID, sub.ID), "and names the future-start subscription");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS19",
+  Name: "LS19: a paused subscription counts as held and a canceled one does not",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+      const rv = ctx.Provider as unknown as IRunViewProvider;
+      const subscriber = { OrganizationID: f.Customers.OrganizationID, PersonID: null };
+
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET Status = 'Paused' WHERE ID = '${sub.ID}'`);
+      const paused = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
+      Assert(SameID(paused?.SubscriptionID ?? null, sub.ID), "a paused subscription is still held");
+
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET Status = 'Canceled' WHERE ID = '${sub.ID}'`);
+      const canceled = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
+      Assert(!canceled || !SameID(canceled.SubscriptionID, sub.ID), "a canceled subscription is not held");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS20",
+  Name: "LS20: a product inheriting its subscription type is asked about at close",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+
+      // Move the product's subscription type onto its product type, as a catalog loaded outside the
+      // entity layer leaves it: the product names none and inherits the type's default.
+      const product = await TxOne<{ ProductTypeID: string; SubscriptionTypeID: string }>(
+        ctx,
+        `SELECT ProductTypeID, SubscriptionTypeID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.SubRolling}'`,
+      );
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Product SET SubscriptionTypeID = NULL WHERE ID = '${f.Products.SubRolling}'`);
+      await TxQuery(
+        ctx,
+        `UPDATE ${ORDERS_SCHEMA}.ProductType SET DefaultSubscriptionTypeID = '${product.SubscriptionTypeID}' WHERE ID = '${product.ProductTypeID}'`,
+      );
+
+      const rv = ctx.Provider as unknown as IRunViewProvider;
+      const order = {
+        ShipToOrganizationID: null,
+        ShipToPersonID: null,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: null,
+      };
+      const unanswered = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
+      AssertEqual(unanswered.length, 1, "the close finds the unanswered line for an inheriting product");
+      Assert(SameID(unanswered[0].Holding.SubscriptionID, sub.ID), `and names ${sub.SubscriptionNumber}`);
+
+      // With no default on the product type either, the product is a one-time sale and is not asked.
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.ProductType SET DefaultSubscriptionTypeID = NULL WHERE ID = '${product.ProductTypeID}'`);
+      const oneTime = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
+      AssertEqual(oneTime.length, 0, "a product with no subscription type anywhere is not asked");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS21",
+  Name: "LS21: confirm refuses a line for a held product until it says extend or new (golive #467)",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+
+      // No answer: the type's rule would move the line to the next term with nothing said.
+      const unanswered = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(!unanswered.Saved, "a line for a held product with no answer must not confirm");
+      Assert(unanswered.Message.includes("was not confirmed"), `the refusal says so: ${unanswered.Message}`);
+      Assert(unanswered.Message.includes(sub.SubscriptionNumber), `and names ${sub.SubscriptionNumber}: ${unanswered.Message}`);
+
+      // Each answer confirms.
+      for (const action of ["ExtendExisting", "CreateNew"] as const) {
+        const answered = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: action }],
+        });
+        Assert(answered.Saved, `a line answering ${action} confirms: ${answered.Message}`);
+      }
     }),
 });
 

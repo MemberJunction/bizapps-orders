@@ -1,5 +1,5 @@
 import type { mjBizAppsOrdersEventProductEntity } from '@mj-biz-apps/orders-entities';
-import { FormatShortDate } from '../../form-panels/document-form.helpers';
+import { FormatShortInstantDate } from '../../form-panels/document-form.helpers';
 
 /** What the Event details panel shows about the event an event order line is for. */
 export interface LineEventSummary {
@@ -16,8 +16,8 @@ type LineEventSource = Pick<mjBizAppsOrdersEventProductEntity, 'Name' | 'EventSt
  */
 export function DescribeLineEvent(event: LineEventSource | null | undefined): LineEventSummary | null {
     if (!event) return null;
-    const start = FormatShortDate(event.EventStartsAt);
-    const end = FormatShortDate(event.EventEndsAt);
+    const start = FormatShortInstantDate(event.EventStartsAt);
+    const end = FormatShortInstantDate(event.EventEndsAt);
     const dates = !start ? end : !end || end === start ? start : `${start} – ${end}`;
     return { Name: event.Name, Dates: dates || 'No dates set' };
 }

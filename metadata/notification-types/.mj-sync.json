@@ -1,0 +1,19 @@
+{
+  "entity": "MJ: User Notification Types",
+  "filePattern": "**/.*.json",
+  "pull": {
+    "createNewFileIfNotFound": true,
+    "newFileName": ".orders-notification-types.json",
+    "appendRecordsToExistingFile": true,
+    "updateExistingRecords": true,
+    "ignoreNullFields": true,
+    "ignoreVirtualFields": true,
+    "filter": "Name = 'Payment Needs Review'",
+    "lookupFields": {
+      "EmailTemplateID": {
+        "entity": "MJ: Templates",
+        "field": "Name"
+      }
+    }
+  }
+}

@@ -6,9 +6,14 @@
 import { describe, expect, it } from 'vitest';
 import {
     AllocateInvoicePayments,
+    BILLCOM_STATUS_VOCABULARY,
     ClassifyPaymentStatus,
     DecideExternalPayment,
     ExternalPaymentIdempotencyKey,
+    HUBSPOT_PAYMENT_STATUS,
+    HUBSPOT_STATUS_VOCABULARY,
+    HubSpotTenderFor,
+    PaymentStatusVocabularyFor,
     TenderFor,
     type PaymentSeen,
     type UnitRef,
@@ -246,5 +251,81 @@ describe('a Reapplied payment on a LATER pass', () => {
 
     it('still reports a reversal ahead of the allocation, which is the worse fact', () => {
         expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
+    });
+});
+
+/**
+ * HubSpot Payments (#482) reads through the same decision with its own status table. The defects these
+ * guard: a refund or dispute on HubSpot read as "already captured, nothing to do", and a status the
+ * table does not know read as cleared.
+ */
+describe('HubSpot payment statuses', () => {
+    const seen = (Status: string | null, PriorDisposition: PaymentSeen['PriorDisposition'] = null): PaymentSeen => ({
+        ExternalPaymentRef: 'hp1',
+        Status,
+        PriorDisposition,
+        Vocabulary: HUBSPOT_STATUS_VOCABULARY,
+    });
+
+    it('classifies HubSpot statuses with the HubSpot table, not Bill.com\'s', () => {
+        expect(ClassifyPaymentStatus('succeeded', HUBSPOT_PAYMENT_STATUS)).toBe('Cleared');
+        expect(ClassifyPaymentStatus('processing', HUBSPOT_PAYMENT_STATUS)).toBe('Pending');
+        expect(ClassifyPaymentStatus('refunded', HUBSPOT_PAYMENT_STATUS)).toBe('Reversed');
+        expect(ClassifyPaymentStatus('partially_refunded', HUBSPOT_PAYMENT_STATUS)).toBe('Attention');
+        expect(ClassifyPaymentStatus('succeeded')).toBe('Unknown');
+        expect(ClassifyPaymentStatus('PAID', HUBSPOT_PAYMENT_STATUS)).toBe('Unknown');
+    });
+
+    it('a succeeded payment never seen captures', () => expect(DecideExternalPayment(seen('succeeded')).Action).toBe('Capture'));
+    it('a processing payment holds, naming HubSpot', () => {
+        const d = DecideExternalPayment(seen('processing'));
+        expect(d.Action).toBe('Hold');
+        expect(d.Reason).toContain('HubSpot');
+        expect(d.Reason).not.toContain('Bill.com');
+    });
+    it('a failed payment never captured is ignored', () => expect(DecideExternalPayment(seen('failed')).Action).toBe('Ignore'));
+    it('a partial refund never captured holds for a person', () => {
+        const d = DecideExternalPayment(seen('partially_refunded'));
+        expect(d.Action).toBe('Hold');
+        expect(d.Reason).toMatch(/refund or a dispute/);
+    });
+    it('a partial refund on a captured payment is reported, not swallowed as already captured', () => {
+        const d = DecideExternalPayment(seen('partially_refunded', 'Captured'));
+        expect(d.Action).toBe('ReversalNeeded');
+        expect(d.Reason).toMatch(/refund or chargeback/);
+    });
+    it('an open dispute on a captured payment is reported', () => expect(DecideExternalPayment(seen('disputed_action_required', 'Captured')).Action).toBe('ReversalNeeded'));
+    it('a full refund on a captured payment needs a reversal', () => expect(DecideExternalPayment(seen('refunded', 'Captured')).Action).toBe('ReversalNeeded'));
+    it('a won dispute is not in the table, so it holds rather than captures', () => {
+        const d = DecideExternalPayment(seen('disputed_won'));
+        expect(d.Action).toBe('Hold');
+        expect(d.Reason).toContain('HUBSPOT_PAYMENT_STATUS');
+    });
+    it('leaves Bill.com reasons as they were when no vocabulary is passed', () => {
+        expect(DecideExternalPayment({ ExternalPaymentRef: '0rp1', Status: 'SCHEDULED', PriorDisposition: null }).Reason).toContain('Bill.com');
+    });
+});
+
+describe('PaymentStatusVocabularyFor', () => {
+    it('gives HubSpot its own table and no invoice applications', () => {
+        expect(PaymentStatusVocabularyFor('HubSpotPayments')).toBe(HUBSPOT_STATUS_VOCABULARY);
+        expect(HUBSPOT_STATUS_VOCABULARY.ReportsInvoiceApplications).toBe(false);
+    });
+    it('keeps Bill.com, and any type without a table, on Bill.com\'s', () => {
+        expect(PaymentStatusVocabularyFor('BillCom')).toBe(BILLCOM_STATUS_VOCABULARY);
+        expect(PaymentStatusVocabularyFor(null)).toBe(BILLCOM_STATUS_VOCABULARY);
+        expect(BILLCOM_STATUS_VOCABULARY.ReportsInvoiceApplications).toBe(true);
+    });
+});
+
+describe('HubSpotTenderFor', () => {
+    it('books a card as a card and bank debits as ACH', () => {
+        expect(HubSpotTenderFor('card')).toBe('CreditCard');
+        expect(HubSpotTenderFor('ach')).toBe('ACH');
+        expect(HubSpotTenderFor('SEPA')).toBe('ACH');
+    });
+    it('has no tender for money HubSpot only recorded', () => {
+        expect(HubSpotTenderFor('check')).toBeNull();
+        expect(HubSpotTenderFor(null)).toBeNull();
     });
 });

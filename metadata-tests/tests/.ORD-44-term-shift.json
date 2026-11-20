@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-44 - Term Shift",
+    "Description": "A booked term's start and end moved together at the same price (TS1-TS6). The Shift concession that records it is valued at zero and goes through under the TermShiftReviewDays setting; at or above it the finance acknowledgment role reviews it, the requester cannot decide it, and finance may escalate it to the ConcessionLimit tier. Applying it moves the term, the selling line's service period and the subscription's start, offsets every staged recognition entry dated on or after the effective day, re-spreads the whole amount from the new start, and corrects periods already behind the effective day with one entry dated that day. Instalments not yet invoiced move with the term when its line is all the order bills. Orders.AmendArrangement previews and records a shift and refuses a shortening.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "A 20-day shift under a 30-day review limit is Approved on save at zero value; the term, line and subscription start move 20 days; the term's recognition entries still sum to its amount, include offsets, are written on or after today and recognise nothing after the new end; no non-recognition entry is written; a Rescheduled event names the concession; one Open ACTION_ITEM task asks accounting to confirm the re-cut. A 30-day shift waits for finance with an approval task; the requester cannot approve it; a finance holder approves and it applies. Finance escalates a reviewed shift with a reason to the ConcessionLimit floor tier, its task is cancelled with that reason, the tier's role gets a task and its approval applies the shift. A start moved 60 days earlier writes one positive catch-up dated today. A preview writes nothing and the end follows the start; an earlier end, a later start with the same end, and a shift with an extension are refused; the call without Preview applies. Two future instalments move 15 days with a 15-day shift."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "term-shift"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "904139EE-F2C6-47F4-AE8F-791A13D1B523"
+  }
+}

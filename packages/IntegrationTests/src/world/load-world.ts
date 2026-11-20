@@ -161,7 +161,7 @@ async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, cu
         const id = await Upsert(
             ctx,
             COMPANY_PROFILE_ENTITY,
-            `Name = '${Quote(row.Name)}'`,
+            `CompanyCode = '${Quote(row.Code)}' OR Name = '${Quote(row.Name)}'`,
             {
                 Name: row.Name,
                 Description: WORLD_TAG,
@@ -595,7 +595,9 @@ async function loadEventProducts(ctx: IntegrationCheckContext, world: WorldState
             EventEndsAt: new Date(row.EventEndsAt),
             VenueName: row.VenueName,
             Capacity: Number(row.Capacity),
-            RequiresAttendeeInfo: true,
+            // The world's events are sold by the quantity in recognition, entitlement and booking
+            // checks that name no attendee. The attendee rule has its own event (events EV11/EV12).
+            RequiresAttendeeInfo: false,
             CompanyID: company.ID,
             ProductTypeID: typeID,
             ProductCategoryID: catID,

@@ -81,7 +81,7 @@ function setOutput(params: RunActionParams, name: string, value: unknown): void 
  * Render an order as an invoice, quote or credit memo.
  *
  * Inputs: `OrderID` (required), `CompanyID`, `PaymentScheduleID` (one instalment's document),
- * `AsOfDate`, `TemplateName`, `Locale`, `CurrencyCode`, `Format`, `ShowDiagnostics`.
+ * `OrderConcessionID` (the credit memo an approved amount change issued, #684), `AsOfDate`, `TemplateName`, `Locale`, `CurrencyCode`, `Format`, `ShowDiagnostics`.
  * Outputs: `Invoices`, `HTML`, `DocumentCount`, `Notes`.
  */
 @RegisterClass(BaseAction, 'Orders.GenerateInvoice')
@@ -176,9 +176,19 @@ export class GenerateInvoiceAction extends BaseAction {
             };
         }
 
+        const orderConcessionID = strParam(params, 'OrderConcessionID');
+        if (orderConcessionID && !UUID.test(orderConcessionID)) {
+            return {
+                Success: false,
+                ResultCode: 'INVALID_ORDER_CONCESSION_ID',
+                Message: `'${orderConcessionID}' is not an order concession ID.`,
+            };
+        }
+
         const rendered = await RenderInvoiceDocuments(orderID, provider, user, {
             CompanyID: companyID,
             PaymentScheduleID: paymentScheduleID,
+            OrderConcessionID: orderConcessionID,
             AsOfDate: strParam(params, 'AsOfDate'),
             TemplateName: strParam(params, 'TemplateName') ?? DEFAULT_INVOICE_TEMPLATE,
             Locale: strParam(params, 'Locale') ?? 'en-US',

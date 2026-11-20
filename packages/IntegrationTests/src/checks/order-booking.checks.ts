@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB28).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB32).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -35,6 +35,12 @@
  *   OB27 a draft line for a product this process never cached (written by raw SQL, so no entity
  *        event) saves with the product's company instead of failing on a null CompanyID (golive #301)
  *   OB28 …and an order of such a product confirms and books under the product's company (golive #301)
+ *   OB29 a taxed order saved as a draft and then confirmed books balanced entries whose receivable is
+ *        the order's gross, with one set of tax rows per line (#484)
+ *   OB30 …and keeps one price breakdown per line, not one per save
+ *   OB31 a paid line beside a line at its $0 catalog price is refused at the confirm checklist and by
+ *        the save, before journal booking, naming the line once (golive #328)
+ *   OB32 a checkout order is not held by that rule; the same lines entered by hand are
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -137,7 +143,8 @@ async function lineEntries(ctx: IntegrationCheckContext, orderID: string) {
 /**
  * A product written the way a catalog loader or another process writes one: a raw INSERT, which
  * fires no entity event, so this process's `OrdersEngine` never hears of it (golive #301). Copies
- * the classification of `like` so booking resolves the same GL accounts, and adds NO price row.
+ * the classification of `like` so booking resolves the same GL accounts, and its status and availability
+ * window so the sellability check treats it as `like` (the column default is Draft), and adds NO price row.
  */
 async function productCachedNowhere(ctx: IntegrationCheckContext, like: string): Promise<{ ID: string; CompanyID: string }> {
     // Warm the cache FIRST, as MJAPI does at startup. A cache that first loads after the INSERT
@@ -148,8 +155,10 @@ async function productCachedNowhere(ctx: IntegrationCheckContext, like: string):
     const sku = `G301-${id.slice(0, 8)}`;
     await TxQuery(
         ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.Product (ID, Name, SKU, ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID)
-         SELECT '${id}', '${sku}', '${sku}', ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID
+        `INSERT INTO ${ORDERS_SCHEMA}.Product (ID, Name, SKU, ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID,
+                                               Status, AvailableFrom, AvailableTo)
+         SELECT '${id}', '${sku}', '${sku}', ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID,
+                Status, AvailableFrom, AvailableTo
            FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${like}'`,
     );
     Assert(!OrdersEngine.Instance.ProductByID(id), 'precondition: the raw INSERT must not reach the engine cache');
@@ -1039,6 +1048,207 @@ export const OrderBookingChecks: NamedCheck[] = [
                 );
                 Assert(SameID(line.CompanyID, product.CompanyID), `the line takes the product's company, got ${line.CompanyID}`);
                 Assert(!!line.JournalEntryID, 'the line is booked');
+            }),
+    },
+    {
+        Id: 'order-booking.OB29',
+        Name: 'OB29: a taxed draft, then confirmed, books balanced entries for the order\'s gross (#484)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // THE PATH A REP TAKES whenever something has to be recorded before confirm: save the
+                // draft, then confirm it. Both saves run the pricing walk and both resolve the tax.
+                // The confirm used to ADD its tax rows beside the draft's, so booking credited the
+                // tax twice against a receivable that carried it once and refused the entry. OB10
+                // takes this path too, because its discounted line needs a concession before
+                // confirm; this check covers it without a discount or a concession.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 50);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    ShipToAddressID: f.Tax.AddressIDs.get('SantaClara'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 3, UnitPrice: 100 },
+                        { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 50 },
+                    ],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                draft.Order.Status = 'Confirmed';
+                Assert(
+                    await draft.Order.Save(),
+                    `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                const orderID = draft.Order.ID;
+
+                // One set of tax rows: each line's tax allocations add up to its LineTax, once.
+                const lines = await TxQuery<{ LineNumber: number; LineTax: number; Allocated: number }>(
+                    ctx,
+                    `SELECT ol.LineNumber, ol.LineTax,
+                            (SELECT ISNULL(SUM(a.Amount),0)
+                               FROM ${ORDERS_SCHEMA}.OrderChargeAllocation a
+                               JOIN ${ORDERS_SCHEMA}.OrderCharge c ON c.ID = a.OrderChargeID
+                               JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+                              WHERE a.OrderLineID = ol.ID AND t.Category = 'Tax') AS Allocated
+                       FROM ${ORDERS_SCHEMA}.OrderLine ol WHERE ol.OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(lines.length, 2, 'order lines');
+                Assert(lines.every((l) => Number(l.LineTax) > 0), `the fixture address taxes both lines: ${JSON.stringify(lines)}`);
+                Assert(
+                    lines.every((l) => Number(l.Allocated) === Number(l.LineTax)),
+                    `each line's tax rows must sum to its LineTax once: ${JSON.stringify(lines)}`,
+                );
+
+                const balances = await TxQuery<{ D: number; C: number }>(
+                    ctx,
+                    `SELECT SUM(jel.DebitAmount) AS D, SUM(jel.CreditAmount) AS C
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                      WHERE jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${orderID}' AND ol.JournalEntryID IS NOT NULL)
+                      GROUP BY jel.JournalEntryID`,
+                );
+                AssertEqual(balances.length, 2, 'one entry per line');
+                Assert(
+                    balances.every((b) => Number(b.D) === Number(b.C)),
+                    `unbalanced entry: ${JSON.stringify(balances)}`,
+                );
+
+                const header = await TxOne<{ TotalGross: number }>(
+                    ctx,
+                    `SELECT TotalGross FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`,
+                );
+                const ar = await TxOne<{ Net: number }>(
+                    ctx,
+                    `SELECT ISNULL(SUM(jel.DebitAmount),0) - ISNULL(SUM(jel.CreditAmount),0) AS Net
+                       FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+                       JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
+                      WHERE gl.Code = '11201'
+                        AND jel.JournalEntryID IN (
+                            SELECT ol.JournalEntryID FROM ${ORDERS_SCHEMA}.OrderLine ol
+                             WHERE ol.OrderHeaderID = '${orderID}' AND ol.JournalEntryID IS NOT NULL)`,
+                );
+                AssertEqual(
+                    Math.round(Number(ar.Net) * 100) / 100,
+                    Math.round(Number(header.TotalGross) * 100) / 100,
+                    'the receivable the ledger raised must equal what the order says is owed',
+                );
+            }),
+    },
+    {
+        Id: 'order-booking.OB30',
+        Name: 'OB30: a draft, then confirmed, keeps one price breakdown per line',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The breakdown is written after every pricing walk, like the tax rows OB29 covers.
+                // A second set on the line would describe the price twice to whoever audits it.
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2 }],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const count = async () =>
+                    (
+                        await TxOne<{ N: number }>(
+                            ctx,
+                            `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderLinePriceComponent pc
+                               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = pc.OrderLineID
+                              WHERE ol.OrderHeaderID = '${draft.Order.ID}'`,
+                        )
+                    ).N;
+                const afterDraft = Number(await count());
+                Assert(afterDraft > 0, 'the draft save records a breakdown');
+
+                draft.Order.Status = 'Confirmed';
+                Assert(
+                    await draft.Order.Save(),
+                    `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
+                );
+                AssertEqual(Number(await count()), afterDraft, 'price breakdown rows after the confirm');
+            }),
+    },
+    {
+        Id: 'order-booking.OB31',
+        Name: 'OB31: a paid line beside a line at its $0 catalog price is refused at the confirm checklist and by the save, booking nothing',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A negotiated-price product sits in the catalog at 0, and the person entering the
+                // order must type the price. Left at 0, the deferred line used to reach accounting,
+                // which refused a $0 release for every month of its term (bc-aidp-next-golive#328).
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                await CreateProductPrice(ctx, f.Products.DeferredA, 0);
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 1 },
+                        {
+                            ProductID: f.Products.DeferredA,
+                            Quantity: 1,
+                            ServicePeriodStart: '2026-07-01',
+                            ServicePeriodEnd: '2027-06-30',
+                        },
+                    ],
+                });
+                Assert(await built.Order.Save(), `the draft must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const free = built.Order.Lines.Items.find((l) => l.ProductID === f.Products.DeferredA);
+                AssertEqual(Number(free?.UnitPrice), 0, 'precondition: the line took its $0 catalog price');
+
+                const verdict = built.Order.ConfirmEligibility();
+                AssertEqual(verdict.Allowed, false, 'the confirm checklist holds the order');
+                Assert(
+                    /^Line 2( \(.+\))? has a price of 0\. Enter the negotiated price/.test(verdict.Reason ?? ''),
+                    `the checklist names the line once: ${verdict.Reason}`,
+                );
+
+                built.Order.Status = 'Confirmed';
+                Assert(!(await built.Order.Save()), 'the save refuses the confirm');
+                const message = built.Order.LatestResult?.CompleteMessage ?? '';
+                Assert(/Line 2( \(.+\))? has a price of 0/.test(message), `the refusal is the checklist's: ${message}`);
+                Assert(!/MALFORMED_DRAFT/.test(message), `the refusal comes before journal booking: ${message}`);
+
+                const booked = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.vwJournalEntries
+                      WHERE LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${built.Order.ID}')`,
+                );
+                AssertEqual(Number(booked.N), 0, 'journal entries for the refused order');
+                const persisted = await TxOne<{ Status: string }>(
+                    ctx,
+                    `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`,
+                );
+                AssertEqual(persisted.Status, 'Draft', 'the order stays a draft');
+            }),
+    },
+    {
+        Id: 'order-booking.OB32',
+        Name: 'OB32: a checkout order is not held by the $0-line rule; its prices come from the catalog',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                await CreateProductPrice(ctx, f.Products.WidgetB, 0);
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 1 },
+                        { ProductID: f.Products.WidgetB, Quantity: 1 },
+                    ],
+                });
+                Assert(await built.Order.Save(), `the draft must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`);
+                AssertEqual(built.Order.UnpricedLines().length, 1, 'entered by hand, the $0 line is held');
+
+                // Only the checkout process may save Origin 'Widget' (SystemOrderOrigin's guard), so the
+                // checkout side is asked of the same priced lines in memory, without a save.
+                built.Order.Origin = 'Widget';
+                AssertEqual(built.Order.UnpricedLines().length, 0, 'no line is held on a checkout order');
             }),
     },
 ];

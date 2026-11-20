@@ -6,16 +6,16 @@
  * deleted.
  *
  * ── WHY ─────────────────────────────────────────────────────────────────────────
- * The runner records every applied migration with its version, script name and a checksum. Change
- * the file and the databases that already ran it refuse to migrate until somebody repairs the
- * history table by hand; the databases that never ran it get different SQL. The two populations
- * diverge, and nothing reports it — the schema a colleague ends up with depends on when they last
+ * The runner records every applied migration with its version, script name and a checksum, and
+ * never runs a recorded version again. It does not compare the checksum later, so a changed file
+ * never reaches the databases that already ran it, while the databases that never ran it get the
+ * new SQL. The two populations diverge, and nothing reports it — the schema a colleague ends up with depends on when they last
  * pulled. Fixing forward in a NEW file is the only operation that converges both.
  *
  * A RENAME IS NOT A LESSER CHANGE. The runner keys on the twelve-digit version in the filename, so
  * a renamed migration is a version nobody has run: it executes again, and plain DDL then fails on
- * objects that already exist. Because a run is one transaction, that failure rolls back everything
- * pending with it. Deleting is worse still — the migration silently stops existing for anyone who
+ * objects that already exist; when its new version sorts below the newest one a database has
+ * applied, `mj migrate` refuses the run as out of order. Deleting is worse still — the migration silently stops existing for anyone who
  * has not run it.
  *
  * ── THE HOLE THIS CLOSES ────────────────────────────────────────────────────────
@@ -71,7 +71,10 @@ function git(args, cwd = process.cwd()) {
  * teaches people to merge past this check — the exact habit it exists to stop.
  */
 export function ChangedLockedMigrations(base, head, cwd = process.cwd()) {
-    const raw = git(['diff', '--diff-filter=MRDT', '--name-status', '-M', `${base}...${head}`, '--', 'migrations/'], cwd);
+    // `:(top)` roots the pathspec at the repository, not at `cwd`. A plain `migrations/` run from
+    // `packages/Entities` names `packages/Entities/migrations/`, matches nothing, and reports clean
+    // on a real edit (#822). Paths in `--name-status` output are repo-relative either way.
+    const raw = git(['diff', '--diff-filter=MRDT', '--name-status', '-M', `${base}...${head}`, '--', ':(top)migrations/'], cwd);
     if (!raw) return [];
     return raw
         .split('\n')
@@ -95,10 +98,10 @@ function report(found, baseLabel) {
         console.error(`    ${YELLOW}${f.Status}${OFF}: ${what}`);
     }
     console.error('');
-    console.error('A migration on the base branch is locked. Every database that ran it recorded its');
-    console.error('checksum, so changing the file makes those databases refuse to migrate while the ones');
-    console.error('that never ran it get different SQL. Renaming counts: the runner keys on the version in');
-    console.error('the filename, so a renamed migration runs again against objects that already exist.');
+    console.error('A migration on the base branch is locked. Every database that ran it recorded it as');
+    console.error('applied and never runs it again, so a change never reaches those databases while the');
+    console.error('ones that never ran it get different SQL. Renaming counts: the runner keys on the version');
+    console.error('in the filename, so a renamed migration runs again against objects that already exist.');
     console.error('');
     console.error('Fix it forward in a NEW migration file.');
     console.error('');
@@ -175,6 +178,28 @@ function selfTest() {
         const ok = got.length === 0;
         console.log(`  ${ok ? '✓' : '✗'} a branch merely behind the base is clean — expected [], got [${got}]`);
         if (!ok) fail.push('a-branch-merely-behind-is-clean');
+    }
+
+    // Run from a subdirectory: the pathspec must still name the repository's `migrations/` (#822).
+    {
+        const dir = join(root, 'run-from-a-subdirectory');
+        mkdirSync(join(dir, 'migrations'), { recursive: true });
+        mkdirSync(join(dir, 'packages', 'Entities'), { recursive: true });
+        git(['init', '-q', '.'], dir);
+        git(['config', 'user.email', 't@t'], dir);
+        git(['config', 'user.name', 't'], dir);
+        writeFileSync(join(dir, 'migrations', 'V202601010000__v1__A.sql'), 'CREATE TABLE a(i int);\n');
+        writeFileSync(join(dir, 'packages', 'Entities', 'index.ts'), 'export {};\n');
+        git(['add', '-A'], dir);
+        git(['commit', '-qm', 'base'], dir);
+        const base = git(['rev-parse', 'HEAD'], dir);
+        writeFileSync(join(dir, 'migrations', 'V202601010000__v1__A.sql'), 'CREATE TABLE a(i int, j int);\n');
+        git(['add', '-A'], dir);
+        git(['commit', '-qm', 'change'], dir);
+        const got = ChangedLockedMigrations(base, git(['rev-parse', 'HEAD'], dir), join(dir, 'packages', 'Entities')).map((f) => f.Status);
+        const ok = JSON.stringify(got) === JSON.stringify(['modified']);
+        console.log(`  ${ok ? '✓' : '✗'} an edit is caught when run from a subdirectory — expected [modified], got [${got}]`);
+        if (!ok) fail.push('run-from-a-subdirectory');
     }
 
     scenario('two at once are both reported', (d) => {

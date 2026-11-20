@@ -73,8 +73,10 @@ export interface PromotionOutcome {
 export interface RejectedPromotion {
     Promotion: PromotionRule;
     Reason: PromotionRejection;
-    /** For a lost collision, the promotion that beat it. */
+    /** For a lost collision or a no-stacking policy, the code of the promotion that beat it. */
     LostTo?: string;
+    /** That promotion's name, which is what the customer is told. */
+    LostToName?: string;
 }
 
 export interface ApplyPromotionsResult {
@@ -175,7 +177,12 @@ export function ApplyPromotions(rules: PromotionRule[], ctx: PromotionContext): 
         // promotions themselves claim.
         survivors.push(valued[0].rule);
         for (const v of valued.slice(1)) {
-            rejected.push({ Promotion: v.rule, Reason: 'StackingNotPermitted', LostTo: valued[0].rule.Code });
+            rejected.push({
+                Promotion: v.rule,
+                Reason: 'StackingNotPermitted',
+                LostTo: valued[0].rule.Code,
+                LostToName: valued[0].rule.Name,
+            });
         }
     } else {
         // The best offer always applies. After that, only promotions that opt IN to stacking may
@@ -184,9 +191,19 @@ export function ApplyPromotions(rules: PromotionRule[], ctx: PromotionContext): 
         survivors.push(winner.rule);
         for (const v of valued.slice(1)) {
             if (!winner.rule.AllowsStacking) {
-                rejected.push({ Promotion: v.rule, Reason: 'LostExclusiveCollision', LostTo: winner.rule.Code });
+                rejected.push({
+                    Promotion: v.rule,
+                    Reason: 'LostExclusiveCollision',
+                    LostTo: winner.rule.Code,
+                    LostToName: winner.rule.Name,
+                });
             } else if (!v.rule.AllowsStacking) {
-                rejected.push({ Promotion: v.rule, Reason: 'LostExclusiveCollision', LostTo: winner.rule.Code });
+                rejected.push({
+                    Promotion: v.rule,
+                    Reason: 'LostExclusiveCollision',
+                    LostTo: winner.rule.Code,
+                    LostToName: winner.rule.Name,
+                });
             } else {
                 survivors.push(v.rule);
             }

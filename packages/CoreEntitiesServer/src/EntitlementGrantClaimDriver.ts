@@ -10,14 +10,12 @@
 
 import { RegisterClass } from '@memberjunction/global';
 import { LogError, Metadata, UserInfo, IRunViewProvider } from '@memberjunction/core';
-// Local fallback contracts — see identityClaimContracts.ts. Restore this import to
-// '@memberjunction/core-entities' once MJ publishes these exports.
 import {
     BaseIdentityClaimDriver,
     type ClaimContext,
     type ClaimRedeemContext,
     type ClaimResult,
-} from './identityClaimContracts.js';
+} from '@memberjunction/core-entities';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import { resolvePersonID } from './claimDriverHelpers.js';
 import { IsPaymentSuspension } from './EntitlementBehavior.js';
@@ -77,7 +75,12 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        const personID = await resolvePersonID(User, Claim.ProviderToUse);
+        let personID: string | null;
+        try {
+            personID = await resolvePersonID(User, Claim.ProviderToUse);
+        } catch (e) {
+            return { Success: false, ErrorMessage: e instanceof Error ? e.message : String(e) };
+        }
         if (personID && (!grant.BeneficiaryPersonID || grant.BeneficiaryPersonID !== personID)) {
             grant.BeneficiaryPersonID = personID;
         }

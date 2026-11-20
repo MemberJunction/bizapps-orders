@@ -47,6 +47,7 @@ import type {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
+import { ResolveSubscriptionTypeID } from '../subscription-type';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
@@ -190,6 +191,16 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     /**
+     * The subscription type a line of this product starts at confirm, resolved by
+     * {@link ResolveSubscriptionTypeID}. Undefined when the product sells no subscription or the
+     * cache has not loaded.
+     */
+    public SubscriptionTypeForProduct(productID: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
+        const id = this.ResolveSubscriptionTypeID(productID);
+        return id ? this.SubscriptionTypeByID(id) : undefined;
+    }
+
+    /**
      * Product.RevenueRecognitionTypeID when set, otherwise the product type's
      * DefaultRevenueRecognitionTypeID. Null means booking cannot tell upfront vs over time.
      */
@@ -199,6 +210,15 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const explicit = product.RevenueRecognitionTypeID?.trim();
         if (explicit) return explicit;
         return this.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID?.trim() || null;
+    }
+    /**
+     * Product.SubscriptionTypeID when set, otherwise the product type's DefaultSubscriptionTypeID:
+     * the type confirm builds a term from (golive #339). Null means the line is not a subscription.
+     */
+    public ResolveSubscriptionTypeID(productID: string | null | undefined): string | null {
+        const product = this.ProductByID(productID);
+        if (!product) return null;
+        return ResolveSubscriptionTypeID(product.SubscriptionTypeID, this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID);
     }
     public EventProductByID(id: string | null | undefined): mjBizAppsOrdersEventProductEntity | undefined {
         return byID(this.EventProducts, id);
@@ -316,12 +336,22 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         if ((type?.Code ?? '').trim().toLowerCase() === GIFT_CARD_TYPE_CODE) return 'NotRequired';
         const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
         if (!revRec?.RequiresServicePeriod) return 'NotRequired';
-        if (product.SubscriptionTypeID) return 'Subscription';
+        if (this.ResolveSubscriptionTypeID(productID)) return 'Subscription';
         // The ROW, not the product type: the order save stamps the window from the Event Products row
         // (`applyEventServicePeriod`), so an event-type product loaded without one has no dates to
         // stamp and has to be asked for them like any other line.
         if (this.EventProductByID(productID)) return 'Event';
         return 'Line';
+    }
+
+    /**
+     * True when the product's recognition type is percentage of completion (`ScheduleBasis =
+     * 'OnMeasurement'`): revenue follows attested progress, so a line's service dates are an expected
+     * window, not something recognition reads (bc-aidp-next-golive#455).
+     */
+    public IsProgressMeasured(productID: string | null | undefined): boolean {
+        const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
+        return revRec?.ScheduleBasis === 'OnMeasurement';
     }
 
     /** Active base-channel (no list) prices on a product, highest priority first. */

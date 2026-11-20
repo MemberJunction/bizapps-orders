@@ -34,6 +34,7 @@ function concession(opts: { status?: string; saves: boolean; refusal?: string })
     Object.defineProperty(row, 'ID', { value: CONCESSION_ID });
     Object.defineProperty(row, 'OrderHeaderID', { value: ORDER_ID });
     Object.defineProperty(row, 'RequestedByUserID', { value: REQUESTER_ID });
+    Object.defineProperty(row, 'SalesRuleID', { value: 'rule-1' });
     Object.defineProperty(row, 'Status', { value: opts.status ?? 'Pending', writable: true });
     Object.defineProperty(row, 'DecisionNotes', { value: null, writable: true });
     Object.defineProperty(row, 'LatestResult', { value: { CompleteMessage: opts.refusal ?? '' } });
@@ -94,14 +95,14 @@ describe('ApplyTaskDecisionToConcessions', () => {
     it('puts a concession that refuses the decision back in front of its approvers, with the reason', async () => {
         approval.LinkedConcessionIDs.mockResolvedValue([CONCESSION_ID]);
         approval.RaiseConcessionApprovalAgain.mockResolvedValue('task-2');
-        const refusal = 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+        const refusal = "You don't have permission to approve or decline this concession. Only its assigned approvers can.";
         const row = concession({ saves: false, refusal });
 
         const results = await ApplyTaskDecisionToConcessions(decision(row, { Code: 'Approved', IsTerminal: true }));
 
         expect(row.saves).toBe(1);
         expect(approval.RaiseConcessionApprovalAgain).toHaveBeenCalledWith(
-            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: REQUESTER_ID },
+            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: REQUESTER_ID, SalesRuleID: 'rule-1' },
             'role-1',
             TASK_ID,
             refusal,

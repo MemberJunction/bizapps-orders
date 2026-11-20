@@ -86,6 +86,20 @@
         {
           "fields": {
             "ActionID": "@parent:ID",
+            "Name": "OrderConcessionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "An approved amount change on this order: render the credit memo it issued instead of the order. Refused when the change issued no credit memo."
+          },
+          "primaryKey": {
+            "ID": "EF6ECFF1-BB33-466F-8AE7-EC35936720B1"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
             "Name": "AsOfDate",
             "Type": "Input",
             "ValueType": "Scalar",
@@ -342,6 +356,20 @@
           "sync": {
             "lastModified": "2026-09-02T03:26:27.683Z",
             "checksum": "e3a7a035095a2d374a46db706ab833b8552634bf5fb4b333e8cf62e877eec478"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrderConcessionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "An approved amount change on this order: send the credit memo it issued instead of the order's invoice. Sent by email even when the order's company invoices through Bill.com, which carries no credit memos."
+          },
+          "primaryKey": {
+            "ID": "17782EF5-90EF-4FF4-BF25-77E6435278FE"
           }
         },
         {

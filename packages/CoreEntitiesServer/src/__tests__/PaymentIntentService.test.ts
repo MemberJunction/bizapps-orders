@@ -290,3 +290,51 @@ describe('OpenPaymentIntent — when we cannot record what the gateway opened', 
         await expect(open(state)).rejects.toThrow(/Could not record payment intent pi_1/);
     });
 });
+
+describe('OpenPaymentIntent — a saved card declined at create time (#289)', () => {
+    it('records the attempt as a Failed intent and returns our row with the reason', async () => {
+        driverResponse.Next = {
+            Success: false,
+            Reason: 'Your card was declined.',
+            ProviderIntentID: 'pi_declined',
+            Status: 'Failed',
+            FailureCode: 'card_declined',
+        };
+        const state = fresh();
+        const result = await open(state, { ProviderInstrumentRef: 'pm_1', ProviderCustomerRef: 'cus_1', OrderHeaderID: '33333333-3333-3333-3333-333333333333' });
+        expect(result).toMatchObject({
+            Success: false,
+            Reason: 'Your card was declined.',
+            PaymentIntentID: 'new-intent-row',
+            ProviderIntentID: 'pi_declined',
+            Status: 'Failed',
+            FailureCode: 'card_declined',
+        });
+        expect(state.Saved).toHaveLength(1);
+        expect(state.Saved[0].Status).toBe('Failed');
+        expect(state.Saved[0].ProviderIntentID).toBe('pi_declined');
+        expect(state.Saved[0].OrderHeaderID).toBe('33333333-3333-3333-3333-333333333333');
+    });
+
+    it('passes an SCA demand through', async () => {
+        driverResponse.Next = { Success: false, Reason: 'auth', ProviderIntentID: 'pi_sca', Status: 'Failed', RequiresAuthentication: true };
+        const result = await open(fresh(), { ProviderInstrumentRef: 'pm_1' });
+        expect(result.RequiresAuthentication).toBe(true);
+        expect(result.PaymentIntentID).toBe('new-intent-row');
+    });
+
+    it('a repeated key for a declined intent returns the row we already hold and writes nothing', async () => {
+        driverResponse.Next = { Success: false, Reason: 'declined', ProviderIntentID: 'pi_declined', Status: 'Failed' };
+        const state = fresh({ Existing: 'held-row' });
+        const result = await open(state, { ProviderInstrumentRef: 'pm_1' });
+        expect(result.PaymentIntentID).toBe('held-row');
+        expect(state.Saved).toHaveLength(0);
+    });
+
+    it('a success passes the capture time through', async () => {
+        const at = new Date('2027-01-01T15:00:00Z');
+        driverResponse.Next = { Success: true, ProviderIntentID: 'pi_ok', Status: 'Succeeded', CapturedAt: at };
+        const result = await open(fresh(), { ProviderInstrumentRef: 'pm_1' });
+        expect(result).toMatchObject({ Success: true, Status: 'Succeeded', CapturedAt: at });
+    });
+});

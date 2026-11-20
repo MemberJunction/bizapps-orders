@@ -1,12 +1,18 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
 /**
- * `mjo-payments-list-page` — All Payments view powered by MemberJunction's native `<mj-entity-viewer>`.
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`. The workspace declares it inline
+ * rather than exporting a named type, so it is restated here.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
+
+/**
+ * `mjo-payments-list-page` — All Payments view, hosted in MemberJunction's `<mj-view-workspace>` so saved views and "Manage columns" work.
  */
 @Component({
     selector: 'mjo-payments-list-page',
@@ -16,10 +22,11 @@ import { MJO_ENTITIES } from '../../data/entity-names';
         <div class="mjo-list-page-container">
             <div class="mjo-viewer-wrapper">
                 @if (PaymentEntityInfo) {
-                    <mj-entity-viewer
+                    <mj-view-workspace
                         [Entity]="PaymentEntityInfo"
-                        (RecordOpened)="OnRecordOpened($event)">
-                    </mj-entity-viewer>
+                        [AutoSaveView]="true"
+                        (OpenRecordRequested)="OnRecordOpened($event)">
+                    </mj-view-workspace>
                 } @else {
                     <div class="small muted" style="padding: 24px;">Loading payment metadata...</div>
                 }
@@ -56,7 +63,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -82,8 +89,9 @@ export class MJOPaymentsListPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    /** The workspace hands back the opened row; Payment's key is `ID`, so the row carries it. */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersPaymentHeaderEntity;
             this.PaymentOpened.emit(surrogate);

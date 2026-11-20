@@ -1,27 +1,34 @@
-# Maintains the "Version Packages" PR into `next`.
+# Maintains the "Version Packages" PR — the one that releases.
 #
-# This workflow NEVER publishes. Its only job is to turn the changesets sitting on `next`
-# into a reviewable pull request containing the version bumps, the generated CHANGELOGs,
-# the mj-app.json version sync, and a refreshed lockfile. Merging that PR is what makes
-# `next` genuinely hold the new version.
+# This workflow NEVER publishes, and it never runs on `next`: `next` is built on MJ Edge and never
+# versions (guides/RELEASE_LINES.md). It runs on every push to a release line (`lts/<MJ major.minor>`)
+# and turns the changesets sitting there into a reviewable pull request with the version bumps,
+# the generated CHANGELOGs, the mj-app.json sync and a refreshed lockfile.
 #
-# Why it exists: the release used to compute the version at publish time and push the
-# result straight to `main` (and then to `next`). Both branches are covered by the
-# `main-next-protect` ruleset, which requires a pull request, and `github-actions[bot]`
-# cannot be granted a bypass — GitHub blocks that by design. Accounting's 0.2.0 published
-# to npm and then failed with `GH013`, leaving the registry at 0.2.0 and the repo at
-# 0.1.1 with no tag. Routing the bump through a PR removes the need to write to a
-# protected branch at all, which is also the pattern `changesets/action` is built for.
+# Where that PR goes depends on the line, as recorded in release-lines.json on `next`:
+#   - the newest line releases through `main`: the PR is `changeset-release/main` -> `main`, built
+#     from the line's head. Merging it publishes as `latest`, and publish.yml carries the bump back
+#     to the line.
+#   - every older line releases from its own branch: the PR is `changeset-release/lts/X.Y` ->
+#     `lts/X.Y`. Merging it publishes under the dist-tag `lts-X.Y`. No back-merge is needed, because
+#     the bump already lands on the line.
+# A branch that the record does not list versions nothing.
+#
+# Why the bump goes through a PR at all: `changeset version` deletes the changesets inside the
+# PR's own diff, so merging that PR is what consumes them, and a version number is spent wherever
+# that PR lands. Landing it on the branch that publishes mints and publishes the number in the
+# same breath, so published numbers never skip. It also means nothing writes to a protected
+# branch directly: Accounting's 0.2.0 published to npm and then failed with `GH013`, leaving the
+# registry at 0.2.0 and the repo at 0.1.1 with no tag.
 name: Version Packages
 
 on:
   push:
-    branches: [next]
+    branches: ['lts/**']
   workflow_dispatch:
 
 permissions:
-  contents: write # push the changeset-release/next branch
-  pull-requests: write # open and update the Version Packages PR
+  contents: read # writes go through the App token, not GITHUB_TOKEN
 
 concurrency:
   group: version-${{ github.ref }}
@@ -29,27 +36,64 @@ concurrency:
 
 jobs:
   version:
+    # The template repo carries this pipeline for the apps made from it, but never releases itself.
+    if: github.repository != 'MemberJunction/open-app-template'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      # Mint a short-lived installation token. App-created PRs DO trigger other workflows,
+      # whereas a PR opened with the default GITHUB_TOKEN creates runs in `action_required`
+      # that sit until a maintainer clicks "Approve and run" — on every push. So the token is
+      # a convenience, not a prerequisite; without it the checks exist but need a click.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
         with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-          fetch-tags: true # the bump-level check compares migrations/ against the last v* tag
+          fetch-tags: true # changeset version reads tags when generating CHANGELOG links
 
       # Must precede setup-node: `cache: 'pnpm'` needs pnpm already on PATH.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: 'pnpm'
           cache-dependency-path: 'pnpm-lock.yaml'
 
+      # Which line is this, and where does its release PR go? Read from the record on `next`,
+      # never from this branch's own copy.
+      - name: Resolve the release line
+        id: line
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin next
+          LINE=$(node .github/scripts/release-lines.mjs resolve "$BRANCH")
+          if [ "$LINE" = "{}" ]; then
+            echo "::notice::$BRANCH is not a line in release-lines.json on next. Nothing to version."
+            echo "base=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          ROUTE=$(jq -r .releasesThrough <<< "$LINE")
+          if [ "$ROUTE" = "main" ]; then BASE=main; else BASE="$BRANCH"; fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "dist_tag=$(jq -r .distTag <<< "$LINE")" >> "$GITHUB_OUTPUT"
+          echo "Line $(jq -r .key <<< "$LINE") ($(jq -r .status <<< "$LINE")): release PR into $BASE, npm dist-tag $(jq -r .distTag <<< "$LINE")"
+
       - name: Install dependencies
+        if: steps.line.outputs.base != ''
         run: pnpm install --frozen-lockfile
 
-      - uses: changesets/action@v1
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        id: changesets
+        if: steps.line.outputs.base != ''
         with:
           # Pinned to v1 because this repo runs Changesets CLI v2 (`@changesets/cli ^2.29.8`).
           # The action version-gates on the CLI major and v2.x refuses outright:
@@ -60,17 +104,60 @@ jobs:
           #
           # Input names are major-specific, and Actions IGNORES unknown inputs rather than
           # failing, so a mismatch silently runs the action's defaults. v1 takes
-          # `version`/`publish`/`title`/`commit`; v2 takes `version-script`/`publish-script`/
-          # `pr-title`/`commit-message`. Passing v2 names to v1 is what produced a Version
-          # Packages PR with no lockfile refresh and no mj-app.json sync — the tell was the
-          # PR title falling back to the default "Version Packages".
+          # `version`/`publish`/`title`/`commit`/`branch`; v2 renames them to
+          # `version-script`/`publish-script`/`pr-title`/`commit-message`/`pr-base-branch`.
+          # Passing v2 names to v1 is what produced a Version Packages PR with no lockfile
+          # refresh and no mj-app.json sync — the tell was the PR title falling back to the
+          # default "Version Packages".
           #
-          # No `publish` input: this workflow only ever versions.
-          version: pnpm run version:ci
+          # `branch` is what makes this the release PR. In v1 the input sets BOTH the PR base
+          # and the version branch's name, and `prepareBranch` resets that branch to
+          # `github.context.sha` — the commit this workflow ran on, i.e. the line's HEAD. So
+          # the PR carries the line's tree plus the bump. With `main` the head is
+          # `changeset-release/main`; with `lts/6.1` it is `changeset-release/lts/6.1`.
+          # release.yml looks the PR up by exactly those names.
+          #
+          # No `publish` input: this workflow only ever versions. Publishing happens in
+          # publish.yml, on the push to `main` that this PR's merge produces.
+          version: pnpm run version:prepare
+          branch: ${{ steps.line.outputs.base }}
           title: 'chore(release): version packages'
           commit: 'chore(release): version packages'
-          # NOTE: with the default GITHUB_TOKEN, PRs this action opens do NOT trigger other
-          # workflows (GitHub's anti-recursion rule), so build.yml will not run on the
-          # Version Packages PR and `--frozen-lockfile` goes unverified until merge. Swap in
-          # a GitHub App token to fix that — App-created PRs do trigger workflows.
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.app-token.outputs.token }}
+
+      # The action hard-codes the closing sentence of the PR body, and with no `publish` input it
+      # picks the wrong half of its own ternary for us:
+      #
+      #   "you can merge this and publish to npm yourself or [setup this action to publish
+      #    automatically]"
+      #
+      # Here publishing is neither manual nor this action's job — it happens when the release PR
+      # into `main` merges. v1 has no input to override the body, so it is corrected in place.
+      # The action rewrites the body on every update, so this re-applies each run.
+      - name: Say how THIS repo publishes, in the PR body
+        if: steps.changesets.outputs.pullRequestNumber != ''
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+          BASE: ${{ steps.line.outputs.base }}
+          DIST_TAG: ${{ steps.line.outputs.dist_tag }}
+        run: |
+          gh pr view "$PR_NUMBER" --json body --jq .body > /tmp/pr-body.md
+          python3 - <<'PYEOF'
+          import pathlib
+          p = pathlib.Path("/tmp/pr-body.md"); body = p.read_text()
+          wrong = ("publish to npm yourself or [setup this action to publish automatically]"
+                   "(https://github.com/changesets/action#with-publishing)")
+          import os
+          base, tag = os.environ["BASE"], os.environ["DIST_TAG"]
+          back = ("A follow-up PR then carries the bump back to the line automatically"
+                  if base == "main" else "No back-merge is needed: the bump lands on the line itself")
+          right = (f"merging THIS pull request publishes. It is based on `{base}`, so the merge is the release: "
+                   f"the push to `{base}` runs publish.yml, which builds, runs `changeset publish` under the npm dist-tag `{tag}`, and tags. {back}")
+          if wrong in body:
+              p.write_text(body.replace(wrong, right))
+              print("corrected the publish sentence")
+          else:
+              print("sentence not found — upstream wording may have changed; leaving the body alone")
+          PYEOF
+          gh pr edit "$PR_NUMBER" --body-file /tmp/pr-body.md

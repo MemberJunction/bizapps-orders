@@ -1,0 +1,14 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Coverage.RunAlongside",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Confirm an order line marked to run alongside coverage the holder already has for another band of the same subscription family, so both subscriptions are booked and billed. The line must also give a reason (OrderLine.CoverageOverlapReason). Checked against the user confirming the order. Held by the Account Director role. Without this row, no line can run alongside existing coverage."
+    },
+    "primaryKey": {
+      "ID": "78CAE9AB-DD73-4128-AC23-6A58BE45302A"
+    }
+  }
+]

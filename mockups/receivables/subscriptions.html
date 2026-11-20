@@ -33,7 +33,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="sb-count">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="sb-count">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Export</button>
@@ -183,9 +183,9 @@ const r2 = n => Math.round(n * 100) / 100;
 let SEL = 'SUB-2038';
 
 const statusChip = s => {
-  const map = { Active: 'mj-chip--success', Grace: 'mj-chip--warning',
-                Cancelled: 'mj-chip--outline', Expired: 'mj-chip--outline' };
-  return `<span class="mj-chip ${map[s] || ''}">${s}</span>`;
+  const map = { Active: 'mjo-chip--success', Grace: 'mjo-chip--warning',
+                Cancelled: 'mjo-chip--outline', Expired: 'mjo-chip--outline' };
+  return `<span class="mjo-chip ${map[s] || ''}">${s}</span>`;
 };
 
 function render() {
@@ -232,8 +232,8 @@ function renderDetail() {
           <div style="flex:1;min-width:0">
             <div class="row"><span class="mono" style="font-size:17px;font-weight:var(--mj-font-bold)">${s.number}</span>
               ${statusChip(s.status)}
-              ${s.autoRenew ? '<span class="mj-chip mj-chip--outline"><i class="fa-solid fa-rotate"></i> auto-renew on</span>'
-                : '<span class="mj-chip mj-chip--outline">auto-renew off</span>'}</div>
+              ${s.autoRenew ? '<span class="mjo-chip mjo-chip--outline"><i class="fa-solid fa-rotate"></i> auto-renew on</span>'
+                : '<span class="mjo-chip mjo-chip--outline">auto-renew off</span>'}</div>
             <div style="margin-top:6px">${p.name} · <span class="muted">${type.name}</span></div>
           </div>
           <div class="row" style="gap:var(--mj-space-2)">
@@ -275,7 +275,7 @@ function renderDetail() {
 
     <div class="mj-card" style="margin-top:var(--mj-space-4)">
       <div class="mj-card-head"><i class="fa-solid fa-timeline"></i><h3>Coverage terms</h3>
-        <span class="right"><span class="mj-chip mj-chip--outline">${all.length} term${all.length === 1 ? '' : 's'}, appended</span></span></div>
+        <span class="right"><span class="mjo-chip mjo-chip--outline">${all.length} term${all.length === 1 ? '' : 's'}, appended</span></span></div>
       <div class="mj-card-pad">
         <div class="mj-timeline">
           <div class="mj-timeline-track">
@@ -300,7 +300,7 @@ function renderDetail() {
             ${all.map(t => `<tr>
               <td class="muted">${t.n}</td>
               <td>${F.date(t.start)} – ${F.date(t.end)}
-                ${t.prorated ? '<span class="mj-chip mj-chip--warning">prorated</span>' : ''}</td>
+                ${t.prorated ? '<span class="mjo-chip mjo-chip--warning">prorated</span>' : ''}</td>
               <td><a class="mono" href="../orders/document.html">${t.orderNumber}</a></td>
               <td>${statusChip(t.status)}</td>
               <td class="num">${F.money(t.amount)}</td></tr>`).join('')}
@@ -315,7 +315,7 @@ function renderDetail() {
 
     <div class="mj-card" style="margin-top:var(--mj-space-4)">
       <div class="mj-card-head"><i class="fa-solid fa-chart-line"></i><h3>Revenue recognition</h3>
-        <span class="right"><span class="mj-chip mj-chip--outline">${doneCount} of ${recog.periods} released</span></span></div>
+        <span class="right"><span class="mjo-chip mjo-chip--outline">${doneCount} of ${recog.periods} released</span></span></div>
       <div class="mj-card-pad">
         <div class="sb-wf">
           ${Array.from({ length: recog.periods }, (_, i) => {
@@ -348,10 +348,10 @@ function renderDetail() {
         <table class="mj-table mj-table--compact"><tbody>
           ${s.events.map(e => `<tr>
             <td style="width:130px">${F.date(e.date)}</td>
-            <td style="width:190px"><span class="mj-chip ${
-              e.kind === 'Cancelled' ? 'mj-chip--error'
-              : e.kind === 'RenewalOrderSpawned' ? 'mj-chip--info'
-              : e.kind === 'Extended' ? 'mj-chip--violet' : 'mj-chip--outline'}">${e.kind}</span></td>
+            <td style="width:190px"><span class="mjo-chip ${
+              e.kind === 'Cancelled' ? 'mjo-chip--error'
+              : e.kind === 'RenewalOrderSpawned' ? 'mjo-chip--info'
+              : e.kind === 'Extended' ? 'mjo-chip--violet' : 'mjo-chip--outline'}">${e.kind}</span></td>
             <td class="small">${e.detail}</td></tr>`).join('')}
         </tbody></table>
         <div class="mock-note">
@@ -411,8 +411,8 @@ function renderDetail() {
 function renderRenewals() {
   document.getElementById('sb-renewals').innerHTML = DB.renewals.map(r => {
     const stateChip = {
-      'Spawned': 'mj-chip--success', 'Payment failed': 'mj-chip--error',
-      'Scheduled': 'mj-chip--outline', 'Will not renew': 'mj-chip--outline',
+      'Spawned': 'mjo-chip--success', 'Payment failed': 'mjo-chip--error',
+      'Scheduled': 'mjo-chip--outline', 'Will not renew': 'mjo-chip--outline',
     }[r.state] || '';
     return `<tr>
       <td><a class="mono primary" href="#" onclick="SB.sel('${r.subNumber}');sbTab('subs');return false">${r.subNumber}</a></td>
@@ -423,9 +423,9 @@ function renderRenewals() {
       <td>${r.spawnOn ? F.date(r.spawnOn) : '<span class="muted">—</span>'}</td>
       <td class="num">${F.money(r.amount)}</td>
       <td>${r.autoRenew
-        ? '<span class="mj-chip mj-chip--success"><i class="fa-solid fa-check"></i> on</span>'
-        : '<span class="mj-chip mj-chip--outline">off</span>'}</td>
-      <td><span class="mj-chip ${stateChip}">${r.state}</span>
+        ? '<span class="mjo-chip mjo-chip--success"><i class="fa-solid fa-check"></i> on</span>'
+        : '<span class="mjo-chip mjo-chip--outline">off</span>'}</td>
+      <td><span class="mjo-chip ${stateChip}">${r.state}</span>
         ${r.orderNumber ? `<div class="secondary"><a class="mono" href="../orders/document.html">${r.orderNumber}</a></div>` : ''}
         ${r.graceEnds ? `<div class="secondary">grace to ${F.dateShort(r.graceEnds)}</div>` : ''}</td>
     </tr>`;
