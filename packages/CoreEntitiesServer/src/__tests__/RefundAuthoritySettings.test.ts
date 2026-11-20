@@ -105,7 +105,7 @@ describe('CheckRefundAuthority over the real settings', () => {
 
     it('a configured threshold turns the check on', async () => {
         OrdersSettings.SetOverride(THRESHOLD, '500.00');
-        await expect(CheckRefundAuthority(request, provider, user(CALLER))).resolves.toMatch(/needs the 'Refund Approver' role/);
+        await expect(CheckRefundAuthority(request, provider, user(CALLER))).resolves.toMatch(/issued by the Refund Approver role/);
         h.userRoles = [{ ID: 'ur-1' }];
         await expect(CheckRefundAuthority(request, provider, user(CALLER))).resolves.toBeNull();
         await expect(CheckRefundAuthority({ ...request, RefundedTotalAfter: 500.01 }, provider, user(CALLER))).resolves.toMatch(

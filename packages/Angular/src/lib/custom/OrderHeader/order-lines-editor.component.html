@@ -347,10 +347,13 @@
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
                                 {{ HoldingExtendLineText(line, holding).Hint }}
                             } @else {
-                                Not chosen. If you confirm without choosing, the subscription type's default
-                                applies, and it may change this line's dates.
+                                Not chosen. Confirm will not go ahead until you choose.
                             }
                         </span>
+                        <!-- Instalments the next term would leave behind (golive #467): confirm refuses them. -->
+                        @if (HoldingScheduleWarning(line, holding); as warning) {
+                            <span class="mjo-ol-term__hint is-error" role="alert">{{ warning }}</span>
+                        }
                     </div>
                 }
             }
@@ -534,6 +537,19 @@
                 role="combobox"
                 aria-label="Add a product"
                 [attr.aria-expanded]="PickerOpen">
+            <!-- mousedown is cancelled so the input keeps focus and the open list re-filters in place. -->
+            <label
+                class="mjo-ol-picker__company-only"
+                [class.is-disabled]="!HasSellingCompany"
+                [attr.title]="HasSellingCompany ? null : 'Set the order\'s company to narrow the list to its products'"
+                (mousedown)="$event.preventDefault()">
+                <input
+                    type="checkbox"
+                    [(ngModel)]="SellingCompanyOnly"
+                    (ngModelChange)="OnSellingCompanyOnlyChange()"
+                    [disabled]="!HasSellingCompany">
+                Only selling company products
+            </label>
         </div>
 
         @if (PickerOpen) {
@@ -573,7 +589,16 @@
                         <span class="muted small">
                             @if (CatalogError) { {{ CatalogError }} }
                             @else if (Catalog.length === 0) { Loading catalog… }
-                            @else { No product matches that. }
+                            @else if (PickerHiddenByCompany === 0) { No product matches that. }
+                            @else { No product from this order's company matches that. }
+                        </span>
+                    </div>
+                }
+                @if (SellingCompanyOnly && PickerHiddenByCompany > 0) {
+                    <div class="mj-typeahead-item mjo-ol-pick__hidden" role="status">
+                        <span class="muted small">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            {{ PickerHiddenByCompany }} more from other companies. Uncheck "Only selling company products" to see them.
                         </span>
                     </div>
                 }

@@ -223,5 +223,38 @@
     "primaryKey": {
       "ID": "9B5424D7-102D-4F00-A569-8D8B6E92C10E"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "BillComCreateCustomerOnSend",
+      "Value": "true",
+      "Comments": "Whether Orders may create a new customer in Bill.com when sending an invoice for a bill-to party that has no ExternalCustomer mapping row and no matching accountNumber in Bill.com. True by default; set to false when existing Bill.com customers must be matched or mapped before an invoice is sent."
+    },
+    "primaryKey": {
+      "ID": "B4A10E72-5C8D-43F9-91E2-87D6C4305FA1"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "BillComInvoiceReadyNotifyRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders receive an ACTION_ITEM task when an external invoice is created in Bill.com (ready to review/send in Bill.com), linked to both the OrderHeader and the ExternalInvoice. Empty raises no task."
+    },
+    "primaryKey": {
+      "ID": "C8F23B19-7E4A-49D1-A53B-19E82D706CB2"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "BillComInvoiceReadyWebhookURL",
+      "Value": "",
+      "Comments": "Optional HTTPS/HTTP webhook URL (such as an incoming Teams or Slack webhook) that receives a JSON POST notification whenever an external invoice is created in Bill.com. Empty sends no webhook."
+    },
+    "primaryKey": {
+      "ID": "D1E74A60-8B9C-4E12-B64C-2AF93E817DC3"
+    }
   }
 ]

@@ -55,6 +55,7 @@ import { BeginInstalmentIssue, EndInstalmentIssue } from './instalmentIssueGuard
 import { LoadInstalmentCashFacts } from './PaymentAllocationInputs.js';
 import { CompanySlices, DepositReleasedByCompany } from './PaymentScheduleBehavior.js';
 import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
@@ -389,6 +390,10 @@ export async function IssueInstalment(
                 if (!(await lineEntity.Load(orderLineID))) {
                     throw new Error(`Order line ${orderLineID} could not be loaded to advance its BilledToDate.`);
                 }
+                // Orders' own bookkeeping, so an external freeze on the line does not stop it: a
+                // closed deal locks its order's lines, and without this an order behind one could
+                // not issue an instalment, at confirm or afterwards.
+                MarkAsOrdersOwnWrite(lineEntity);
                 lineEntity.BilledToDate = Number(lineEntity.BilledToDate ?? 0) + billed;
                 if (!(await lineEntity.Save())) {
                     throw new Error(
