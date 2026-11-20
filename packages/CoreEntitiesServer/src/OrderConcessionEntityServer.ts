@@ -54,6 +54,14 @@
  * requester's own authority never approves it, and the requester cannot decide it. The confirm gate holds the order
  * until one is Approved (./ConcessionGate.ts).
  *
+ * A TIMING CONCESSION APPROVES A NEW SALE'S PAYMENT TIMING (bizapps-orders#1097). A new sale is due on receipt at
+ * confirm; a delayed service start, an instalment due after the service starts, or payment terms other than due on
+ * receipt need approval (./PaymentTiming.ts). A Timing concession names the order only, and recording it stamps the
+ * order's timing facts as they stand in `TimingFacts`; it is refused while the order is confirmed or its timing needs
+ * no approval. It is valued at zero, always goes to the active PaymentTiming sales rule's role whatever the
+ * requester's authority, and the requester cannot decide it. The confirm gate accepts the order while an approved
+ * one's facts match the order's (./ConcessionGate.ts check 5).
+ *
  * ITS APPROVERS ARE TOLD (golive #274). A Pending concession raises its own approval task in the tasks
  * app, assigned to the rule's role holders, in the same transaction as the row. Deciding it on this record,
  * or withdrawing it, closes that task.
@@ -97,6 +105,7 @@
  *           ./AmountChange.ts (a Price concession with NewAmount reaching Approved)
  *           ./PaymentTermsChange.ts (a Terms concession reaching Approved)
  *           ./TermShift.ts (a Shift concession reaching Approved)
+ *   READS:  ./PaymentTiming.ts (a Timing concession's facts and its PaymentTiming rule)
  *   GATE:   OrderEntityServer (confirm) and the send-document action refuse while one is Pending
  */
 import {
@@ -160,6 +169,7 @@ import { RaiseConcessionAcknowledgment } from './ConcessionAcknowledgment.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram } from './ReferralProgram.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { CurrentPaymentTimingDeviations, DescribePaymentTiming, LoadPaymentTimingFacts, LoadPaymentTimingRule } from './PaymentTiming.js';
 import { RequireUUID } from './sql-guards.js';
 import { ApplyTermExtension, AsDay, CheckTermExtension, IsoDay, type ApprovedDurationConcession, type CheckedTermExtension } from './TermExtension.js';
 import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftConcession } from './TermShift.js';
@@ -183,6 +193,7 @@ const AUTHORED_FIELDS = [
     'PriorPaymentTermsTypeID',
     'NewPaymentTermsTypeID',
     'ReferralProgramID',
+    'TimingFacts',
     'PriorStartDate',
     'PriorEndDate',
     'NewStartDate',
@@ -645,6 +656,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.valuedPercent = valued.Percent ?? null;
 
         if (this.DeliveryForm === 'Shift') return this.routeShift(user);
+        if (this.DeliveryForm === 'Timing') return this.routeTiming(user);
         if (ConcessionAlwaysEscalates(this.DeliveryForm) || this.saleApprovalRequired) return this.escalate(user, measure);
 
         if (this.ReferralProgramID) {
@@ -762,11 +774,17 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     /**
      * Pending under `rule`, for a holder of its role other than the requester, or for the next approver up
      * when the requester holds the role and `ConcessionSelfApprovalEscalation` is set. Refused up front, with
-     * `why` leading the message, when no one other than the requester could decide it.
+     * `why` leading the message, when no one other than the requester could decide it. `ruleType` names the
+     * kind of rule `rule` is in those messages.
      */
-    private async pendForAnotherHolder(rule: ConcessionTierRule, user: UserInfo, why: string): Promise<string | null> {
+    private async pendForAnotherHolder(
+        rule: ConcessionTierRule,
+        user: UserInfo,
+        why: string,
+        ruleType: 'ConcessionLimit' | 'PaymentTiming' = 'ConcessionLimit',
+    ): Promise<string | null> {
         if (!rule.ApprovalRequiredRoleID) {
-            return `${why}, and ConcessionLimit rule '${rule.Name}' names no approving role, so no one could decide it.`;
+            return `${why}, and ${ruleType} rule '${rule.Name}' names no approving role, so no one could decide it.`;
         }
         const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
         if (escalation) {
@@ -777,7 +795,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
             return (
-                `${why}, and no active user other than the requester holds the role ConcessionLimit rule ` +
+                `${why}, and no active user other than the requester holds the role ${ruleType} rule ` +
                 `'${rule.Name}' names. Assign that role to another approver.`
             );
         }
@@ -808,6 +826,29 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.approvingRole = roleID;
         this.approvalSummary = ConcessionSummary({ DeliveryForm: 'Shift', ComputedValue: 0, AddedDays: days });
         return null;
+    }
+
+    /**
+     * Route a Timing concession (bizapps-orders#1097) to the active PaymentTiming rule's role, never to a
+     * ConcessionLimit tier: it has no value for a tier's thresholds to measure. The requester cannot decide it.
+     */
+    private async routeTiming(user: UserInfo): Promise<string | null> {
+        const rule = await LoadPaymentTimingRule(this.provider(), user);
+        if (typeof rule === 'string') return rule;
+        if (!rule) return 'No SalesRule of type PaymentTiming is active, so payment timing needs no approval.';
+        return this.pendForAnotherHolder(
+            {
+                ...rule,
+                ConcessionTier: null,
+                MinConcessionValue: null,
+                MinConcessionPctOfContract: null,
+                MinTermExtensionDays: null,
+                RequiresDecisionWithinAuthority: true,
+            },
+            user,
+            'A Timing concession cannot be decided by the person who asked for it',
+            'PaymentTiming',
+        );
     }
 
     /** Set by `EscalateShift` for the save that hands a Shift from finance review to a ConcessionLimit tier. */
@@ -891,6 +932,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 return this.valueTerms(user);
             case 'Shift':
                 return this.valueShift(user);
+            case 'Timing':
+                return this.valueTiming(user);
             default:
                 return `'${String(this.DeliveryForm)}' is not a concession form.`;
         }
@@ -1115,6 +1158,35 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.AddedQuantity = null;
         this.PriorPaymentTermsTypeID = checked.PriorPaymentTermsTypeID;
         this.AddedDays = checked.DaysChange;
+        return { Value: 0, Percent: null };
+    }
+
+    /**
+     * A Timing concession is worth nothing in currency. It records the order's payment timing as it stands, which
+     * is what the approver approves and what the confirm gate later compares with the order (bizapps-orders#1097).
+     */
+    private async valueTiming(user: UserInfo): Promise<ConcessionValuation | string> {
+        if (!this.OrderHeaderID) return 'A Timing concession must name the order whose payment timing it approves.';
+        const order = await this.loadRow<{ Status: string }>(ORDER_HEADER_ENTITY, this.OrderHeaderID, ['Status'], user);
+        if (!order) return `Order ${this.OrderHeaderID} was not found.`;
+        if (!IsEditable(order.Status)) {
+            return `Order is ${order.Status}. Payment timing is approved before the order is confirmed.`;
+        }
+        const rule = await LoadPaymentTimingRule(this.provider(), user);
+        if (typeof rule === 'string') return rule;
+        if (!rule) return 'No SalesRule of type PaymentTiming is active, so payment timing needs no approval.';
+
+        const facts = await LoadPaymentTimingFacts(this.OrderHeaderID, null, this.provider(), user);
+        const deviations = await CurrentPaymentTimingDeviations(facts, this.provider(), user);
+        if (deviations.length === 0) {
+            return 'This order\'s payment timing needs no approval: it is due on receipt at confirm, with no delayed start.';
+        }
+
+        this.OrderLineID = null;
+        this.SubscriptionTermID = null;
+        this.AddedDays = null;
+        this.AddedQuantity = null;
+        this.TimingFacts = DescribePaymentTiming(facts);
         return { Value: 0, Percent: null };
     }
 

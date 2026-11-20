@@ -50,6 +50,11 @@
  *      `RequiresSaleApproval`, inherited Product -> category -> ancestor categories -> Product Type. A
  *      renewal line is left alone, as for (2): the sale was approved when the subscription was sold.
  *
+ *   5. on an order not yet confirmed that has a line renewing no subscription, payment timing that departs
+ *      from finance's rule (bizapps-orders#1097): a delayed service start, an instalment due after the service
+ *      starts, or payment terms other than due on receipt, with no Approved Timing concession recorded for the
+ *      order's timing as it stands. Off while no PaymentTiming sales rule is active. ./PaymentTiming.ts.
+ *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
  *
@@ -79,6 +84,14 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { IsUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
+import {
+    CurrentPaymentTimingDeviations,
+    DescribePaymentTiming,
+    IsNewSaleLine,
+    LoadPaymentTimingFacts,
+    type PaymentTimingOrder,
+    LoadPaymentTimingRule,
+} from './PaymentTiming.js';
 
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_AUTHORITY_MIX_TIER_ENTITY = 'MJ_BizApps_Orders: Sales Authority Mix Tiers';
@@ -165,6 +178,8 @@ export interface ConcessionLineFacts extends LineConcessionFacts {
     PriceStated: boolean;
     /** The line after discounts, before tax and charges. The caller computes it for a line it holds. */
     LineTotalNet?: number | null;
+    /** The start stated on the line, which the payment timing check (5) reads. */
+    ServicePeriodStart?: Date | string | null;
 }
 
 /** The facts a line's concession is valued from. */
@@ -292,6 +307,8 @@ function formatPct(fraction: number): string {
  * @param orderHeaderID  null for an order not yet saved — it can have no concession rows yet.
  * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
  * @param includeLinePrices  check stated prices too (orders not yet confirmed).
+ * @param header  the order's terms fields as the caller holds them (./PaymentTiming.ts `PaymentTimingOrder`); omitted,
+ *                the saved header is read. With no terms stated, check 5 judges the terms the confirm save would stamp.
  */
 export async function FindUnapprovedConcessions(
     orderHeaderID: string | null,
@@ -299,6 +316,7 @@ export async function FindUnapprovedConcessions(
     includeLinePrices: boolean,
     provider: IMetadataProvider,
     user: UserInfo,
+    header?: PaymentTimingOrder,
 ): Promise<string[]> {
     const problems: string[] = [];
     const rows = orderHeaderID ? await loadConcessions(orderHeaderID, provider, user) : [];
@@ -339,7 +357,52 @@ export async function FindUnapprovedConcessions(
     }
 
     problems.push(...(await saleApprovalProblems(orderHeaderID, candidates, rows, reported, provider, user)));
+    problems.push(...(await paymentTimingProblems(orderHeaderID, candidates, header, rows, provider, user)));
     return problems;
+}
+
+/**
+ * Check (5) in the header: a new sale whose payment timing departs from finance's rule (./PaymentTiming.ts)
+ * with no approved Timing concession recorded for the order as it stands. Off while no PaymentTiming rule
+ * is active. A Pending Timing concession is already reported by (1).
+ */
+async function paymentTimingProblems(
+    orderHeaderID: string | null,
+    lines: readonly ConcessionLineFacts[],
+    header: PaymentTimingOrder | undefined,
+    rows: readonly ConcessionRow[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string[]> {
+    if (!lines.some(IsNewSaleLine)) return [];
+    const rule = await LoadPaymentTimingRule(provider, user);
+    if (rule === null) return [];
+    if (typeof rule === 'string') return [rule];
+
+    const facts = await LoadPaymentTimingFacts(
+        orderHeaderID,
+        { Lines: lines, Order: header },
+        provider,
+        user,
+    );
+    const deviations = await CurrentPaymentTimingDeviations(facts, provider, user);
+    if (deviations.length === 0) return [];
+
+    const label = `its payment timing needs approval: ${deviations.join('; ')}`;
+    if (!orderHeaderID) {
+        return [`${label}. Save the order without confirming it first, then record a Timing concession on it and confirm once it is approved`];
+    }
+    const timing = rows.filter((r) => r.DeliveryForm === 'Timing');
+    if (timing.some((r) => r.Status === 'Pending')) return [];
+    const described = DescribePaymentTiming(facts);
+    const approved = timing.filter((r) => r.Status === 'Approved');
+    if (approved.some((r) => r.TimingFacts === described)) return [];
+    return [
+        approved.length
+            ? `${label}, and the approved Timing concession was for other dates or terms (${approved[0].TimingFacts}). ` +
+              `Withdraw it and record a new one for the order as it is now (${described})`
+            : `${label}, and no approved Timing concession is recorded for it`,
+    ];
 }
 
 /**
@@ -798,6 +861,7 @@ interface ConcessionRow {
     OrderLineID: string | null;
     AuthorizedBySalesAuthorityID: string | null;
     SalesRuleID: string | null;
+    TimingFacts?: string | null;
 }
 
 async function loadConcessions(
@@ -818,6 +882,7 @@ async function loadConcessions(
                 'OrderLineID',
                 'AuthorizedBySalesAuthorityID',
                 'SalesRuleID',
+                'TimingFacts',
             ],
             ResultType: 'simple',
             BypassCache: true,
@@ -898,6 +963,7 @@ async function candidateLines(
                 'ProductPriceID',
                 'DiscountPct',
                 'RenewsSubscriptionID',
+                'ServicePeriodStart',
             ],
             ResultType: 'simple',
             BypassCache: true,

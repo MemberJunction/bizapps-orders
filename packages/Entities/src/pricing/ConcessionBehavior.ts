@@ -54,7 +54,7 @@
 import { Money } from './PricingBehavior.js';
 
 /** How the value was given. Mirrors `CK_OrderConcession_DeliveryForm`. */
-export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms' | 'Shift' | 'Shorten';
+export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms' | 'Shift' | 'Shorten' | 'Timing';
 
 /** Why it was given. Mirrors `CK_OrderConcession_ReasonCategory`. */
 export type ConcessionReasonCategory = 'Retention' | 'Referral' | 'Other';
@@ -220,7 +220,7 @@ export function PaymentTermsDaysChange(priorNetDays: number | null, newNetDays: 
  * even when they hold the approving role.
  */
 export function ConcessionAlwaysEscalates(form: ConcessionDeliveryForm): boolean {
-    return form === 'Terms';
+    return form === 'Terms' || form === 'Timing';
 }
 
 /** Each level's stated `RequiresSaleApproval` for one product; null or undefined means "not set here". */

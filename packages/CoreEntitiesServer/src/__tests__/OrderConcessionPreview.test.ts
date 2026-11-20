@@ -73,6 +73,12 @@ function order(opts: { user?: { ID: string } | null; linesLoaded?: boolean } = {
         IsSaved: true,
         ID: ORDER_ID,
         OrderNumber: 'ORD-1',
+        PaymentTermsTypeID: null,
+        OrderDate: '2026-07-01',
+        CompanyID: null,
+        BillToOrganizationID: null,
+        BillToPersonID: null,
+        DueDate: null,
         ContextCurrentUser: opts.user === undefined ? { ID: 'user-1' } : opts.user,
         ProviderToUse: {},
         Lines: lines,
@@ -113,6 +119,21 @@ describe('PreviewConcessionProblems', () => {
         expect(previewCall[2]).toBe(true);
         expect(previewCall[1]).toHaveLength(1);
         expect(previewCall[1][0]).toMatchObject({ LineNumber: 1, DiscountPct: 0.1, PriceStated: true, LineTotalNet: 8100 });
+    });
+
+    it("passes the terms fields the order holds, unsaved, so the timing check judges the order as it will confirm", async () => {
+        const { o } = order();
+        const NET30 = 'T0000000-0000-4000-8000-000000000030';
+        Object.assign(o, { PaymentTermsTypeID: NET30, BillToOrganizationID: 'O0000000-0000-4000-8000-000000000001' });
+        await o.passesConcessionGate();
+        expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][5]).toEqual({
+            PaymentTermsTypeID: NET30,
+            OrderDate: '2026-07-01',
+            CompanyID: null,
+            BillToOrganizationID: 'O0000000-0000-4000-8000-000000000001',
+            BillToPersonID: null,
+            DueDate: null,
+        });
     });
 
     it('loads the saved lines first when they are not in memory', async () => {
