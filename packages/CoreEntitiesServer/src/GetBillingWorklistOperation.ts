@@ -81,7 +81,15 @@ export class GetBillingWorklistOperation extends OrdersGetBillingWorklistOperati
         const windowEnd = addDays(asOf, windowDays);
         const maxCount = input?.MaxCount ?? 500;
 
-        const filters = [`Status = 'Scheduled'`, `DueDate <= '${windowEnd}'`];
+        // ONLY CONFIRMED ORDERS ARE BILLED (golive #469). A Draft order carries schedule rows too, and
+        // `Orders.IssueInstalmentInvoice` refuses them, so listing one offered an invoice that could
+        // not be issued. Filtered in the query rather than after it, so the row cap and the
+        // truncation flag count only rows that belong on the list.
+        const filters = [
+            `Status = 'Scheduled'`,
+            `DueDate <= '${windowEnd}'`,
+            `OrderHeaderID IN (SELECT ID FROM __mj_BizAppsOrders.OrderHeader WHERE Status = 'Confirmed')`,
+        ];
         if (input?.CompanyIDs?.length) {
             filters.push(`CompanyID IN (${input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',')})`);
         }
