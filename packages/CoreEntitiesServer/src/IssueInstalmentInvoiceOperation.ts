@@ -55,6 +55,7 @@ import { BeginInstalmentIssue, EndInstalmentIssue } from './instalmentIssueGuard
 import { LoadInstalmentCashFacts } from './PaymentAllocationInputs.js';
 import { CompanySlices, DepositReleasedByCompany } from './PaymentScheduleBehavior.js';
 import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
@@ -108,11 +109,16 @@ const refuse = (
  * Returns a refusal rather than throwing for business reasons the caller can act on (already
  * invoiced, wrong status, schedule out of tie, number already taken); THROWS when the ledger or a
  * save fails, so the caller's transaction rolls back and nothing is half-done.
+ *
+ * `invoiceDayIn` is the business day to invoice on, `YYYY-MM-DD`; absent, today. A renewal run
+ * with a past as-of day passes it, so the entry is dated on the day the row's due date was counted
+ * from rather than the day the run happens (#831).
  */
 export async function IssueInstalment(
     scheduleID: string,
     provider: IMetadataProvider,
     user: UserInfo,
+    invoiceDayIn?: string | null,
 ): Promise<OrdersIssueInstalmentInvoiceOutput> {
     {
         const rv = RunView.FromMetadataProvider(provider);
@@ -235,7 +241,7 @@ export async function IssueInstalment(
         // The entry is dated by the BUSINESS day (#209), not the UTC day of `invoicedAt`: the
         // renewal job runs at 3 AM UTC, which is still the evening before in the Americas, and a
         // UTC-dated entry lands a month-end invoice in the next period. `InvoicedAt` keeps the instant.
-        const invoiceDay = await CalendarDayOrToday(null, provider, user);
+        const invoiceDay = await CalendarDayOrToday(invoiceDayIn ?? null, provider, user);
 
         // THE BILLING ENTRY'S FACTS, READ HERE (D92). The emitter queries nothing; every number it
         // posts is decided by the factory's own arithmetic, so it is built here and handed over.
@@ -384,6 +390,10 @@ export async function IssueInstalment(
                 if (!(await lineEntity.Load(orderLineID))) {
                     throw new Error(`Order line ${orderLineID} could not be loaded to advance its BilledToDate.`);
                 }
+                // Orders' own bookkeeping, so an external freeze on the line does not stop it: a
+                // closed deal locks its order's lines, and without this an order behind one could
+                // not issue an instalment, at confirm or afterwards.
+                MarkAsOrdersOwnWrite(lineEntity);
                 lineEntity.BilledToDate = Number(lineEntity.BilledToDate ?? 0) + billed;
                 if (!(await lineEntity.Save())) {
                     throw new Error(

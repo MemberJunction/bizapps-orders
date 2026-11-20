@@ -136,7 +136,7 @@
       <div class="grid-2" style="margin-top:var(--mj-space-4)">
         <div class="mj-card">
           <div class="mj-card-head"><i class="fa-solid fa-percent"></i><h3>Promotions on this order</h3>
-            <span class="right"><span class="mj-chip mj-chip--outline">Stacking: Sequential</span></span></div>
+            <span class="right"><span class="mjo-chip mjo-chip--outline">Stacking: Sequential</span></span></div>
           <div class="mj-card-pad" id="ed-promos"></div>
         </div>
         <div class="mj-card">
@@ -157,12 +157,12 @@
       <div class="grid-2">
         <div class="mj-card">
           <div class="mj-card-head"><i class="fa-solid fa-file-invoice-dollar"></i><h3>Bill to — who pays</h3>
-            <span class="right"><span class="mj-chip mj-chip--outline">header only</span></span></div>
+            <span class="right"><span class="mjo-chip mjo-chip--outline">header only</span></span></div>
           <div class="mj-card-pad" id="ed-billto"></div>
         </div>
         <div class="mj-card">
           <div class="mj-card-head"><i class="fa-solid fa-truck-fast"></i><h3>Ship to — who receives</h3>
-            <span class="right"><span class="mj-chip mj-chip--outline">line default</span></span></div>
+            <span class="right"><span class="mjo-chip mjo-chip--outline">line default</span></span></div>
           <div class="mj-card-pad" id="ed-shipto"></div>
         </div>
       </div>
@@ -237,7 +237,7 @@
 
       <details class="mj-panel" style="margin-top:var(--mj-space-4)">
         <summary><i class="fa-solid fa-map-location-dot"></i> Nexus and exemption both had to hold
-          <span class="right"><span class="mj-chip mj-chip--success">both satisfied</span></span></summary>
+          <span class="right"><span class="mjo-chip mjo-chip--success">both satisfied</span></span></summary>
         <div class="mj-panel-body">
           <div class="grid-2">
             <div>
@@ -269,7 +269,7 @@
       <div class="grid-2">
         <div class="mj-card">
           <div class="mj-card-head"><i class="fa-solid fa-credit-card"></i><h3>Initial payment — intent</h3>
-            <span class="right"><span class="mj-chip mj-chip--info">not yet a payment</span></span></div>
+            <span class="right"><span class="mjo-chip mjo-chip--info">not yet a payment</span></span></div>
           <div class="mj-card-pad" id="ed-intent"></div>
         </div>
 
@@ -313,9 +313,9 @@
       </div>
 
       <div class="row wrap" style="margin-bottom:var(--mj-space-4);gap:var(--mj-space-2)">
-        <span class="mj-chip mj-chip--success"><i class="fa-solid fa-check"></i> 2 entries · 2 companies · all balanced</span>
-        <span class="mj-chip mj-chip--outline">one entry per line, always</span>
-        <span class="mj-chip mj-chip--info">will land Pending</span>
+        <span class="mjo-chip mjo-chip--success"><i class="fa-solid fa-check"></i> 2 entries · 2 companies · all balanced</span>
+        <span class="mjo-chip mjo-chip--outline">one entry per line, always</span>
+        <span class="mjo-chip mjo-chip--info">will land Pending</span>
         <a class="mj-btn mj-btn--outline mj-btn--sm spacer" href="#">Open in Accounting <i class="fa-solid fa-arrow-up-right-from-square"></i></a>
       </div>
 
@@ -329,7 +329,7 @@
 
       <div class="mj-card" style="margin-top:var(--mj-space-4)">
         <div class="mj-card-head"><i class="fa-solid fa-chart-line"></i><h3>Revenue recognition — line 1</h3>
-          <span class="right"><span class="mj-chip mj-chip--warning">deferred · 12 periods</span></span></div>
+          <span class="right"><span class="mjo-chip mjo-chip--warning">deferred · 12 periods</span></span></div>
         <div class="mj-card-pad">
           <div class="small muted" style="margin-bottom:var(--mj-space-3)">
             Twelve real forward-dated entries are written at booking — not a schedule that a job later materializes.
@@ -501,7 +501,7 @@
         </div>
         <details class="mj-panel" style="margin-top:var(--mj-space-4)">
           <summary><i class="fa-solid fa-scale-balanced"></i> Journal entries
-            <span class="right"><span class="mj-chip mj-chip--error">1 of 2 resolvable</span></span></summary>
+            <span class="right"><span class="mjo-chip mjo-chip--error">1 of 2 resolvable</span></span></summary>
           <div class="mj-panel-body small muted">Sidecar Learning's entry resolves cleanly. BC Media's cannot be
             built at all, and a partial booking is not a thing — the confirm is refused as a whole.</div>
         </details>
@@ -649,7 +649,7 @@ function renderPromos() {
     return `<div class="row-t" style="padding:var(--mj-space-2) 0;border-bottom:1px solid var(--mj-border-subtle)">
       <i class="fa-solid fa-circle-minus muted" style="margin-top:3px"></i>
       <div style="flex:1">
-        <div><b class="mono">${p.code}</b> ${p.name} <span class="mj-chip mj-chip--outline">offered, not applied</span></div>
+        <div><b class="mono">${p.code}</b> ${p.name} <span class="mjo-chip mjo-chip--outline">offered, not applied</span></div>
         <div class="small muted">${p.why}</div>
       </div>
       <span class="mj-num muted">—</span></div>`;
@@ -701,10 +701,10 @@ function renderParties() {
       <tbody>
         <tr><td class="muted">1</td><td>Annual Membership</td>
           <td>Nothing to ship — the line's party says <b>who it is for</b>: Jane Chen</td>
-          <td><span class="mj-chip mj-chip--outline">line</span></td></tr>
+          <td><span class="mjo-chip mjo-chip--outline">line</span></td></tr>
         <tr><td class="muted">2</td><td>Printed Handbook</td>
           <td>1180 Wilshire Blvd, Los Angeles CA</td>
-          <td><span class="mj-chip mj-chip--outline">header</span></td></tr>
+          <td><span class="mjo-chip mjo-chip--outline">header</span></td></tr>
       </tbody>
     </table>
     <div class="small muted" style="margin-top:var(--mj-space-2)">Resolution is three tiers per side — the line,
@@ -718,12 +718,12 @@ function renderCharges() {
     <tr>
       <td class="num muted">${c.seq}</td>
       <td><b>${c.name}</b>${c.jurisdiction ? `<div class="secondary">${c.jurisdiction}</div>` : ''}
-        ${c.isTax ? '<span class="mj-chip mj-chip--info">tax</span>' : '<span class="mj-chip mj-chip--outline">charge</span>'}</td>
+        ${c.isTax ? '<span class="mjo-chip mjo-chip--info">tax</span>' : '<span class="mjo-chip mjo-chip--outline">charge</span>'}</td>
       <td class="small">${c.basis}</td>
       <td class="num">${c.basisAmount != null ? F.money(c.basisAmount) : '<span class="muted">—</span>'}</td>
       <td class="num">${c.rate != null ? F.rate(c.rate) : '<span class="muted">—</span>'}</td>
       <td class="num strong">${F.money(c.amount)}</td>
-      <td>${c.appliesToLine ? `<span class="mj-chip mj-chip--outline">line ${c.appliesToLine}</span>` : '<span class="muted">order</span>'}</td>
+      <td>${c.appliesToLine ? `<span class="mjo-chip mjo-chip--outline">line ${c.appliesToLine}</span>` : '<span class="muted">order</span>'}</td>
       <td>${c.isTax
         ? '<span class="small muted">from provider</span>'
         : '<button class="mj-btn mj-btn--flat mj-btn--sm" data-open="#override"><i class="fa-solid fa-pen"></i> Override</button>'}</td>
@@ -744,7 +744,7 @@ function renderCharges() {
     if (l.taxZeroReason) {
       return `<div style="padding:var(--mj-space-2) 0;border-bottom:1px solid var(--mj-border-subtle)">
         <div class="row"><b>Line ${l.n} · ${p.name}</b>
-          <span class="spacer mj-chip mj-chip--outline">$0.00</span></div>
+          <span class="spacer mjo-chip mjo-chip--outline">$0.00</span></div>
         <div class="small muted">${l.taxZeroReason}</div>
         <div class="tiny muted" style="margin-top:3px">A zero always records <b>which</b> of four reasons produced
           it — untaxable, no nexus, exempt, or no jurisdiction. This one is untaxable.</div></div>`;
@@ -801,9 +801,9 @@ function renderAccounting() {
       <div class="ed-je-head">
         <b>${DB.companies[j.company].name}</b>
         <span class="muted">line ${j.line} · ${DB.products[line.productID].name}</span>
-        <span class="spacer mj-chip ${Math.abs(dr - cr) < 0.005 ? 'mj-chip--success' : 'mj-chip--error'}">
+        <span class="spacer mjo-chip ${Math.abs(dr - cr) < 0.005 ? 'mjo-chip--success' : 'mjo-chip--error'}">
           <i class="fa-solid fa-scale-balanced"></i> balanced</span>
-        <span class="mj-chip mj-chip--outline">not yet created</span>
+        <span class="mjo-chip mjo-chip--outline">not yet created</span>
       </div>
       <table>
         ${j.lines.map(x => `<tr>
@@ -840,7 +840,7 @@ function renderAccounting() {
     <div class="row" style="padding:6px 0;border-bottom:1px solid var(--mj-border-subtle)">
       <span class="muted" style="width:120px">Line ${l.n}</span>
       <span>${(l.dimensions || []).map(d =>
-        `<span class="mj-chip mj-chip--outline">${d.name}: ${d.value}</span>`).join(' ') || '<span class="muted">—</span>'}</span>
+        `<span class="mjo-chip mjo-chip--outline">${d.name}: ${d.value}</span>`).join(' ') || '<span class="muted">—</span>'}</span>
     </div>`).join('') + `<div class="muted tiny" style="padding-top:var(--mj-space-2)">
       Dimension tags on a line propagate into that line's journal-entry lines, so analytics slices the ledger the
       same way the order was tagged.</div>`;
@@ -913,7 +913,7 @@ function edOpenLine(n) {
 
     <div class="sec-label" style="margin-top:var(--mj-space-4)">Dimension tags</div>
     <div class="row wrap">
-      ${(l.dimensions || []).map(d => `<span class="mj-chip mj-chip--outline">${d.name}: ${d.value}
+      ${(l.dimensions || []).map(d => `<span class="mjo-chip mjo-chip--outline">${d.name}: ${d.value}
         <button class="mj-why"><i class="fa-solid fa-xmark"></i></button></span>`).join('')}
       <button class="mj-btn mj-btn--flat mj-btn--sm"><i class="fa-solid fa-plus"></i> Tag</button>
     </div>
@@ -942,7 +942,7 @@ function renderPreflight() {
 
     <details class="mj-panel" open style="margin-top:var(--mj-space-4)">
       <summary><i class="fa-solid fa-scale-balanced"></i> Journal entries
-        <span class="right"><span class="mj-chip mj-chip--success">2 entries · 2 companies · balanced</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--success">2 entries · 2 companies · balanced</span></span></summary>
       <div class="mj-panel-body">
         ${O.je.map(j => {
           const line = O.lines.find(l => l.n === j.line);
@@ -960,7 +960,7 @@ function renderPreflight() {
 
     <details class="mj-panel" open>
       <summary><i class="fa-solid fa-rotate"></i> Subscriptions
-        <span class="right"><span class="mj-chip mj-chip--violet">1 extended</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--violet">1 extended</span></span></summary>
       <div class="mj-panel-body small">
         <b>Extends SUB-2038</b> — held by Meridian Association, benefiting Jane Chen. Coverage moves from
         Jul 31, 2027 to <b>Jul 31, 2028</b> by appending term #3.
@@ -971,7 +971,7 @@ function renderPreflight() {
 
     <details class="mj-panel">
       <summary><i class="fa-solid fa-credit-card"></i> Payment
-        <span class="right"><span class="mj-chip mj-chip--info">captures ${F.money(O.gross)}</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--info">captures ${F.money(O.gross)}</span></span></summary>
       <div class="mj-panel-body small">
         The initial-payment intent becomes PaymentHeader + PaymentLine, applied to this order, and books the cash
         leg in the same transaction: Dr Cash (net of a $47.03 fee) · Dr Processing Fee · Cr A/R at gross.
@@ -982,21 +982,21 @@ function renderPreflight() {
 
     <details class="mj-panel">
       <summary><i class="fa-solid fa-id-badge"></i> Entitlement grants
-        <span class="right"><span class="mj-chip">1 grant</span></span></summary>
+        <span class="right"><span class="mjo-chip">1 grant</span></span></summary>
       <div class="mj-panel-body small"><b>Member Portal Access</b> → beneficiary <b>Jane Chen</b>, for the term
         Aug 1 2027 – Jul 31 2028. Downstream apps poll; nothing is pushed at them.</div>
     </details>
 
     <details class="mj-panel">
       <summary><i class="fa-solid fa-dolly"></i> Fulfillment
-        <span class="right"><span class="mj-chip mj-chip--warning">stops at Posted</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--warning">stops at Posted</span></span></summary>
       <div class="mj-panel-body small">5 × Printed Handbook must ship, so this order will not auto-advance past
         Posted. No entry fires when it ships — fulfillment is logistics, not revenue.</div>
     </details>
 
     <details class="mj-panel">
       <summary><i class="fa-solid fa-user-check"></i> Approvals
-        <span class="right"><span class="mj-chip mj-chip--outline">none required</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--outline">none required</span></span></summary>
       <div class="mj-panel-body small muted">No sales rule matched.</div>
     </details>
 

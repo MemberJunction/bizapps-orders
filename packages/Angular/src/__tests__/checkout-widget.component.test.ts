@@ -3,7 +3,7 @@
  */
 import '@angular/compiler';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
+import { IsPerPersonCheckoutField, MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
 
 // Setup window polyfill for Node.js test runner
 if (typeof globalThis.window === 'undefined') {
@@ -142,6 +142,53 @@ describe('MJCheckoutWidgetComponent', () => {
         });
     });
 
+    describe('notice banner (#819)', () => {
+        it('shows a notice only while no error shows', () => {
+            component.noticeMessage = 'The total is 107.50, including 7.50 sales tax. Review it and press Pay again.';
+            expect(component.displayNoticeMessage()).toContain('107.50');
+            component.errorMessage = 'Your card was declined.';
+            expect(component.displayNoticeMessage()).toBeNull();
+            expect(component.displayErrorMessage()).toBe('Your card was declined.');
+        });
+    });
+
+    describe('copy primary info to all (#780)', () => {
+        it('leaves per-person custom fields alone and copies shared detail', () => {
+            component.config = {
+                isEvent: true,
+                extensionFields: [
+                    { name: 'attendeeEmail', label: 'Attendee email', type: 'text' },
+                    { name: 'badgeName', label: 'Badge name', type: 'text' },
+                    { name: 'studentId', label: 'Student ID', type: 'text' },
+                    { name: 'dietaryPreferences', label: 'Dietary needs', type: 'text' },
+                    { name: 'seatSection', label: 'Seat section', type: 'text', perPerson: true },
+                ],
+            } as CheckoutWidgetConfig;
+            component.onQuantityChange(2);
+            for (const [field, value] of Object.entries({
+                attendeeEmail: 'a@example.com', badgeName: 'Al', studentId: 'S1', dietaryPreferences: 'Vegan', seatSection: 'B',
+            })) {
+                component.updateUnitField(0, field, value);
+            }
+
+            component.copyPrimaryToAll();
+
+            const second = component.units()[1];
+            expect(second['dietaryPreferences']).toBe('Vegan');
+            expect(second['attendeeEmail']).toBe('');
+            expect(second['badgeName']).toBe('');
+            expect(second['studentId']).toBe('');
+            expect(second['seatSection']).toBe('');
+        });
+
+        it('lets a field definition override the name rule', () => {
+            expect(IsPerPersonCheckoutField('companyName', [{ name: 'companyName', perPerson: false }])).toBe(false);
+            expect(IsPerPersonCheckoutField('companyName', [])).toBe(true);
+            expect(IsPerPersonCheckoutField('company', [])).toBe(false);
+            expect(IsPerPersonCheckoutField('FirstName', [])).toBe(true);
+        });
+    });
+
     describe('custom JS lifecycle hooks and validation', () => {
         it('executes onValidate hook and blocks submission if hook returns false or error message', () => {
             window.MJCheckoutHooks = {
@@ -160,6 +207,37 @@ describe('MJCheckoutWidgetComponent', () => {
 
             expect(emitSpy).not.toHaveBeenCalled();
             expect(component.displayErrorMessage()).toBe('Domain @competitor.com is not allowed.');
+        });
+
+        it('keeps each widget’s customUI.js hooks to that widget, and drops them on destroy (#779)', () => {
+            const first = new MJCheckoutWidgetComponent();
+            first.config = { unitPrice: 0, customJS: 'window.MJCheckoutHooks = { onValidate: () => "first" };' } as CheckoutWidgetConfig;
+            first.ngOnInit();
+            const second = new MJCheckoutWidgetComponent();
+            second.config = { unitPrice: 0, customJS: 'widgetContext.hooks.onValidate = () => "second";' } as CheckoutWidgetConfig;
+            second.ngOnInit();
+
+            // A legacy page-wide assignment is moved to its widget; the page-wide object is untouched.
+            expect(window.MJCheckoutHooks).toBeUndefined();
+            expect(first.executeLifecycleHook('onValidate', {})).toBe('first');
+            expect(second.executeLifecycleHook('onValidate', {})).toBe('second');
+
+            first.ngOnDestroy();
+            expect(first.executeLifecycleHook('onValidate', {})).toBeUndefined();
+            expect(second.executeLifecycleHook('onValidate', {})).toBe('second');
+        });
+
+        it('falls back to the host page’s own hooks and leaves them in place', () => {
+            const hostHook = vi.fn().mockReturnValue('host');
+            window.MJCheckoutHooks = { onValidate: hostHook };
+            const widget = new MJCheckoutWidgetComponent();
+            widget.config = { unitPrice: 0, customJS: 'window.MJCheckoutHooks.onQuantityChange = () => "mine";' } as CheckoutWidgetConfig;
+            widget.ngOnInit();
+
+            expect(window.MJCheckoutHooks).toEqual({ onValidate: hostHook });
+            expect(widget.executeLifecycleHook('onValidate', {})).toBe('host');
+            expect(widget.executeLifecycleHook('onQuantityChange', {})).toBe('mine');
+            expect(new MJCheckoutWidgetComponent().executeLifecycleHook('onQuantityChange', {})).toBeUndefined();
         });
 
         it('executes onBeforeSubmit hook to enrich payload before emission', () => {
@@ -509,6 +587,105 @@ describe('MJCheckoutWidgetComponent', () => {
             other.prefillEmail = 'known@example.com';
             other.ngOnInit();
             expect(other.email()).toBe('typed@example.com');
+        });
+    });
+
+    describe('member discount before Pay (#919)', () => {
+        const ASAE10 = { code: 'ASAE10', discount: 59.9, total: 539.1, quantity: 1 };
+
+        it('asks for a quote only once the e-mail and the billing location are complete', () => {
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            const requested = vi.spyOn(component.quoteRequested, 'emit');
+
+            component.onBillingCountryChange('US');
+            component.onBillingRegionChange('IL');
+            component.onBillingPostalCodeChange('60601');
+            expect(requested).not.toHaveBeenCalled();
+
+            component.updateUnitField(0, 'email', 'jane@example.com');
+            expect(requested).toHaveBeenCalledTimes(1);
+            expect(requested.mock.calls[0][0]).toEqual(expect.objectContaining({
+                email: 'jane@example.com',
+                quantity: 1,
+                billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
+                promotionCode: undefined
+            }));
+        });
+
+        it('asks again when the location or quantity changes, but not for an incomplete location', () => {
+            component.config = { unitPrice: 599, allowQuantity: true } as CheckoutWidgetConfig;
+            component.updateUnitField(0, 'email', 'jane@example.com');
+            const requested = vi.spyOn(component.quoteRequested, 'emit');
+
+            component.onBillingCountryChange('US');
+            expect(requested).not.toHaveBeenCalled();
+            component.onBillingRegionChange('IL');
+            component.onBillingPostalCodeChange('60601');
+            expect(requested).toHaveBeenCalledTimes(1);
+
+            component.onQuantityChange(2);
+            expect(requested).toHaveBeenCalledTimes(2);
+            expect(requested.mock.calls[1][0].quantity).toBe(2);
+        });
+
+        it('never sends a typed code with the background quote', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            component.updateUnitField(0, 'email', 'jane@example.com');
+            component.promotionCodeInput.set('SAVE10');
+            const requested = vi.spyOn(component.quoteRequested, 'emit');
+            fillLocation(component);
+            expect(requested.mock.calls.at(-1)?.[0].promotionCode).toBeUndefined();
+        });
+
+        it('shows the discount, hides the promo box and prices the total while a member discount applies', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(true);
+
+            component.memberDiscount = ASAE10;
+            component.serverPricedTotal = { total: 539.1, quantity: 1 };
+            expect(component.activeMemberDiscount()).toEqual(ASAE10);
+            expect(component.allowsPromotionCodes()).toBe(false);
+            expect(component.totalGross()).toBe(539.1);
+        });
+
+        it('does not send a code typed before the promo box was hidden', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            component.isPaymentReady = true;
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            component.email.set('jane@example.com');
+            component.syncUnits();
+            fillLocation(component);
+            component.promotionCodeInput.set('SAVE10');
+            component.memberDiscount = ASAE10;
+            const submitted = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(submitted.mock.calls[0][0].promotionCode).toBeUndefined();
+        });
+
+        it('ignores a member discount priced at another quantity', () => {
+            component.config = { unitPrice: 599, allowCoupons: true, allowQuantity: true } as CheckoutWidgetConfig;
+            component.memberDiscount = ASAE10;
+            component.onQuantityChange(2);
+            expect(component.activeMemberDiscount()).toBeNull();
+            expect(component.allowsPromotionCodes()).toBe(true);
+        });
+
+        it('drops the quote when the e-mail a member discount was priced for changes', () => {
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            component.memberDiscount = ASAE10;
+            const invalidated = vi.spyOn(component.quoteInvalidated, 'emit');
+            component.updateUnitField(0, 'email', 'other@example.com');
+            expect(invalidated).toHaveBeenCalledTimes(1);
+        });
+
+        it('locks only the first e-mail field, and only when asked to', () => {
+            expect(component.isLockedEmail(0, 'email')).toBe(false);
+            component.lockEmail = true;
+            expect(component.isLockedEmail(0, 'email')).toBe(true);
+            expect(component.isLockedEmail(0, 'Email')).toBe(true);
+            expect(component.isLockedEmail(0, 'firstName')).toBe(false);
+            expect(component.isLockedEmail(1, 'email')).toBe(false);
         });
     });
 });

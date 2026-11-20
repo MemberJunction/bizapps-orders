@@ -80,7 +80,24 @@ This works because the booking path's own transaction and accounting's `CreateJo
 savepoints nest correctly three deep — verified by a spike before any check was written
 (`plans/archive/integration-testing-plan.md` §0).
 
-Apart from those two teardowns, removing committed data is a separate, manual step.
+Work the product runs on an isolated provider (`WithIsolatedProvider` in CoreEntitiesServer: the
+checkout capture, the webhook's delivery row) would write on another pooled connection, outside the
+check's transaction, and wait on that transaction's locks until the request timeout (#947).
+`InRolledBackTransaction` runs its body inside `JoinCallerTransactionForTests` (imported from
+`@mj-biz-apps/orders-core-entities-server/testing`; the package root does not export it), so that work
+joins the check's transaction instead. A check run that way proves what isolated work writes, not that it
+writes on its own transaction. Two things cover the isolation itself: `isolatedProvider.test.ts`, and
+`subscription-renewal.SR46-OT`, which runs SR46's payment `OutsideTransaction` so the capture uses its own
+provider as in production. A capture that waited on a transaction its own request holds times out there
+while SR46 still passes. `capture-payment.CP13-OT` (#967) also runs `OutsideTransaction`, because the lock
+it needs must belong to another connection: a second, independent provider holds an open transaction that
+has written the order, the capture's order read waits on it, and the check ends that wait with `KILL` as
+soon as `sys.dm_exec_requests` shows it, so the capture sees a failed read in about a second rather than
+after the 60 s request timeout. It needs locking READ COMMITTED and `ALTER ANY CONNECTION`, and says so
+when either is missing. Both checks commit, so they delete their rows afterwards (`PurgeCheckoutRun`,
+scoped to the IDs they made) and fail if any are left.
+
+Apart from those teardowns, removing committed data is a separate, manual step.
 `node test-harnesses/purge-fixture-data.mjs` deletes what older per-run fixtures left behind
 (companies named `IT-ORD-…` and everything hanging off them), and `seed-review-data.mjs` runs the
 same purge before it seeds unless given `--keep-existing`.
@@ -160,6 +177,19 @@ path and the ledger run as they do in production. Each check creates the `Bill.c
 field lengths when the database has none, since a send refuses names it cannot check. What Bill.com
 itself returns is probed by hand against a sandbox with `test-harnesses/billcom-live.mjs`, which
 never runs in CI; see [`docs/billcom-invoice-rail.md`](../../docs/billcom-invoice-rail.md).
+
+`orders-isa` covers MemberJunction's IS-A machinery against a real database, which MJ cannot do itself — it
+has no IS-A entity of its own and tests the machinery with mocks. It drives both of Orders' disjoint pairs
+through save, view, load, promotion (`AttachToParent`), `EnsureISAChild` and delete. Three things differ
+from the other bundles:
+
+- **Its name carries the app.** Accounting and Sales have IS-A bundles too, and the check registry
+  silently replaces a check or lifecycle registered under a name it already holds, so a plain `isa`
+  could swap one app's checks for another's in a shared process.
+- **IS7 runs under `OutsideTransaction`**, because the rollback it proves has to be MJ's own rather
+  than the check's, and it deletes the draft order it commits.
+- **The deletes in IS8/IS9 race a 30-second deadline**, so a return of MJ#4850 (a parent `Delete()`
+  that never returned) fails one check instead of hanging the run.
 
 ## Drift guards
 

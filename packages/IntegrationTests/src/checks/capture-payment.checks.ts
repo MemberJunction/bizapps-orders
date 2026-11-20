@@ -32,8 +32,12 @@
  *   CP10  a different key on the same shape takes a second, legitimate payment
  *   CP11  Preview returns real numbers and writes nothing
  *   CP12  ids are validated at the boundary, not interpolated
+ *   CP13-OT a capture whose order read FAILS (another transaction holds the order) is retryable,
+ *         not OrderNotFound, and once that transaction ends the retry books the payment (#967)
  *
- * Deterministic. Every check runs inside a rolled-back transaction.
+ * Deterministic. Every check runs inside a rolled-back transaction, except CP13-OT, which needs a
+ * second connection to hold a lock its capture waits on: it commits and deletes its rows afterwards
+ * (`PurgeCheckoutRun`).
  *
  * CONNECTS TO:
  *   CODE: CapturePaymentOperation · PaymentHeaderEntityServer.Lines · PaymentLineEntityServer
@@ -41,7 +45,8 @@
  */
 import { randomUUID } from "node:crypto";
 import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
-import { BaseRemotableOperation } from "@memberjunction/core";
+import { BaseRemotableOperation, type DatabaseProviderBase } from "@memberjunction/core";
+import { isCaptureRefusalRetryable } from "@mj-biz-apps/orders-core-entities-server";
 import { MJGlobal } from "@memberjunction/global";
 import {
   Assert,
@@ -57,7 +62,11 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  OutsideTransaction,
+  PurgeCheckoutRun,
+  SameID,
   TeardownOrdersFixture,
+  type CheckoutRun,
   TxMaybeOne,
   TxOne,
   TxQuery,
@@ -143,6 +152,39 @@ const orderRow = async (ctx: IntegrationCheckContext, orderID: string) => {
     PaymentStatus: DerivePaymentStatus(row.TotalGross, row.AmountPaid, row.Balance),
   };
 };
+
+
+/**
+ * Wait for a request that another session is blocking, and end it with KILL (CP13-OT, #967).
+ *
+ * The capture's read of a locked order waits for the lock under locking READ COMMITTED, and the
+ * failure #967 is about is what happens when that wait ends badly: the request timeout (60 s in this
+ * harness) or a dropped connection. KILL is the second one, delivered as soon as the wait is seen,
+ * so the check takes about a second instead of a minute and does not depend on a timeout setting.
+ * Returns the killed request's session and the text it was running, so the check can show it was the
+ * capture's order read; null when nothing was blocked within `withinMs`.
+ */
+async function killRequestBlockedBy(
+  ctx: IntegrationCheckContext,
+  blockerSessionID: number,
+  withinMs: number,
+): Promise<{ SessionID: number; Text: string } | null> {
+  const until = Date.now() + withinMs;
+  while (Date.now() < until) {
+    const blocked = await TxQuery<{ SessionID: number; Text: string }>(
+      ctx,
+      `SELECT TOP 1 r.session_id AS SessionID, t.text AS Text
+         FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+        WHERE r.blocking_session_id = ${Number(blockerSessionID)}`,
+    );
+    if (blocked.length) {
+      await TxQuery(ctx, `KILL ${Number(blocked[0].SessionID)}`);
+      return blocked[0];
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return null;
+}
 
 export const CapturePaymentChecks: NamedCheck[] = [
   {
@@ -451,6 +493,118 @@ export const CapturePaymentChecks: NamedCheck[] = [
         });
         AssertEqual(badCompany.Success, false, "so is a malformed company id");
       }),
+  },
+  {
+    // #967. The capture read its orders and refused every id the read did not return as
+    // OrderNotFound, without checking whether the read had succeeded, and the checkout classes
+    // OrderNotFound as terminal: a charged buyer with no payment booked. Here a second connection
+    // holds an open transaction that has written the order, as another caller on the shared
+    // provider can in production (#950 review), so the capture's read waits on its lock; the wait is
+    // ended (killRequestBlockedBy) and the capture must say it could not READ the order, as a code
+    // the checkout retries. Then the other transaction ends and the same capture, retried, books.
+    // Outside the harness transaction because the lock has to belong to someone else; its rows are
+    // deleted afterwards.
+    Id: "capture-payment.CP13-OT",
+    Name: "CP13-OT: a capture whose order read fails is retryable, not OrderNotFound, and the retry books (#967)",
+    RequiresMutation: true,
+    Fn: async (ctx) => {
+      const f = Fx();
+      const run: CheckoutRun = { OrderIDs: [], SubscriptionIDs: [] };
+      const killed: number[] = [];
+      await OutsideTransaction(
+        async () => {
+          const locking = await TxOne<{ RCSI: boolean }>(
+            ctx,
+            `SELECT is_read_committed_snapshot_on AS RCSI FROM sys.databases WHERE name = DB_NAME()`,
+          );
+          Assert(!locking.RCSI, "CP13-OT needs locking READ COMMITTED (is_read_committed_snapshot_on = 0) so the read waits on the lock");
+          const canKill = await TxOne<{ CanKill: number }>(ctx, `SELECT HAS_PERMS_BY_NAME(NULL, NULL, 'ALTER ANY CONNECTION') AS CanKill`);
+          Assert(Number(canKill.CanKill) === 1, "CP13-OT ends the blocked read with KILL, which needs ALTER ANY CONNECTION");
+
+          // The world's own price, so nothing committed here changes the catalog every other check reads.
+          const price = await TxOne<{ Amount: number }>(
+            ctx,
+            `SELECT TOP 1 Amount FROM ${ORDERS_SCHEMA}.ProductPrice
+              WHERE ProductID = '${f.Products.WidgetA}' AND Status = 'Active' AND FeeType = 'Standard'
+                AND Priority = 0 AND PriceListID IS NULL`,
+          );
+          const amount = Number(price.Amount);
+          const sold = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: amount }],
+          });
+          Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+          const orderID = sold.Order.ID as string;
+          run.OrderIDs.push(orderID);
+          const input = { ...base(ctx, amount, orderID), IdempotencyKey: `it-cp13-ot-${orderID.slice(0, 8)}` };
+
+          // Another transaction writes the order and stays open.
+          const other = await (ctx.Provider as unknown as DatabaseProviderBase).CreateIndependentInstance();
+          let open = false;
+          try {
+            await other.BeginTransaction();
+            open = true;
+            await other.ExecuteSQL(
+              `UPDATE ${ORDERS_SCHEMA}.OrderHeader SET __mj_UpdatedAt = SYSDATETIMEOFFSET() WHERE ID = '${orderID}'`,
+            );
+            const spid = Number(((await other.ExecuteSQL(`SELECT @@SPID AS Spid`)) as Array<{ Spid: number }>)[0]?.Spid);
+            Assert(spid > 0, "the other transaction's session id");
+
+            const pending = capture(ctx, input).then(
+              (out) => ({ out, error: null as Error | null }),
+              (error: Error) => ({ out: null as CaptureOutput | null, error }),
+            );
+            const blocked = await killRequestBlockedBy(ctx, spid, 20_000);
+            if (!blocked) {
+              await other.RollbackTransaction();
+              open = false;
+            }
+            const first = await pending;
+            Assert(blocked != null, "the capture's read never waited on the other transaction's lock");
+            killed.push(blocked!.SessionID);
+            Assert(/vwOrderHeaders/i.test(blocked!.Text), `the blocked request is the capture's order read: ${blocked!.Text.slice(0, 200)}`);
+            Assert(first.error == null, `the capture did not execute: ${first.error?.message}`);
+            const codes = (first.out!.Blockers ?? []).map((b) => b.Code);
+            AssertEqual(first.out!.Success, false, "the capture that could not read the order is refused");
+            Assert(!codes.includes("OrderNotFound"), `not as OrderNotFound: ${JSON.stringify(first.out!.Blockers)}`);
+            Assert(codes.includes("OrderReadFailed"), `as OrderReadFailed: ${JSON.stringify(first.out!.Blockers)}`);
+            Assert(isCaptureRefusalRetryable(codes), `which the checkout retries: ${codes.join(",")}`);
+            const none = await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentLine WHERE OrderHeaderID = '${orderID}'`);
+            AssertEqual(none.length, 0, "and nothing was booked");
+          } finally {
+            if (open) await other.RollbackTransaction().catch(() => undefined);
+            await other.ReleaseIndependentInstance();
+          }
+
+          // The other transaction has ended: the same capture, retried, books the payment once.
+          const retried = await capture(ctx, input);
+          Assert(retried.Success, `the retry books: ${retried.Message} ${JSON.stringify(retried.Blockers)}`);
+          AssertEqual(retried.WasRetry, false, "as a new payment, since the refused attempt wrote nothing");
+          const lines = await TxQuery<{ PaymentHeaderID: string }>(
+            ctx,
+            `SELECT PaymentHeaderID FROM ${ORDERS_SCHEMA}.PaymentLine WHERE OrderHeaderID = '${orderID}'`,
+          );
+          AssertEqual(lines.length, 1, "one payment on the order");
+          Assert(SameID(lines[0].PaymentHeaderID, retried.PaymentHeaderID), "the one the retry returned");
+          const row = await orderRow(ctx, orderID);
+          AssertEqual(Number(row.Balance), 0, "the order is paid");
+        },
+        async () => {
+          await PurgeCheckoutRun(ctx, run);
+        },
+      );
+
+      // OutsideTransaction only warns when cleanup fails, so the check asserts it did not.
+      const ids = run.OrderIDs.map((v) => `'${v}'`).join(",") || "NULL";
+      const left = await TxOne<{ Orders: number; Lines: number }>(
+        ctx,
+        `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID IN (${ids})) AS Orders,
+                (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentLine WHERE OrderHeaderID IN (${ids})) AS Lines`,
+      );
+      AssertEqual(Number(left.Orders) + Number(left.Lines), 0, `the check's committed rows are deleted afterwards: ${JSON.stringify(left)}`);
+      AssertEqual(killed.length, 1, "one blocked read was ended");
+    },
   },
 ];
 

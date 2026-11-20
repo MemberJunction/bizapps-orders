@@ -94,4 +94,23 @@ describe('DisplacedStartEventData', () => {
             SettledEnd: '2028-09-30',
         });
     });
+
+    it('records the stated end, so the notice can name the end the stated length keeps (golive #338)', () => {
+        const start = utc('2026-10-01');
+        const end = utc('2027-03-31');
+        const decision = new SubscriptionBehavior().Decide({
+            Rules: rules,
+            PurchaseDate: utc('2026-09-29'),
+            Amount: 1000,
+            Subscriber: { OrganizationID: 'org-1' },
+            Existing: { ID: 'sub-1', Status: 'Active', LatestTermEnd: utc('2027-09-30'), LatestTermNumber: 1 },
+            RequestedStartDate: start,
+            RequestedEndDate: end,
+        });
+        const data = DisplacedStartEventData(LINE, decision, start, end);
+        expect(data).toMatchObject({ RequestedEndDate: '2027-03-31', TermStartDate: '2027-10-01', TermEndDate: '2028-03-31' });
+
+        const read = ParseDisplacedTermStart(JSON.stringify(data), [{ ID: LINE, LineNumber: 1 }]);
+        expect(read).toMatchObject({ StatedEnd: '2027-03-31', SettledEnd: '2028-03-31' });
+    });
 });

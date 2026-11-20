@@ -114,6 +114,7 @@ export async function BuildExternalInvoicingWorklist(
         { EntityName: EXTERNAL_INVOICE_ENTITY, ExtraFilter: `PaymentProviderID IN (${[...railCompanies.values()].map((id) => `'${id}'`).join(',')})`, ResultType: 'simple' },
         user,
     );
+    if (!history.Success) throw new Error(`Could not read external invoices: ${history.ErrorMessage}`);
     const byUnit = new Map<string, ExternalInvoiceRow[]>();
     const unitKey = (orderID: string, companyID: string, scheduleID: string | null) => `${orderID}|${companyID}|${scheduleID ?? ''}`.toLowerCase();
     for (const h of history.Results ?? []) {
@@ -140,6 +141,7 @@ export async function BuildExternalInvoicingWorklist(
             { EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ExtraFilter: `CompanyID IN (${companyList}) AND Status <> 'Canceled'`, ResultType: 'simple' },
             user,
         );
+        if (!all.Success) throw new Error(`Could not read payment schedules: ${all.ErrorMessage}`);
         const rows = all.Results ?? [];
         for (const s of rows) scheduledOrderIDs.add(String(s.OrderHeaderID).toLowerCase());
         const due = rows.filter((s) => s.Status === 'Invoiced' && s.SentAt == null);
@@ -176,6 +178,7 @@ export async function BuildExternalInvoicingWorklist(
         { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `Status = 'Confirmed' AND Balance > 0`, OrderBy: 'ConfirmedAt', ResultType: 'simple' },
         user,
     );
+    if (!confirmed.Success) throw new Error(`Could not read confirmed orders: ${confirmed.ErrorMessage}`);
     // Orders already holding a live whole-order invoice for a company other than their own were
     // split per product company before golive #311; sending the order's own invoice would bill those
     // lines twice, so they are not offered.
@@ -222,6 +225,7 @@ async function loadOrders(rv: RunView, user: UserInfo, ids: string[]): Promise<M
         { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${ids.map((id) => `'${RequireUUID(id, 'OrderHeaderID')}'`).join(',')})`, ResultType: 'simple' },
         user,
     );
+    if (!r.Success) throw new Error(`Could not read orders: ${r.ErrorMessage}`);
     for (const o of r.Results ?? []) map.set(String(o.ID).toLowerCase(), o);
     return map;
 }

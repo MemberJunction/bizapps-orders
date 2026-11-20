@@ -52,6 +52,8 @@ import {
 import { ResolveLineParty, type LineParty } from './LineParty.js';
 import { RequireUUID } from './sql-guards.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { TermDayEnd } from './TermGrantWindow.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -119,7 +121,12 @@ export interface GrantOutcome {
 export async function CreateEntitlementGrants(
     order: GrantableOrder,
     lines: GrantableLine[],
-    termsByLine: Map<string, TermForLine>,
+    /**
+     * The term or terms each subscription line bought. A line that states an end past its first term
+     * bought several (golive #338); a grant that follows the term is written once per term, so
+     * extending, shifting or cancelling one term moves the access that term gave.
+     */
+    termsByLine: Map<string, TermForLine | readonly TermForLine[]>,
     provider: IMetadataProvider,
     user: UserInfo,
     options?: EntitySaveOptions,
@@ -127,6 +134,9 @@ export async function CreateEntitlementGrants(
     const out: GrantOutcome = { Created: 0, Grants: [] };
     await OrdersSettings.Load(provider, user);
     const cutoffDaysPastDue = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+    // A term-following grant covers each of its term's days in full, in the business zone.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
 
     // Reversal lines and anything with no positive quantity confer nothing.
     const grantable = lines.filter((l) => Number(l.Quantity ?? 0) > 0);
@@ -192,11 +202,11 @@ export async function CreateEntitlementGrants(
     //
     // Re-keying here rather than asking the caller to change: a map that arrives with unknown casing
     // is the caller's business, and normalising on receipt cannot be forgotten by the next caller.
-    const termsByLineKey = new Map<string, TermForLine>();
-    for (const [lineID, term] of termsByLine) termsByLineKey.set(key(lineID), term);
+    const termsByLineKey = new Map<string, readonly TermForLine[]>();
+    for (const [lineID, terms] of termsByLine) termsByLineKey.set(key(lineID), Array.isArray(terms) ? terms : [terms as TermForLine]);
 
     // Subscription IDs behind the terms, so a grant can point at both.
-    const termIDs = [...termsByLineKey.values()].map((t) => t.ID);
+    const termIDs = [...termsByLineKey.values()].flat().map((t) => t.ID);
     const subscriptionByTerm = new Map<string, string>();
     if (termIDs.length) {
         const terms = await rv.RunView<{ ID: string; SubscriptionID: string }>(
@@ -250,7 +260,7 @@ export async function CreateEntitlementGrants(
             );
         }
 
-        const term = termsByLineKey.get(key(line.ID)) ?? null;
+        const lineTerms = termsByLineKey.get(key(line.ID)) ?? [];
 
         for (const template of forThisProduct) {
             if (!TemplateAppliesToLineChoices(template, choicesByLine.get(key(line.ID)) ?? [])) continue;
@@ -262,75 +272,81 @@ export async function CreateEntitlementGrants(
                 { ValidityMode: template.ValidityMode },
             );
 
-            const event = eventByProduct.get(key(line.ProductID));
-            const validity = ResolveValidityWindow(resolved.ValidityMode, {
-                GrantedOn: order.OrderDate,
-                DurationDays: template.ValidityDurationDays,
-                EventStartsAt: event?.EventStartsAt ? new Date(event.EventStartsAt) : null,
-                EventEndsAt: event?.EventEndsAt ? new Date(event.EventEndsAt) : null,
-                AccessLeadHours: template.AccessLeadHours,
-                AccessLagHours: template.AccessLagHours,
-                TermStartDate: term ? new Date(term.StartDate) : null,
-                TermEndDate: term ? new Date(term.EndDate) : null,
-            });
+            // One grant per term when it follows the term; any other validity is the line's, once.
+            const grantTerms: Array<TermForLine | null> =
+                resolved.ValidityMode === 'SubscriptionTerm' && lineTerms.length > 1 ? [...lineTerms] : [lineTerms[0] ?? null];
+            for (const term of grantTerms) {
+                const event = eventByProduct.get(key(line.ProductID));
+                const validity = ResolveValidityWindow(resolved.ValidityMode, {
+                    GrantedOn: order.OrderDate,
+                    DurationDays: template.ValidityDurationDays,
+                    EventStartsAt: event?.EventStartsAt ? new Date(event.EventStartsAt) : null,
+                    EventEndsAt: event?.EventEndsAt ? new Date(event.EventEndsAt) : null,
+                    AccessLeadHours: template.AccessLeadHours,
+                    AccessLagHours: template.AccessLagHours,
+                    TermStartDate: term ? new Date(term.StartDate) : null,
+                    TermEndDate: term ? new Date(term.EndDate) : null,
+                    BusinessZone: zone,
+                });
 
-            const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(ENTITLEMENT_GRANT_ENTITY, user);
-            grant.NewRecord();
-            grant.ProductEntitlementID = template.ID;
-            grant.OrderLineID = line.ID;
-            const subID = term ? subscriptionByTerm.get(key(term.ID)) : undefined;
-            if (term) {
-                grant.SubscriptionTermID = term.ID;
-                if (subID) grant.SubscriptionID = subID;
-            }
+                const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(ENTITLEMENT_GRANT_ENTITY, user);
+                grant.NewRecord();
+                grant.ProductEntitlementID = template.ID;
+                grant.OrderLineID = line.ID;
+                const subID = term ? subscriptionByTerm.get(key(term.ID)) : undefined;
+                if (term) {
+                    grant.SubscriptionTermID = term.ID;
+                    if (subID) grant.SubscriptionID = subID;
+                }
 
-            // BENEFICIARY: the subscription's holder when the grant belongs to one, so access and
-            // the subscription never name different parties. Otherwise the line's own ship-to,
-            // because that is where 'who is this for' lives (D61) — a seat bought for a named
-            // colleague, a ticket for an attendee — then the order's ship-to, then the buyer.
-            const beneficiary = (subID && holderBySubscription.get(key(subID))) || ResolveLineParty(line, order);
-            if (beneficiary.PersonID) grant.BeneficiaryPersonID = beneficiary.PersonID;
-            if (beneficiary.OrganizationID) grant.BeneficiaryOrganizationID = beneficiary.OrganizationID;
+                // BENEFICIARY: the subscription's holder when the grant belongs to one, so access and
+                // the subscription never name different parties. Otherwise the line's own ship-to,
+                // because that is where 'who is this for' lives (D61) — a seat bought for a named
+                // colleague, a ticket for an attendee — then the order's ship-to, then the buyer.
+                const beneficiary = (subID && holderBySubscription.get(key(subID))) || ResolveLineParty(line, order);
+                if (beneficiary.PersonID) grant.BeneficiaryPersonID = beneficiary.PersonID;
+                if (beneficiary.OrganizationID) grant.BeneficiaryOrganizationID = beneficiary.OrganizationID;
 
-            // A subscription line's seats come from its term: the line's own quantity is prorated
-            // by now, so 10 seats over a half-length first period would grant 5 (#589).
-            grant.Quantity = ResolveGrantQuantity(
-                template.Quantity,
-                term ? term.Quantity : Number(line.Quantity ?? 0),
-                resolved.QuantityMode,
-            );
-            grant.ValidFrom = validity.ValidFrom;
-            grant.ValidTo = validity.ValidTo;
-            grant.ValidityModeApplied = validity.ModeApplied;
-            const decision = DecideGrantStatus(
-                resolved.GrantTiming,
-                !!line.RenewsSubscriptionID,
-                order.Payment,
-                cutoffDaysPastDue,
-            );
-            const status = decision.Status;
-            grant.Status = status;
-            // Recorded so the grant can be re-decided later under the rule it was written under,
-            // whatever the catalog says by then (PaymentGatedAccess).
-            grant.GrantTimingApplied = resolved.GrantTiming;
-            grant.SuspensionReason = decision.Reason;
-            grant.SuspendedAt = status === 'Suspended' ? new Date() : null;
-
-            if (!(await grant.Save(options))) {
-                throw new Error(
-                    `Failed to grant entitlement '${template.Code}' for order line ${line.ID}: ` +
-                        `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                // A subscription line's seats come from its term: the line's own quantity is prorated
+                // by now, so 10 seats over a half-length first period would grant 5 (#589).
+                grant.Quantity = ResolveGrantQuantity(
+                    template.Quantity,
+                    term ? term.Quantity : Number(line.Quantity ?? 0),
+                    resolved.QuantityMode,
                 );
-            }
+                grant.ValidFrom = validity.ValidFrom;
+                grant.ValidTo = validity.ValidTo;
+                grant.ValidityModeApplied = validity.ModeApplied;
+                const decision = DecideGrantStatus(
+                    resolved.GrantTiming,
+                    !!line.RenewsSubscriptionID,
+                    order.Payment,
+                    cutoffDaysPastDue,
+                );
+                const status = decision.Status;
+                grant.Status = status;
+                // Recorded so the grant can be re-decided later under the rule it was written under,
+                // whatever the catalog says by then (PaymentGatedAccess).
+                grant.GrantTimingApplied = resolved.GrantTiming;
+                grant.SuspensionReason = decision.Reason;
+                grant.SuspendedAt = status === 'Suspended' ? new Date() : null;
 
-            out.Created++;
-            out.Grants.push({
-                ID: grant.ID,
-                OrderLineID: line.ID,
-                Code: template.Code,
-                Status: status,
-                ValidityModeApplied: validity.ModeApplied,
-            });
+                if (!(await grant.Save(options))) {
+                    throw new Error(
+                        `Failed to grant entitlement '${template.Code}' for order line ${line.ID}: ` +
+                            `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+
+                out.Created++;
+                out.Grants.push({
+                    ID: grant.ID,
+                    OrderLineID: line.ID,
+                    Code: template.Code,
+                    Status: status,
+                    ValidityModeApplied: validity.ModeApplied,
+                });
+            }
         }
     }
 
@@ -628,38 +644,110 @@ export async function ResizeTermGrants(
     return { Resized: resized };
 }
 
+/** What a cancel decided about access. */
+export interface CancelAccessEnd {
+    /** `CancellationDecision.AccessThroughDate`: the last day access covers, in full, unless `EndsNow`. */
+    AccessThroughDate: Date;
+    /**
+     * Access ends at once: an `Immediate` cancel with no grace, made for today or earlier
+     * (`SubscriptionBehavior.EndsAccessOnCancel`). The cancel operation decides it, because only it knows
+     * the mode it applied; this function cannot tell an `Immediate` cancel from an end-of-term one that
+     * happens to end today.
+     */
+    EndsNow: boolean;
+}
+
 /**
- * After a subscription cancel, make stored grant Status less of a lie — still not the read path.
+ * After a subscription cancel, make the stored grants tell the truth.
  *
- * Access-through in the future (grace) leaves the rows `Active`; `EvaluateGrantAccess` honours
- * `subscription.EndDate`. Access-through already passed (immediate cancel, no remaining grace)
- * REVOKES, with a reason, so a poll of Status at least stops saying Active.
+ * Access ends at once for an `Immediate` cancel with no grace (`end.EndsNow`), and otherwise at 00:00
+ * business time after the access-through day (`TermDayEnd`): the last day kept is kept in full, the instant
+ * `EvaluateGrantAccess` reads from `subscription.EndDate`.
+ *
+ * Access already ended (`EndsNow`, or a cancel made after the day it names) REVOKES every standing grant on
+ * the subscription, with a reason.
+ *
+ * Access ends later (end of term, a grace period, a cancel cut short at a billing boundary) leaves the rows
+ * `Active` and MOVES THE END of each term grant to that instant. Before, the rows kept their old end, so a downstream copy that follows the grant
+ * (the Learning Hub, through `GrantStatusChanged`) ended access on a different day from Orders: earlier
+ * with a grace period, later when the cancel cut the term short. Each moved grant records the date change
+ * as an outbound event (`EntitlementGrantEntityServer`).
+ *
+ * Only term grants move (`ValidityModeApplied = 'SubscriptionTerm'`), as in TermShift and TermExtension: a
+ * grant with its own window (FixedDuration, Perpetual) keeps it, as it did before. A term grant that starts
+ * at or after the new end (a later term, which begins exactly where the cancelled one's coverage ends) is
+ * REVOKED: it can never come into force, and a consumer that provisions on the grant without reading
+ * `ValidFrom` would otherwise give that whole later term.
+ *
+ * Example (Chicago, term ends 31 Dec 2026, end-of-term cancel made 31 Dec at 7 pm Central): access ends
+ * 2027-01-01T06:00Z, so the grant stays Active with that end. (Compared with 00:00 UTC on 31 Dec, it used
+ * to be revoked at once.) Made `Immediate`, it is revoked at once.
  */
 export async function RevokeGrantsForCanceledSubscription(
     subscriptionID: string,
-    accessThroughDate: Date,
+    end: CancelAccessEnd,
     reason: string,
     provider: IMetadataProvider,
     user: UserInfo,
     options?: EntitySaveOptions,
     now: Date = new Date(),
-): Promise<{ Revoked: number; LeftStanding: number }> {
+): Promise<{ Revoked: number; LeftStanding: number; EndMoved: number }> {
     const id = RequireUUID(subscriptionID, 'SubscriptionID');
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const grants = await rv.RunView<{ ID: string; Status: string }>(
+    const grants = await rv.RunView<{ ID: string; Status: string; ValidityModeApplied: string | null }>(
         {
             EntityName: ENTITLEMENT_GRANT_ENTITY,
             ExtraFilter: `SubscriptionID = '${id}' AND Status IN ('Active','Suspended')`,
+            Fields: ['ID', 'Status', 'ValidityModeApplied'],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
     const rows = grants?.Results ?? [];
-    if (!rows.length) return { Revoked: 0, LeftStanding: 0 };
+    if (!rows.length) return { Revoked: 0, LeftStanding: 0, EndMoved: 0 };
 
-    if (!ShouldRevokeGrantsOnCancel(accessThroughDate, now)) {
-        return { Revoked: 0, LeftStanding: rows.length };
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const accessEnds = TermDayEnd(end.AccessThroughDate, BusinessTimeZoneEngine.Instance.Zone);
+
+    if (!end.EndsNow && !ShouldRevokeGrantsOnCancel(accessEnds, now)) {
+        let moved = 0;
+        let revokedLater = 0;
+        for (const row of rows) {
+            if (row.ValidityModeApplied !== 'SubscriptionTerm') continue;
+            const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(
+                ENTITLEMENT_GRANT_ENTITY,
+                CompositeKey.FromID(row.ID),
+                user,
+            );
+            // Starting at or after the end, it can never come into force: a later term (a renewal Spawn Renewals
+            // already confirmed) begins exactly where the cancelled coverage ends. REVOKE it. Left Active, a copy
+            // of access that ignores ValidFrom (the Learning Hub provisions a grant at once) would keep a year of
+            // access that Orders denies.
+            if (grant.ValidFrom != null && new Date(grant.ValidFrom).getTime() >= accessEnds.getTime()) {
+                grant.Status = 'Revoked';
+                grant.RevokedAt = now;
+                grant.RevocationReason = reason;
+                if (!(await grant.Save(options))) {
+                    throw new Error(
+                        `Failed to revoke entitlement grant ${row.ID}, which starts after the cancel's access ends: ` +
+                            `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+                revokedLater++;
+                continue;
+            }
+            if (grant.ValidTo != null && new Date(grant.ValidTo).getTime() === accessEnds.getTime()) continue;
+            grant.ValidTo = accessEnds;
+            if (!(await grant.Save(options))) {
+                throw new Error(
+                    `Failed to move entitlement grant ${row.ID}'s end to the cancel's access-through: ` +
+                        `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+            moved++;
+        }
+        return { Revoked: revokedLater, LeftStanding: rows.length - revokedLater, EndMoved: moved };
     }
 
     let revoked = 0;
@@ -680,5 +768,5 @@ export async function RevokeGrantsForCanceledSubscription(
         }
         revoked++;
     }
-    return { Revoked: revoked, LeftStanding: 0 };
+    return { Revoked: revoked, LeftStanding: 0, EndMoved: 0 };
 }

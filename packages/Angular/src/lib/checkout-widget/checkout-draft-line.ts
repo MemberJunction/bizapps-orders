@@ -1,4 +1,4 @@
-import type { CheckoutSubmissionEvent } from './checkout-widget.component';
+import type { CheckoutAppliedPromotion, CheckoutSubmissionEvent } from './checkout-widget.component';
 
 /**
  * Maps a widget submission onto the anonymous draft line.
@@ -97,4 +97,26 @@ export function memberDiscountNotice(draft: Record<string, unknown> | null | und
     const applied = draft?.['AppliedPromotionCodes'];
     const typedCodePriced = Array.isArray(applied) && applied.length > 0;
     return typedCodePriced ? `${message} Submit again to continue.` : `${message} Submit again to continue at the standard rate.`;
+}
+
+/**
+ * The member discount a draft was priced with (#919), for the widget's discount line and total, or
+ * null when the draft failed or the token earned nothing. The code is the one the server applied
+ * (empty when it named none); the discount and total are in major units, at the quantity priced.
+ */
+export function memberDiscountFromDraft(
+    draft: Record<string, unknown> | null | undefined,
+    quantity: number
+): CheckoutAppliedPromotion | null {
+    if (!draft?.['Success'] || draft['MemberDiscountApplied'] !== true) {
+        return null;
+    }
+    const applied = draft['AppliedPromotionCodes'];
+    const code = Array.isArray(applied) && typeof applied[0] === 'string' ? applied[0] : '';
+    return {
+        code,
+        discount: Number(draft['Discount'] ?? 0),
+        total: Number(draft['TotalGross'] ?? 0),
+        quantity,
+    };
 }

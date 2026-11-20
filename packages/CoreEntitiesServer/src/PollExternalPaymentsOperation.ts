@@ -12,7 +12,8 @@
  *   2. upsert an `ExternalPayment` row per payment (the audit trail and the exceptions worklist);
  *   3. decide (`DecideExternalPayment`): Capture / Hold / Ignore / ReversalNeeded;
  *   4. for Capture, match `invoicePayments[]` to `ExternalInvoice` rows by the rail's invoice id — ALL
- *      of them, or the payment is Unmatched and nothing is captured;
+ *      of them, or the payment is Unmatched and nothing is captured; a payment that would take an
+ *      order or instalment past what is still open is Held for a person (golive #148);
  *   5. call `Orders.CapturePayment` with `IdempotencyKey = 'billcom:<0rp id>'`, so the unique index on
  *      `PaymentHeader.IdempotencyKey` is the guarantee even if this table is wrong;
  *   6. advance the watermark only when the pass completed without a fault.
@@ -21,10 +22,14 @@
  * `PaymentHeaderEntityServer` books the cash leg — the same path a keyed check takes (A-US2).
  *
  * WHAT NEEDS A PERSON. `Unmatched` (an invoice we did not issue — pre-cutover AR, or created directly
- * in Bill.com) and `ReversalNeeded` (captured, then voided on the rail) are reported as `ATTENTION`
- * with Success false so a job that notifies on failure tells somebody; the rows stay in
- * `ExternalPayment` until dealt with. A payment the rail itself records Unmatched (HubSpot, which
- * cannot name a payment's deal yet) is counted but does not fail the run on its own.
+ * in Bill.com), `Refused`, `Reapplied` and `ReversalNeeded` (captured, then voided on the rail) stay in
+ * `ExternalPayment` until dealt with. A live pass that leaves any reports `ATTENTION` with Success
+ * TRUE: the pass did its work, and these rows are re-read every pass, so failing the run told the
+ * job's owner about the same payments every hour (#1033). Instead each payment is announced once,
+ * through the `Payment Needs Review` notification, on the pass that moves it into a waiting
+ * disposition or from one to another (`PaymentReviewNotices.ts`). A payment the rail itself records
+ * Unmatched (HubSpot, which cannot name a payment's deal yet) is counted but neither raises
+ * `ATTENTION` nor a notice on its own.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
@@ -46,17 +51,21 @@ import {
     Today,
     ClassifyPollJobsFor,
     LoadPollJobs,
+    PollJobRecipients,
+    type PollJobRow,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
 import {
     EXTERNAL_PAYMENT_ENTITY,
     ORDER_HEADER_ENTITY,
+    ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
     PAYMENT_LINE_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
 } from './entity-names.js';
 import { ListPaymentSourceProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { LoadExternalInvoicesByRef, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
+import { IsNewlyWaiting, SendPaymentReviewNotices, type PaymentReviewItem } from './PaymentReviewNotices.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const RAIL_OBJECT = 'receivable-payments';
@@ -75,8 +84,13 @@ async function functionalCurrencyFor(companyID: string, provider: IMetadataProvi
 
 const OVERLAP_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX = 100;
+/** Invoice refs per `ExternalInvoice` read when re-checking open Unmatched payments. */
+const INVOICE_REF_CHUNK = 500;
 
-interface ExternalPaymentRow extends Record<string, unknown> {
+/** The `ExternalPayment` columns the open-Unmatched recheck reads. */
+const OPEN_UNMATCHED_FIELDS = ['ID', 'ExternalPaymentRef', 'Disposition', 'DispositionReason', 'PaymentHeaderID', 'ExternalUpdatedAt', 'Payload'];
+
+export interface ExternalPaymentRow extends Record<string, unknown> {
     ID: string;
     ExternalPaymentRef: string;
     Disposition: ExternalPaymentDisposition;
@@ -139,7 +153,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const faults: string[] = [];
             const skipped: string[] = [];
             const previewed: string[] = [];
-            const passes: Array<{ Preview: boolean; Outcomes: ExternalPaymentOutcome[]; RailUnmatched: number }> = [];
+            const passes: Array<{ ProviderID: string; Preview: boolean; Outcomes: ExternalPaymentOutcome[]; RailUnmatched: number; NewlyWaiting: PaymentReviewItem[] }> = [];
             for (const p of providers) {
                 let providerPreview = preview;
                 if (jobs) {
@@ -153,11 +167,26 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                         previewed.push(`provider ${p.ID}: ${job.Why}`);
                     }
                 }
-                const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, provider, user);
-                passes.push({ Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0 });
-                out.Outcomes.push(...result.Outcomes);
-                out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
-                if (result.Fault) faults.push(result.Fault);
+                // Filled as the pass goes, so payments it already moved into a waiting disposition are
+                // still announced when the pass throws part-way.
+                const newlyWaiting: PaymentReviewItem[] = [];
+                try {
+                    const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, newlyWaiting, provider, user);
+                    passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0, NewlyWaiting: newlyWaiting });
+                    out.Outcomes.push(...result.Outcomes);
+                    out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
+                    if (result.Fault) faults.push(result.Fault);
+                } catch (err) {
+                    // One provider throwing (a rail that is missing, inactive or not registered) must not
+                    // drop what the other providers recorded and collected: it is reported as a fault.
+                    const why = err instanceof Error ? err.message : String(err);
+                    LogError(`Orders.PollExternalPayments: provider ${p.ID} failed: ${why}`);
+                    faults.push(`provider ${p.ID}: ${why}`);
+                    if (newlyWaiting.length) passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: [], RailUnmatched: 0, NewlyWaiting: newlyWaiting });
+                }
+            }
+            if (!passes.length && faults.length) {
+                return { ...out, Success: false, ResultCode: 'ERROR', Message: `The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
             if (!passes.length) {
                 return {
@@ -186,8 +215,11 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 else if (o.Disposition === 'ReversalNeeded') out.ReversalNeeded++;
                 else out.Ignored++;
             }
+            // Announced before a fault is reported: the rows are already written, so the next pass reads
+            // them as already waiting and would never announce them.
+            const notices = await this.announceNewlyWaiting(passes.filter((x) => !x.Preview), jobs, user);
             if (faults.length) {
-                return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
+                return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}${notices}` };
             }
             // A payment the rail itself records Unmatched (every HubSpot payment, until its deal can be read) is the
             // expected state, not something this run found wrong: it is counted and listed, but on its own it does
@@ -195,17 +227,19 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const railUnmatched = passes.filter((x) => x.Preview === preview).reduce((n, x) => n + x.RailUnmatched, 0);
             const awaitingNote = railUnmatched > 0 ? ` ${railUnmatched} recorded Unmatched by a rail that cannot match payments to orders yet (see External Payments).` : '';
             const needsPerson = out.Unmatched - railUnmatched + out.Refused + out.Reapplied + out.ReversalNeeded;
+            // Waiting payments are not a failed run (#1033): each was announced once, on the pass that
+            // moved it into the state it waits in.
             if (!preview && needsPerson > 0) {
                 return {
                     ...out,
-                    Success: false,
+                    Success: true,
                     ResultCode: 'ATTENTION',
-                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched - railUnmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).${awaitingNote}`,
+                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched - railUnmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).${awaitingNote}${notices}`,
                 };
             }
             out.Message = preview
                 ? `${previewNote}Would capture ${out.Outcomes.filter((o) => o.Disposition === 'Captured').length} payment(s); ${out.Held} held, ${out.Unmatched} unmatched.`
-                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.${awaitingNote}`;
+                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.${awaitingNote}${notices}`;
             return out;
         } catch (err) {
             LogError(`Orders.PollExternalPayments failed: ${err}`);
@@ -213,9 +247,48 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         }
     }
 
+    /**
+     * Notify about the payments live passes moved into a waiting disposition. Recipients are the
+     * governing poll job's notify user, else its owner (the people MJ's scheduler tells when the run
+     * fails); when no job names anybody, or the jobs were not read, the user running the poll.
+     * Returns a sentence for the run's message, empty when there was nothing to announce. Never throws.
+     */
+    private async announceNewlyWaiting(
+        livePasses: ReadonlyArray<{ ProviderID: string; NewlyWaiting: PaymentReviewItem[] }>,
+        jobs: readonly PollJobRow[] | null,
+        user: UserInfo,
+    ): Promise<string> {
+        let count = 0;
+        let sent = 0;
+        let failed = 0;
+        for (const pass of livePasses) {
+            if (!pass.NewlyWaiting.length) continue;
+            count += pass.NewlyWaiting.length;
+            try {
+                const named = jobs ? PollJobRecipients(jobs, pass.ProviderID) : [];
+                const recipients = named.length ? named : user?.ID ? [user.ID] : [];
+                if (!recipients.length) {
+                    LogError(`Orders.PollExternalPayments: ${pass.NewlyWaiting.length} payment(s) newly need review, but there is nobody to notify.`);
+                    continue;
+                }
+                const r = await SendPaymentReviewNotices(pass.NewlyWaiting, recipients, user);
+                sent += r.Sent;
+                failed += r.Failed;
+            } catch (err) {
+                failed += pass.NewlyWaiting.length;
+                LogError(`Orders.PollExternalPayments: review notices failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        if (!count) return '';
+        return ` ${count} payment(s) newly need review; ${sent} notification(s) sent${failed ? `, ${failed} failed (see the server log)` : ''}.`;
+    }
+
     private async pollProvider(
         paymentProviderID: string,
         opts: { preview: boolean; maxCount: number; since: string | null },
+        // Receives the payments this pass moved into a waiting disposition. A preview writes nothing,
+        // so a later live pass still finds them new; only a live pass collects them.
+        newlyWaiting: PaymentReviewItem[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null; RailUnmatched?: number }> {
@@ -272,6 +345,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 const outcome = await this.handlePayment(rail, p, prior, opts.preview, bookingCurrency, provider, user);
                 outcomes.push(outcome);
                 if (outcome.Disposition === 'Unmatched' && p.UnmatchedReason) railUnmatched++;
+                if (!opts.preview && IsNewlyWaiting(prior?.Disposition, outcome, !!p.UnmatchedReason)) newlyWaiting.push({ Outcome: outcome, RailName: rail.Config.Name });
             } catch (err) {
                 // One bad payment must not stop the pass — but it must stop the watermark.
                 fault = `${p.ExternalPaymentRef}: ${err instanceof Error ? err.message : String(err)}`;
@@ -279,6 +353,33 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 outcomes.push({ PaymentProviderID: paymentProviderID, ExternalPaymentRef: p.ExternalPaymentRef, Amount: p.Amount, ExternalStatus: p.Status, Disposition: 'Held', Reason: `Fault while processing: ${fault}`, });
             }
         }
+
+        // OPEN RE-APPLIED EXCEPTIONS THE WATERMARK NO LONGER REACHES (#814). A `Reapplied` row clears
+        // when the comparison matches again, but the comparison only ran when the rail returned the
+        // payment, so a correction made here more than a day after the change on the rail never
+        // cleared it. Each such row is re-compared against the payload stored from the rail's latest
+        // read. A failure is logged and left for the next pass: these payments are not part of what
+        // the watermark covers, so they do not hold it back.
+        for (const { Row, Record } of ReappliedRowsToRecheck(
+            await loadOpenReapplied(paymentProviderID, provider, user),
+            all.map((p) => p.ExternalPaymentRef),
+            rail,
+        )) {
+            try {
+                const outcome = await this.handlePayment(rail, Record, Row, opts.preview, bookingCurrency, provider, user);
+                outcomes.push(outcome);
+                if (!opts.preview && IsNewlyWaiting(Row.Disposition, outcome, !!Record.UnmatchedReason)) newlyWaiting.push({ Outcome: outcome, RailName: rail.Config.Name });
+            } catch (err) {
+                LogError(`Orders.PollExternalPayments: re-checking re-applied payment ${Row.ExternalPaymentRef} failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+
+        // OPEN UNMATCHED PAYMENTS WHOSE INVOICES HAVE SINCE BEEN LOADED (bc-aidp-next-golive#446). The same
+        // gap as above: an Unmatched payment was re-decided only while the rail returned it, so an
+        // invoice loaded here more than a day after the payment last changed on the rail never let it
+        // capture. Each open row is rebuilt from its stored payload; one whose every invoice now has an
+        // `ExternalInvoice` row is captured the normal way, and the rest are left exactly as they are.
+        outcomes.push(...(await this.recheckOpenUnmatched(rail, all.map((p) => p.ExternalPaymentRef), opts.preview, bookingCurrency, provider, user, newlyWaiting)));
 
         // THE WATERMARK: on a clean, uncapped pass, the newest instant the rail returned. On a capped
         // pass, the newest instant among the payments actually processed — everything older is done
@@ -300,6 +401,50 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             );
         }
         return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null, RailUnmatched: railUnmatched };
+    }
+
+    /**
+     * Re-decides the provider's open `Unmatched` rows the rail did not return this pass, but only those
+     * whose every invoice now has an `ExternalInvoice` row: the capture rule stays all invoices or
+     * nothing, and a payment still missing one is not rewritten. Like the re-applied recheck, a failure
+     * is logged and left for the next pass and does not hold the watermark back. A recheck that ends
+     * in a disposition finance must act on (`Refused`, say) is added to `newlyWaiting`, as the other
+     * two paths do.
+     */
+    private async recheckOpenUnmatched(
+        rail: BaseInvoiceRail,
+        fetchedRefs: readonly string[],
+        preview: boolean,
+        bookingCurrency: string,
+        provider: IMetadataProvider,
+        user: UserInfo,
+        newlyWaiting: PaymentReviewItem[],
+    ): Promise<ExternalPaymentOutcome[]> {
+        const providerID = rail.Config.PaymentProviderID;
+        const outcomes: ExternalPaymentOutcome[] = [];
+        try {
+            const candidates = UnmatchedRowsToRecheck(await loadOpenUnmatched(providerID, provider, user), fetchedRefs, rail);
+            if (!candidates.length) return outcomes;
+            const refs = [...new Set(candidates.flatMap((c) => c.Record.InvoicePayments.map((ip) => ip.ExternalInvoiceRef)))];
+            const issued = new Set<string>();
+            for (let i = 0; i < refs.length; i += INVOICE_REF_CHUNK) {
+                for (const inv of await LoadExternalInvoicesByRef(providerID, refs.slice(i, i + INVOICE_REF_CHUNK), provider, user)) {
+                    if (inv.ExternalInvoiceRef) issued.add(String(inv.ExternalInvoiceRef));
+                }
+            }
+            for (const { Row, Record } of candidates.filter((c) => EveryInvoiceIssued(c.Record, issued))) {
+                try {
+                    const outcome = await this.handlePayment(rail, Record, Row, preview, bookingCurrency, provider, user);
+                    outcomes.push(outcome);
+                    if (!preview && IsNewlyWaiting(Row.Disposition, outcome, !!Record.UnmatchedReason)) newlyWaiting.push({ Outcome: outcome, RailName: rail.Config.Name });
+                } catch (err) {
+                    LogError(`Orders.PollExternalPayments: re-checking unmatched payment ${Row.ExternalPaymentRef} failed: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+        } catch (err) {
+            LogError(`Orders.PollExternalPayments: re-checking unmatched payments for ${providerID} failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        return outcomes;
     }
 
     private async handlePayment(
@@ -417,6 +562,20 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             return { ...base, Disposition: 'Refused', Reason: reason };
         }
 
+        // ALREADY PAID HERE (golive #148). Bill.com does not hear about a payment recorded in Orders, so
+        // a receipt keyed here and then marked paid on the invoice in Bill.com came back through this
+        // poll as a second payment, and the cash was booked twice. The idempotency key cannot see it:
+        // the two payments have different origins. A payment that would take an order or instalment
+        // past what is still open waits for a person instead of being captured. It is re-decided every
+        // pass, so voiding the duplicate here lets the next pass capture it; setting it aside keeps the
+        // payment recorded here.
+        const schedules = await loadScheduleBalances(allocation.Allocations.map((a) => a.OrderHeaderPaymentScheduleID).filter((id): id is string => !!id), provider, user);
+        const alreadyPaid = AlreadyPaidReason(p.ExternalPaymentRef, vocabulary.RailName, allocation.Allocations, orders, schedules);
+        if (alreadyPaid) {
+            await record('Held', alreadyPaid, null);
+            return { ...base, Disposition: 'Held', Reason: alreadyPaid };
+        }
+
         const notes = [vocabulary.ReportsInvoiceApplications ? `${vocabulary.RailName} receivable payment ${p.ExternalPaymentRef}` : `${vocabulary.RailName} payment ${p.ExternalPaymentRef}`];
         if (p.UnappliedAmount > 0) notes.push(`${money(p.UnappliedAmount).toFixed(2)} left unapplied on the rail (customer credit there, not here).`);
 
@@ -506,6 +665,111 @@ async function loadSeen(paymentProviderID: string, refs: readonly string[], prov
     return map;
 }
 
+/** `Reapplied` rows for this provider, with the payload the poller stored from the rail. */
+async function loadOpenReapplied(paymentProviderID: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalPaymentRow[]> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<ExternalPaymentRow>(
+        {
+            EntityName: EXTERNAL_PAYMENT_ENTITY,
+            ExtraFilter: `PaymentProviderID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}' AND Disposition = 'Reapplied'`,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!r?.Success) {
+        LogError(`Orders.PollExternalPayments: could not read open re-applied payments for ${paymentProviderID}: ${r?.ErrorMessage ?? 'no result'}`);
+        return [];
+    }
+    return r.Results ?? [];
+}
+
+/**
+ * The open `Reapplied` rows to re-compare this pass, each with the rail record rebuilt from its stored
+ * payload (#814). A row the rail returned this pass is left out (the fetch already handled it, or the
+ * cap deferred it), as is one with a payment header missing or a payload the rail cannot rebuild.
+ */
+export function ReappliedRowsToRecheck(
+    rows: readonly ExternalPaymentRow[],
+    fetchedRefs: readonly string[],
+    rail: Pick<BaseInvoiceRail, 'RestorePaymentRecord'>,
+): Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> {
+    const fetched = new Set(fetchedRefs);
+    const out: Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> = [];
+    for (const row of rows) {
+        if (row.Disposition !== 'Reapplied' || !row.PaymentHeaderID || fetched.has(row.ExternalPaymentRef)) continue;
+        const record = restoreFromPayload(row, rail);
+        if (record) out.push({ Row: row, Record: record });
+    }
+    return out;
+}
+
+/**
+ * Every `Unmatched` row for this provider, with the payload the poller stored from the rail. Not capped
+ * by the entity's row limit: a capped read returns the same first rows by ID every pass, so a payment
+ * past the limit would never be re-checked. `Fields` are what the selection and `handlePayment` read.
+ */
+async function loadOpenUnmatched(paymentProviderID: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalPaymentRow[]> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<ExternalPaymentRow>(
+        {
+            EntityName: EXTERNAL_PAYMENT_ENTITY,
+            ExtraFilter: `PaymentProviderID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}' AND Disposition = 'Unmatched'`,
+            Fields: OPEN_UNMATCHED_FIELDS,
+            ResultType: 'simple',
+            IgnoreMaxRows: true,
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!r?.Success) {
+        LogError(`Orders.PollExternalPayments: could not read open unmatched payments for ${paymentProviderID}: ${r?.ErrorMessage ?? 'no result'}`);
+        return [];
+    }
+    return r.Results ?? [];
+}
+
+/**
+ * The open `Unmatched` rows that could capture once their invoices exist, each with the rail record
+ * rebuilt from its stored payload (bc-aidp-next-golive#446). Left out: a row the rail returned this
+ * pass (the fetch already re-decided it), one with a payment header, a payload the rail cannot
+ * rebuild, a payment the rail itself cannot match (HubSpot) or sets aside, and one applied to no
+ * invoice — loading an invoice can never match that.
+ */
+export function UnmatchedRowsToRecheck(
+    rows: readonly ExternalPaymentRow[],
+    fetchedRefs: readonly string[],
+    rail: Pick<BaseInvoiceRail, 'RestorePaymentRecord'>,
+): Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> {
+    const fetched = new Set(fetchedRefs);
+    const out: Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> = [];
+    for (const row of rows) {
+        if (row.Disposition !== 'Unmatched' || row.PaymentHeaderID || fetched.has(row.ExternalPaymentRef)) continue;
+        const record = restoreFromPayload(row, rail);
+        if (!record || record.UnmatchedReason || record.SetAsideReason) continue;
+        if (!record.InvoicePayments.length || record.InvoicePayments.some((ip) => !ip.ExternalInvoiceRef)) continue;
+        out.push({ Row: row, Record: record });
+    }
+    return out;
+}
+
+/** Whether every invoice a payment settles has an `ExternalInvoice` row. All or nothing, as the capture is. */
+export function EveryInvoiceIssued(record: Pick<RailPaymentRecord, 'InvoicePayments'>, issuedRefs: ReadonlySet<string>): boolean {
+    return record.InvoicePayments.length > 0 && record.InvoicePayments.every((ip) => issuedRefs.has(ip.ExternalInvoiceRef));
+}
+
+/** The rail record rebuilt from a row's stored payload, or null when the payload or the rail cannot. */
+function restoreFromPayload(row: ExternalPaymentRow, rail: Pick<BaseInvoiceRail, 'RestorePaymentRecord'>): RailPaymentRecord | null {
+    let payload: unknown;
+    try {
+        payload = typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload;
+    } catch {
+        return null;
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+    return rail.RestorePaymentRecord(row.ExternalPaymentRef, payload as Record<string, unknown>);
+}
+
 async function upsertExternalPayment(
     provider: IMetadataProvider,
     user: UserInfo,
@@ -542,16 +806,112 @@ async function upsertExternalPayment(
     if (!(await entity.Save())) throw new Error(entity.LatestResult?.CompleteMessage ?? `External payment ${p.ExternalPaymentRef} could not be saved.`);
 }
 
-async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, { BillToOrganizationID: string | null; BillToPersonID: string | null }>> {
-    const map = new Map<string, { BillToOrganizationID: string | null; BillToPersonID: string | null }>();
+/** What the poll reads about each order a payment lands on. `Balance` is what is still open on it. */
+interface PollOrderRow {
+    BillToOrganizationID: string | null;
+    BillToPersonID: string | null;
+    OrderNumber?: string | null;
+    Balance?: number | null;
+}
+
+async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, PollOrderRow>> {
+    const map = new Map<string, PollOrderRow>();
     if (!orderIDs.length) return map;
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const r = await rv.RunView<{ ID: string; BillToOrganizationID: string | null; BillToPersonID: string | null }>(
-        { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${orderIDs.map((id) => `'${RequireUUID(id, 'OrderHeaderID')}'`).join(',')})`, Fields: ['ID', 'BillToOrganizationID', 'BillToPersonID'], ResultType: 'simple' },
+    const r = await rv.RunView<PollOrderRow & { ID: string }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY,
+            ExtraFilter: `ID IN (${orderIDs.map((id) => `'${RequireUUID(id, 'OrderHeaderID')}'`).join(',')})`,
+            Fields: ['ID', 'OrderNumber', 'BillToOrganizationID', 'BillToPersonID', 'Balance'],
+            ResultType: 'simple',
+            // The balance decides whether this payment is captured, so it is read fresh.
+            BypassCache: true,
+        },
         user,
     );
-    for (const o of r.Results ?? []) map.set(String(o.ID).toLowerCase(), { BillToOrganizationID: o.BillToOrganizationID, BillToPersonID: o.BillToPersonID });
+    for (const o of r.Results ?? []) {
+        map.set(String(o.ID).toLowerCase(), { BillToOrganizationID: o.BillToOrganizationID, BillToPersonID: o.BillToPersonID, OrderNumber: o.OrderNumber ?? null, Balance: o.Balance ?? null });
+    }
     return map;
+}
+
+/** What is still open on each instalment a payment lands on. */
+export interface PollScheduleRow {
+    InstallmentNumber?: number | null;
+    Balance?: number | null;
+}
+
+async function loadScheduleBalances(scheduleIDs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, PollScheduleRow>> {
+    const map = new Map<string, PollScheduleRow>();
+    const ids = [...new Set(scheduleIDs.map((id) => String(id).toLowerCase()))];
+    if (!ids.length) return map;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<PollScheduleRow & { ID: string }>(
+        {
+            EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+            ExtraFilter: `ID IN (${ids.map((id) => `'${RequireUUID(id, 'OrderHeaderPaymentScheduleID')}'`).join(',')})`,
+            Fields: ['ID', 'InstallmentNumber', 'Balance'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    for (const s of r.Results ?? []) map.set(String(s.ID).toLowerCase(), { InstallmentNumber: s.InstallmentNumber ?? null, Balance: s.Balance ?? null });
+    return map;
+}
+
+/** `ExternalPayment.DispositionReason` is NVARCHAR(500). */
+const REASON_MAX = 500;
+
+/**
+ * Why a payment must wait because it would pay more than is open, or null when it fits (golive #148).
+ *
+ * Summed per order and per instalment, since one payment can carry several applications to the same
+ * one. An order or instalment whose balance was not read is not judged: an unknown balance is no
+ * evidence of a duplicate, and holding on it would stop every capture whenever the read came back
+ * short.
+ */
+export function AlreadyPaidReason(
+    ref: string,
+    railName: string,
+    allocations: ReadonlyArray<{ OrderHeaderID: string; Amount: number; OrderHeaderPaymentScheduleID?: string | null }>,
+    orders: ReadonlyMap<string, Pick<PollOrderRow, 'OrderNumber' | 'Balance'>>,
+    schedules: ReadonlyMap<string, PollScheduleRow>,
+): string | null {
+    const perOrder = new Map<string, number>();
+    const perSchedule = new Map<string, { OrderID: string; Amount: number }>();
+    for (const a of allocations) {
+        const orderID = String(a.OrderHeaderID).toLowerCase();
+        perOrder.set(orderID, money((perOrder.get(orderID) ?? 0) + Number(a.Amount)));
+        if (a.OrderHeaderPaymentScheduleID) {
+            const key = String(a.OrderHeaderPaymentScheduleID).toLowerCase();
+            const prev = perSchedule.get(key);
+            perSchedule.set(key, { OrderID: orderID, Amount: money((prev?.Amount ?? 0) + Number(a.Amount)) });
+        }
+    }
+
+    const over: string[] = [];
+    for (const [orderID, amount] of perOrder) {
+        const order = orders.get(orderID);
+        if (order?.Balance == null) continue;
+        const open = money(Math.max(0, Number(order.Balance)));
+        if (amount > open + 0.005) over.push(`${amount.toFixed(2)} to ${order.OrderNumber ?? 'an order'}, which has ${open.toFixed(2)} open`);
+    }
+    for (const [scheduleID, { OrderID, Amount }] of perSchedule) {
+        const s = schedules.get(scheduleID);
+        if (s?.Balance == null) continue;
+        const open = money(Math.max(0, Number(s.Balance)));
+        if (Amount > open + 0.005) {
+            const order = orders.get(OrderID)?.OrderNumber ?? 'its order';
+            over.push(`${Amount.toFixed(2)} to installment ${s.InstallmentNumber ?? '?'} of ${order}, which has ${open.toFixed(2)} open`);
+        }
+    }
+    if (!over.length) return null;
+
+    const reason =
+        `Already paid in Orders: ${ref} would apply ${over.join('; ')}. It may duplicate a payment recorded here as well as on ${railName}. ` +
+        `Not captured. Void the duplicate here and the next poll captures this one, or set this one aside.`;
+    return reason.length > REASON_MAX ? `${reason.slice(0, REASON_MAX - 1)}…` : reason;
 }
 
 /**

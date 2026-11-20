@@ -17,14 +17,14 @@ import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
 import { anyFieldIsDirty } from './field-dirty';
-import { BuildLinePriceContext } from './pricing/linePriceContext';
+import { BuildLinePriceContext, PickedUndecidedBand } from './pricing/linePriceContext';
 import {
     isEnginePrice,
     isNamedListPick,
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
 } from './pricing/priceOverride';
-import { ListApplicablePrices, PriceResolutionError, ResolvePrice } from './pricing/PriceResolver';
+import { ListApplicablePrices, PriceResolutionError, ResolvePrice, RevenueBandRequiredError } from './pricing/PriceResolver';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
@@ -126,13 +126,24 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 new ValidationErrorInfo(
                     'UnitPrice',
                     engine
-                        ? `This line's price is not the engine price (${engine.PriceName ?? engine.ProductPriceID} · ${engine.UnitPrice}). Changing it requires MJ.BizApps.Orders.Price.OverrideList or OverrideAny.`
-                        : 'This line has a stated price and no engine price. Typing an amount requires MJ.BizApps.Orders.Price.OverrideAny.',
+                        ? `This price differs from the standard price (${engine.PriceName ?? engine.ProductPriceID} · ${engine.UnitPrice}). You don't have permission to override prices.`
+                        : "This product has no standard price, and you don't have permission to enter a custom price.",
                     this.UnitPrice,
                     ValidationErrorType.Failure,
                 ),
             );
         } catch (err) {
+            if (err instanceof RevenueBandRequiredError) {
+                // The buyer's revenue is unknown, so the band is the rep's to choose; any band is
+                // allowed without a grant. Anything else still needs OverrideAny.
+                try {
+                    const ctx = await BuildLinePriceContext(this, provider, user);
+                    const applicable = ctx ? await ListApplicablePrices(ctx, provider, user) : [];
+                    if (PickedUndecidedBand(this, applicable)) return;
+                } catch {
+                    // Fall through to the refusal below.
+                }
+            }
             if (err instanceof PriceResolutionError) {
                 if (userPriceOverrideKind(user, provider) === 'any') return;
                 result.Success = false;

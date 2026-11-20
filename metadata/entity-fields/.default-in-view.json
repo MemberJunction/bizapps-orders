@@ -103,5 +103,32 @@
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Payment Webhook Deliveries&Name=ProviderChargeID"
     }
+  },
+  {
+    "_comments": [
+      "Referral Programs list columns (bizapps-orders #522). CodeGen ran without its AI pass for this entity, so the list showed Name, Description and DaysPerReferral: no company, which matters with more than one selling company, and no active flag, which is what decides whether a program approves a concession. Description is long free text and comes off the list."
+    ],
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Referral Programs&Name=Company"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": true
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Referral Programs&Name=IsActive"
+    }
+  },
+  {
+    "fields": {
+      "DefaultInView": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Referral Programs&Name=Description"
+    }
   }
 ]

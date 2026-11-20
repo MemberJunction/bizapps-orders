@@ -24,9 +24,11 @@ import {
     ACCOUNT_STEP_FAILED,
     AccountMessage,
     CheckPasswordEntry,
+    ConfirmationMessage,
     IsAccountSettled,
     MayRedirect,
     ReadCheckoutAccount,
+    ReadCheckoutConfirmation,
     VerificationNote,
     type CheckoutAccountView,
 } from './checkout-account';
@@ -41,6 +43,8 @@ import {
     CHECKOUT_STATE_CHANGE_EVENT,
     CheckoutElementEvent,
     type CheckoutElementState,
+    type CheckoutErrorDetail,
+    type CheckoutErrorStage,
 } from './checkout-events';
 import {
     ACCESS_POLL_INTERVAL_MS,
@@ -64,10 +68,22 @@ import {
     formatStripeError,
     type CheckoutAlreadySubscribedDetail,
     intentAlreadyCollected,
+    memberDiscountFromDraft,
     memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
 import { PostWithTurnstile, TurnstileError, TurnstileWidget, type TurnstileState } from './checkout-turnstile';
+// Deep import on purpose: a dependency-free module the server also runs (see checkout-widget.component.ts).
+import { ParseCaptureCookieNames, ReadNamedCookies } from '@mj-biz-apps/orders-entities/dist/checkout-tracking.js';
+import {
+    CheckoutTransportError,
+    COMPLETE_DELAYED_MESSAGE,
+    COMPLETE_FINISHING_MESSAGE,
+    COMPLETE_RETRY_INTERVAL_MS,
+    COMPLETE_RETRY_TIMEOUT_MS,
+    CompleteWithRetry,
+    ReadCheckoutReply,
+} from './checkout-complete';
 
 import { FormatRenewalAmount, ReadRenewalPayment, RenewalPaidMessage, type CheckoutRenewalPaymentView } from './checkout-renewal';
 
@@ -111,7 +127,12 @@ declare global {
 })
 export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, OnDestroy {
     private readonly hostEl = inject(ElementRef, { optional: true });
-    private readonly cdr = inject(ChangeDetectorRef);
+    private readonly changeDetector = inject(ChangeDetectorRef);
+    /**
+     * Every redraw goes through here, so none runs once the host has removed the element: the async
+     * paths (a payment, `/complete`, the access poll) resume after it and would draw a dead view.
+     */
+    private readonly cdr = { detectChanges: (): void => (this.destroyed ? undefined : this.changeDetector.detectChanges()) };
 
     @Input() public slug = '';
     @Input() public apiRoot = '/checkout';
@@ -144,6 +165,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public isPaymentReady = false;
     public stripePaymentMethodId: string | null = null;
     public errorMessage: string | null = null;
+    /** Information that is not a failure, shown in the notice style (#819). */
+    public noticeMessage: string | null = null;
     public loadError: string | null = null;
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
@@ -156,6 +179,27 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     /** The server's total and tax for the details last drafted — shown before the buyer is charged. */
     public quotedTotal: number | null = null;
     public quotedTax: number | null = null;
+    /** The verified member's discount the server last priced, shown before Pay (#919). */
+    public memberDiscount: CheckoutAppliedPromotion | null = null;
+    /** How long the form must be still before a member's price is asked for. A field so a test can shorten it. */
+    public quoteDebounceMs = 400;
+    private quoteTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Bumped by every price change; a background answer for an older generation is dropped. */
+    private quoteGeneration = 0;
+    /**
+     * Every background draft still in flight. Pay and Apply wait for all of them, not only the latest: an older
+     * one that lands after Pay's own draft would replace it on the session, and `/payment-intent` charges the
+     * total the session's last draft saved.
+     */
+    private readonly backgroundQuotes = new Set<Promise<void>>();
+
+    /**
+     * The e-mail is locked while a member token is attached and the host supplied the address (#919):
+     * the discount is bound to it. Without a prefilled address the buyer must still be able to type one.
+     */
+    public get emailLocked(): boolean {
+        return !!this.memberToken && !!this.prefillEmail?.trim();
+    }
 
     /** The post-payment account step, when the host registered one (#292). */
     public account: CheckoutAccountView | null = null;
@@ -168,6 +212,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public accountLoading = false;
     /** The buyer chose to leave a failed account step. */
     private accountDismissed = false;
+    /** The widget's redirect as `/account` reported it, when a reload resumed the account step. */
+    private resumedRedirectUrl: string | null = null;
 
     public get accountMessage(): string | null {
         return this.account ? AccountMessage(this.account, this.passwordSet) : null;
@@ -184,6 +230,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public accessPollTimeoutMs = ACCESS_POLL_TIMEOUT_MS;
     /** True while access is being asked for; the redirect waits on it. */
     private accessTracking = false;
+
+    /**
+     * Shown in place of the form once the buyer has paid and `/complete` has not given a final
+     * answer (the reply was a gateway error page, or the session is still Processing).
+     */
+    public finishingMessage: string | null = null;
+    /** How often, and for how long, `/complete` is asked again. Fields so a test can shorten them. */
+    public completeRetryIntervalMs = COMPLETE_RETRY_INTERVAL_MS;
+    public completeRetryTimeoutMs = COMPLETE_RETRY_TIMEOUT_MS;
 
     public get accessMessage(): string | null {
         return AccessMessage(this.accessState, this.config?.accessMessages);
@@ -205,6 +260,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public prefillEmail: string | null = null;
     private attributionSource: string | null = null;
     private attributionReference: string | null = null;
+    /** Cookies the host asked to capture with `capture-cookies`, read at each draft. */
+    private captureCookieNames: string[] = [];
     private readonly onResetRequested = (): void => this.resetRequested();
 
     public get isFree(): boolean {
@@ -215,13 +272,16 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         // A reset runs this again: a failure from the previous attempt must not outlive it.
         this.loadError = null;
         this.readHostAttributes();
+        // These return before the try below, so they report the error themselves (#859).
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';
+            this.reportError('initialize', this.loadError);
             return;
         }
         this.sessionKey = this.clientKey();
         if (!this.sessionKey) {
             this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
+            this.reportError('initialize', this.loadError);
             return;
         }
         if (!this.renewalToken && (await this.resumeAccountStep())) {
@@ -261,7 +321,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         } catch (err) {
             this.loadError = err instanceof TurnstileError ? err.message : 'Checkout is temporarily unavailable. Please try again.';
         } finally {
-            if (this.loadError) this.reportError(this.loadError);
+            if (this.loadError) this.reportError('initialize', this.loadError);
             this.cdr.detectChanges();
         }
     }
@@ -280,8 +340,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /**
+     * The host removed the element. A payment or `/complete` already in flight is left to finish, so a
+     * charged card still completes on the server, and the session-storage marker that lets a reload
+     * resume the account step is still kept. Everything that speaks to the page stops: no events, no
+     * state, no redraws, no access polling, no account step and no redirect.
+     */
     public ngOnDestroy(): void {
         this.destroyed = true;
+        this.cancelBackgroundQuote();
         this.turnstile.Destroy();
         (this.hostEl?.nativeElement as HTMLElement | undefined)?.removeEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
         try {
@@ -299,20 +366,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.processing = true;
         this.promotionError = null;
         try {
-            const draft = await this.post('/draft', {
-                sessionId: this.sessionId,
-                clientSessionKey: this.sessionKey,
-                email: event.email,
-                lines: [buildCheckoutDraftLine(this.config.productId, event)],
-                billingAddress: event.billingAddress,
-                answers: event.answers,
-                choices: event.choices,
-                ...(this.attributionSource
-                    ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
-                    : {}),
-                ...(this.memberToken ? { memberToken: this.memberToken } : {}),
-                promotionCodes: [event.promotionCode],
-            });
+            await this.settleBackgroundQuote();
+            const draft = await this.post('/draft', this.draftBody(this.config.productId, event, [event.promotionCode]));
             this.applyPromotionOutcome(draft, event);
         } catch {
             this.promotionError = 'The code could not be checked. Please try again.';
@@ -379,8 +434,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
      *
      * A reset always starts a new session, before a sale as well as after one: the server matches
      * the buyer's person record once per session, so a kept session would carry the previous
-     * conversation's buyer into the next. The e-mail and attribution are read again, so a host
-     * starting a new conversation sets them on the element before it dispatches the reset.
+     * conversation's buyer into the next. The e-mail, attribution and cookie list are read again, so
+     * a host starting a new conversation sets them on the element before it dispatches the reset.
      */
     private resetRequested(): void {
         if (this.processing || this.accountUnsettled) {
@@ -389,6 +444,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.successMessage = null;
         this.orderNumber = null;
+        this.resumedRedirectUrl = null;
         this.account = null;
         this.accountDismissed = false;
         this.password = '';
@@ -414,8 +470,11 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
      */
     private resetForm(): void {
         this.errorMessage = null;
+        this.noticeMessage = null;
         this.stripePaymentMethodId = null;
         this.serverPricedTotal = null;
+        this.memberDiscount = null;
+        this.cancelBackgroundQuote();
         try {
             this.card?.destroy?.();
         } catch {
@@ -429,10 +488,101 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     /** A price input changed: every total the server priced for the old inputs is stale, tax included. */
     public onQuoteInvalidated(): void {
+        // A total announced for the old inputs no longer holds.
+        this.noticeMessage = null;
         this.quotedTotal = null;
         this.quotedTax = null;
         this.serverPricedTotal = null;
         this.appliedPromotion = null;
+        this.memberDiscount = null;
+        this.cancelBackgroundQuote();
+    }
+
+    /**
+     * The widget's e-mail and billing location are complete and a price input changed (#919). With a
+     * member token, the form is drafted in the background once it has been still for
+     * `quoteDebounceMs`, so a verified member sees the discount, the total and the Pay button at the
+     * member price before pressing Pay, and one press pays. Without a token nothing is sent.
+     */
+    public onQuoteRequested(event: CheckoutSubmissionEvent): void {
+        if (!this.memberToken || this.renewalToken || !this.config?.productId) {
+            return;
+        }
+        this.cancelBackgroundQuote();
+        const generation = this.quoteGeneration;
+        this.quoteTimer = setTimeout(() => {
+            this.quoteTimer = null;
+            const run = this.priceInBackground(event, generation);
+            this.backgroundQuotes.add(run);
+            void run.finally(() => this.backgroundQuotes.delete(run));
+        }, this.quoteDebounceMs);
+    }
+
+    /**
+     * Drafts the form with the member token and no typed code. Never blocks the form and never
+     * reports an error: on any failure the price stays as it is, and Pay drafts it again. An answer
+     * for an older generation, or one that arrives while Pay is being processed, is dropped. A token
+     * that earned nothing changes nothing here; Pay shows its notice as before.
+     */
+    private async priceInBackground(event: CheckoutSubmissionEvent, generation: number): Promise<void> {
+        const productId = this.config?.productId;
+        if (!productId || this.processing || this.destroyed) {
+            return;
+        }
+        let draft: Record<string, unknown>;
+        try {
+            draft = await this.post('/draft', this.draftBody(productId, event, []));
+        } catch {
+            return;
+        }
+        if (generation !== this.quoteGeneration || this.processing || this.destroyed) {
+            return;
+        }
+        this.memberDiscount = memberDiscountFromDraft(draft, event.quantity);
+        if (this.memberDiscount) {
+            const tax = typeof draft.Tax === 'number' ? draft.Tax : 0;
+            this.serverPricedTotal = { total: this.memberDiscount.total, quantity: event.quantity };
+            this.quotedTotal = this.memberDiscount.total;
+            this.quotedTax = tax > 0 ? tax : null;
+        }
+        this.cdr.detectChanges();
+    }
+
+    /** Drops a pending background draft and makes any answer already on its way stale. */
+    private cancelBackgroundQuote(): void {
+        if (this.quoteTimer) {
+            clearTimeout(this.quoteTimer);
+            this.quoteTimer = null;
+        }
+        this.quoteGeneration++;
+    }
+
+    /**
+     * Before Pay or Apply drafts: no background draft may start after it, and every one already sent is
+     * waited for, so the server's session holds the buyer's draft rather than a background one.
+     */
+    private async settleBackgroundQuote(): Promise<void> {
+        this.cancelBackgroundQuote();
+        await Promise.all([...this.backgroundQuotes]);
+    }
+
+    /** The `/draft` body for a widget submission, priced with the given typed codes. */
+    private draftBody(productId: string, event: CheckoutSubmissionEvent, promotionCodes: string[]): Record<string, unknown> {
+        return {
+            sessionId: this.sessionId,
+            clientSessionKey: this.sessionKey,
+            email: event.email,
+            lines: [buildCheckoutDraftLine(productId, event)],
+            billingAddress: event.billingAddress,
+            answers: event.answers,
+            ...(this.attributionSource
+                ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
+                : {}),
+            tracking: this.readTracking(),
+            choices: event.choices,
+            ...(this.memberToken ? { memberToken: this.memberToken } : {}),
+            promotionCodes,
+        };
     }
 
     public async onSubmitted(event: CheckoutSubmissionEvent): Promise<void> {
@@ -441,23 +591,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.processing = true;
         this.errorMessage = null;
+        this.noticeMessage = null;
         this.setState('PROCESSING');
+        let stage: CheckoutErrorStage = 'draft';
         try {
-            const line = buildCheckoutDraftLine(this.config.productId, event);
-            const draft = await this.post('/draft', {
-                sessionId: this.sessionId,
-                clientSessionKey: this.sessionKey,
-                email: event.email,
-                lines: [line],
-                billingAddress: event.billingAddress,
-                answers: event.answers,
-                ...(this.attributionSource
-                    ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
-                    : {}),
-                choices: event.choices,
-                ...(this.memberToken ? { memberToken: this.memberToken } : {}),
-                promotionCodes: event.promotionCode ? [event.promotionCode] : [],
-            });
+            await this.settleBackgroundQuote();
+            const draft = await this.post(
+                '/draft',
+                this.draftBody(this.config.productId, event, event.promotionCode ? [event.promotionCode] : [])
+            );
             if (!this.applyPromotionOutcome(draft, event)) {
                 // The code was refused: say why and stop before any payment, so the buyer can remove
                 // it or try another rather than pay a price they did not expect.
@@ -467,16 +609,22 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 this.emitIfAlreadySubscribed(draft);
                 throw new Error(this.str(draft?.ErrorMessage, 'Could not price this checkout.'));
             }
-            // The widget cannot price a member discount itself, so it is told the server's total; a
-            // second press of Pay then carries that total and passes the check below.
+            // The widget cannot price a member discount itself, so it is told the server's total. The
+            // background draft (#919) usually did this already, so the total shown is the one charged;
+            // otherwise a second press of Pay carries that total and passes the check below.
             this.serverPricedTotal = { total: Number(draft.TotalGross ?? 0), quantity: event.quantity };
+            if (this.memberToken) {
+                this.memberDiscount = memberDiscountFromDraft(draft, event.quantity);
+            }
             const notice = memberDiscountNotice(draft, this.memberNoticeShown);
             if (notice) {
                 this.memberNoticeShown = true;
-                this.errorMessage = notice;
+                this.noticeMessage = notice;
+                this.setState('CHECKOUT');
                 return;
             }
             if (!draft.RequiresPayment) {
+                stage = 'complete';
                 await this.finish();
                 return;
             }
@@ -484,8 +632,10 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             // (tax for the location, a code typed but never applied, or a price that changed), show
             // it and ask for a second press rather than charge a different amount than the button said.
             if (this.quoteChanged(draft, event.totalGross)) {
+                this.setState('CHECKOUT');
                 return;
             }
+            stage = 'payment';
             const intent = await this.post('/payment-intent', {
                 sessionId: this.sessionId,
                 clientSessionKey: this.sessionKey,
@@ -496,6 +646,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
             }
             if (intentAlreadyCollected(intent.Status)) {
+                stage = 'complete';
                 await this.finish();
                 return;
             }
@@ -529,10 +680,11 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
                 }
             }
+            stage = 'complete';
             await this.finish();
         } catch (err) {
             this.errorMessage = err instanceof Error ? err.message : 'Checkout failed.';
-            this.reportError(this.errorMessage);
+            this.reportError(stage, this.errorMessage);
         } finally {
             this.processing = false;
             this.cdr.detectChanges();
@@ -551,6 +703,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.processing = true;
         this.errorMessage = null;
         this.setState('PROCESSING');
+        let stage: CheckoutErrorStage = 'payment';
         try {
             const intent = await this.post('/payment-intent', {
                 sessionId: this.sessionId,
@@ -580,12 +733,18 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     }
                 }
             }
-            const done = await this.post('/complete', {
-                sessionId: this.sessionId,
-                clientSessionKey: this.sessionKey,
-            });
-            if (!done?.Success) {
-                throw new Error(this.str(done?.ErrorMessage, 'Could not complete the payment.'));
+            stage = 'complete';
+            const done = await this.completeAfterPayment(() =>
+                this.post('/complete', {
+                    sessionId: this.sessionId,
+                    clientSessionKey: this.sessionKey,
+                })
+            );
+            if (!done) {
+                return;
+            }
+            if (!done.Success) {
+                throw new Error(this.str(done.ErrorMessage, 'Could not complete the payment.'));
             }
             this.orderNumber = this.renewal.OrderNumber;
             this.successMessage = RenewalPaidMessage(this.renewal);
@@ -603,7 +762,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             );
         } catch (err) {
             this.errorMessage = err instanceof Error ? err.message : 'Payment failed.';
-            this.reportError(this.errorMessage);
+            this.reportError(stage, this.errorMessage);
         } finally {
             this.processing = false;
             this.cdr.detectChanges();
@@ -630,7 +789,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.quotedTotal = total;
         this.quotedTax = tax > 0 ? tax : null;
-        this.errorMessage = tax > 0
+        this.noticeMessage = tax > 0
             ? `The total is ${total.toFixed(2)}, including ${tax.toFixed(2)} sales tax. Review it and press Pay again.`
             : `The total is ${total.toFixed(2)}. Review it and press Pay again.`;
         return true;
@@ -639,17 +798,20 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private async finish(): Promise<void> {
         // Remembered before completing, so a reload after payment returns to the account step.
         this.rememberCompleting(this.sessionId);
-        const done = await this.postGated('/complete', {
-            sessionId: this.sessionId,
-            clientSessionKey: this.sessionKey,
-        });
-        if (!done?.Success) {
-            throw new Error(this.str(done?.ErrorMessage, 'Could not complete checkout.'));
+        const done = await this.completeAfterPayment(() =>
+            this.postGated('/complete', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+            })
+        );
+        if (!done) {
+            return;
+        }
+        if (!done.Success) {
+            throw new Error(this.str(done.ErrorMessage, 'Could not complete checkout.'));
         }
         this.orderNumber = done.OrderNumber ? String(done.OrderNumber) : null;
-        this.successMessage =
-            this.config?.successMessage ||
-            (this.orderNumber ? `Thank you. Order ${this.orderNumber} is confirmed.` : 'Thank you. Your order is confirmed.');
+        this.successMessage = ConfirmationMessage(this.config?.successMessage, this.orderNumber);
         // Dispatched before any redirect, so a host listener sees the sale on this page.
         this.setState('SUCCESS');
         this.dispatch(
@@ -687,6 +849,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         try {
             const deadline = Date.now() + this.accessPollTimeoutMs;
             for (;;) {
+                // Before each poll, which is also after each wait.
+                if (this.destroyed) return;
                 let state: CheckoutAccessState | null = null;
                 try {
                     state = ReadAccessState(
@@ -712,6 +876,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     /** Asks for the account step of the completed checkout. The host is asked again only after a failure. */
     private async loadAccount(): Promise<void> {
+        if (this.destroyed) return;
         this.accountLoading = true;
         this.cdr.detectChanges();
         try {
@@ -758,7 +923,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 return false;
             }
             this.sessionId = sessionId;
-            this.successMessage = 'Thank you. Your order is confirmed.';
+            // A reload skips /initialize, so the order number and the widget's redirect come with
+            // the account step (#858).
+            const confirmation = ReadCheckoutConfirmation(res.Confirmation);
+            this.orderNumber = confirmation?.OrderNumber ?? null;
+            this.resumedRedirectUrl = confirmation?.RedirectUrl ?? null;
+            this.successMessage = ConfirmationMessage(confirmation?.SuccessMessage, this.orderNumber);
             this.account = account;
             if (IsAccountSettled(account)) this.forgetCompleting();
             this.syncAccountState();
@@ -825,28 +995,36 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /** The widget's redirect: from its configuration, or from `/account` after a reload (#858). */
+    public get redirectUrl(): string | null {
+        return this.config?.redirectUrl || this.resumedRedirectUrl;
+    }
+
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */
     private leaveIfDone(): void {
-        if (this.config?.redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
+        if (this.destroyed) return;
+        const redirectUrl = this.redirectUrl;
+        if (redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
             // The landing page learns which order completed from `?order=` (#295).
-            window.location.href = WithOrderReference(this.config.redirectUrl, this.orderNumber, window.location.href);
+            window.location.href = WithOrderReference(redirectUrl, this.orderNumber, window.location.href);
         }
     }
 
     /** Reports a state the host page can track; repeats of the same state are not re-sent. */
     private setState(state: CheckoutElementState): void {
-        if (this.state === state) return;
+        if (this.destroyed || this.state === state) return;
         this.state = state;
         this.dispatch(CHECKOUT_STATE_CHANGE_EVENT, { state });
     }
 
-    private reportError(message: string): void {
+    private reportError(stage: CheckoutErrorStage, message: string): void {
         this.setState('ERROR');
-        this.dispatch(CHECKOUT_ERROR_EVENT, { message });
+        this.dispatch<CheckoutErrorDetail>(CHECKOUT_ERROR_EVENT, { stage, message });
     }
 
-    /** Dispatches on the `<mj-orders-checkout>` element; bubbling and composed, so `document` hears it too. */
+    /** Dispatches on the `<mj-orders-checkout>` element; bubbling and composed, so `document` hears it too. Nothing once it is removed. */
     private dispatch<T>(name: string, detail: T): void {
+        if (this.destroyed) return;
         const el = this.hostEl?.nativeElement as HTMLElement | undefined;
         el?.dispatchEvent(CheckoutElementEvent(name, detail));
     }
@@ -868,7 +1046,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         } catch (err) {
             this.cardMounted = false;
             this.errorMessage = err instanceof Error ? err.message : 'Could not load card entry.';
-            this.reportError(this.errorMessage);
+            this.reportError('card', this.errorMessage);
         }
     }
 
@@ -933,6 +1111,28 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.prefillEmail = el.getAttribute('email') || el.getAttribute('data-email') || null;
         this.attributionSource = el.getAttribute('source') || el.getAttribute('data-source') || null;
         this.attributionReference = el.getAttribute('source-ref') || el.getAttribute('data-source-ref') || null;
+        this.captureCookieNames = ParseCaptureCookieNames(el.getAttribute('capture-cookies') || el.getAttribute('data-capture-cookies'));
+    }
+
+    /**
+     * The page the checkout is embedded on, the page that linked to it, and the cookies the host named.
+     * Read at each draft rather than once at start, because a tracker on the page can set its cookie
+     * after the element loads. The server keeps only what attribution needs (see checkout-tracking.ts).
+     */
+    private readTracking(): { pageUrl: string | null; referrer: string | null; cookies: Record<string, string> } {
+        let pageUrl: string | null = null;
+        let referrer: string | null = null;
+        let cookies: Record<string, string> = {};
+        try {
+            pageUrl = window.location.href;
+            referrer = document.referrer || null;
+            if (this.captureCookieNames.length > 0) {
+                cookies = ReadNamedCookies(document.cookie, this.captureCookieNames);
+            }
+        } catch {
+            /* no window (server render) or cookies blocked */
+        }
+        return { pageUrl, referrer, cookies };
     }
 
     /** Session storage is scoped per slug, and apart for the pay-renewal mode so the two never share a session. */
@@ -1007,16 +1207,38 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
-    private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
-        const res = await fetch(`${this.apiRoot}${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
+    /**
+     * Sends `/complete` for a checkout the buyer has paid for, asking again while the server may
+     * still be finishing. Returns the server's final answer, or null when the wait ran out; the
+     * buyer then sees that the payment went through, never a failure.
+     */
+    private async completeAfterPayment(send: () => Promise<Record<string, unknown>>): Promise<Record<string, unknown> | null> {
+        const done = await CompleteWithRetry(send, {
+            intervalMs: this.completeRetryIntervalMs,
+            timeoutMs: this.completeRetryTimeoutMs,
+            onWaiting: () => {
+                this.finishingMessage = COMPLETE_FINISHING_MESSAGE;
+                this.cdr.detectChanges();
+            },
         });
-        const json = (await res.json()) as Record<string, unknown>;
-        json._httpStatus = res.status;
-        return json;
+        this.finishingMessage = done ? null : COMPLETE_DELAYED_MESSAGE;
+        return done;
+    }
+
+    /** Throws {@link CheckoutTransportError}, whose message is written for the buyer, when no JSON reply arrives. */
+    private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
+        let res: Response;
+        try {
+            res = await fetch(`${this.apiRoot}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+        } catch {
+            throw new CheckoutTransportError(null);
+        }
+        return ReadCheckoutReply(res);
     }
 
     /** `/initialize` and `/complete`: sends a Turnstile token when the widget requires one. */

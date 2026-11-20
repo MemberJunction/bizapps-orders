@@ -37,13 +37,6 @@
                     still books — it just reaches the ledger with nothing to report on.
                 </p>
 
-                @if (IsBooked) {
-                    <p class="mjo-ldp__locked">
-                        This line is booked, so its tag is the one its journal entry already carries
-                        and can no longer be changed.
-                    </p>
-                }
-
                 @if (Dimensions.length > 0) {
                     <div class="mjo-ldp__stamped">
                         <span class="mjo-ldp__label">Tags this line books</span>
@@ -66,6 +59,16 @@
                                 }
                             </ul>
                         }
+                        @if (IsBooked) {
+                            <p class="mjo-ldp__locked">
+                                @if (StampedTags?.length) {
+                                    This line is booked, so the tags listed above are what its journal
+                                    entries carry, and they can no longer be changed.
+                                } @else {
+                                    This line is booked, so its tags can no longer be changed.
+                                }
+                            </p>
+                        }
                     </div>
                 }
 
@@ -83,7 +86,7 @@
                             id="mjo-ldp-dimension"
                             [value]="SelectedDimensionID"
                             (change)="SetDimension($event)">
-                            <option value="">— none —</option>
+                            <option value="">— no override —</option>
                             @for (dimension of Dimensions; track dimension.ID) {
                                 <option [value]="dimension.ID">{{ dimension.Code }} — {{ dimension.Name }}</option>
                             }
@@ -159,7 +162,7 @@
                             @if (SelectedDimension; as dimension) {
                                 {{ dimension.Code }} — {{ dimension.Name }}
                             } @else {
-                                — none —
+                                — no override —
                             }
                         </span>
                     </div>

@@ -42,9 +42,10 @@ import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngin
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
 import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.js';
-import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
+import { PriceResolutionError, ResolvePrice, RevenueBandRequiredError } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
+import { IsMarkedPriceStated, IsProductReplacedWithoutPriceEdit } from './linePricePick.js';
 import { AllocateProRata, DropStaleExtendedAmount, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
@@ -100,6 +101,13 @@ export interface OrderPricingContext {
     Lines: mjBizAppsOrdersOrderLineEntity[];
     PromotionCodes: string[];
     ManualDiscounts: ManualDiscountRequest[];
+    /**
+     * True when this walk prices an order that books on the same save. A manual discount above the
+     * user's authority is held for approval (golive #328), and the confirm gate that would hold it
+     * has already run, so on a booking walk it is refused instead: save the order first, then confirm
+     * once a concession covering it is approved.
+     */
+    Booking?: boolean;
     Charges: RequestedCharge[];
     /**
      * Tax already settled for a line, which is used instead of resolving it from the ship-to address.
@@ -126,6 +134,12 @@ export interface OrderPricingContext {
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
     /**
+     * Skip the check that each product may be sold (Status Active, inside its availability window).
+     * PreviewPrice sets it for the product form's Activate check, which asks whether a Draft product
+     * has a price. Off for every walk that books or quotes an order.
+     */
+    IgnoreSellability?: boolean;
+    /**
      * Also resolve what the rules WOULD say for a line whose price the caller stated.
      *
      * A stated price pins the line and the walk normally stops there — the engine fills a blank and
@@ -138,6 +152,16 @@ export interface OrderPricingContext {
      * Off for the save path, where the extra resolution would buy nothing.
      */
     IncludeDefaultsForStatedLines?: boolean;
+    /**
+     * Leave a line whose revenue band the rep has not picked yet unpriced, with the reason in
+     * `LineErrors`, instead of refusing the whole order (golive #470).
+     *
+     * The order screen prices every line in one pass. An unpicked band on one line used to fail that
+     * pass, so every other line lost its price on screen too, a band already picked included, until
+     * the unpicked line was removed. The screen's passes set this; the save walk does not, and still
+     * refuses an order with a band left to pick.
+     */
+    LeaveUndecidedBandsUnpriced?: boolean;
 }
 
 /**
@@ -162,6 +186,11 @@ export interface OrderPricingResult {
      * prices the product. Absent from the map means the question was not asked.
      */
     EngineDefaults: Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>;
+    /**
+     * Lines left unpriced with the reason, when `LeaveUndecidedBandsUnpriced` let the walk go on past
+     * them. Empty on every walk that refuses instead.
+     */
+    LineErrors: Map<mjBizAppsOrdersOrderLineEntity, string>;
     /** Promotion applications to record, or null when no code or manual discount applied. */
     Promotions: PromotionRunResult | null;
     /** Charge and tax rows to record, or null when the order attracts neither. */
@@ -217,6 +246,7 @@ export class OrderPricingService {
             TaxReasons: new Map<number, string>(),
             PriceComponents: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>(),
             EngineDefaults: new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice | null>(),
+            LineErrors: new Map<mjBizAppsOrdersOrderLineEntity, string>(),
             Promotions: null,
             Charges: null,
         };
@@ -336,14 +366,24 @@ export class OrderPricingService {
             // zero, where the net silently floors and the discount stops being visible anywhere.
             // `PerLine` holds both what is already stored and what this loop has granted so far, so
             // the first discount on a fresh line sees exactly the base it always saw.
+            // The order-level base is the same remainder summed over the lines (#824): judging "10%
+            // off the order" against nets that ignore the lines' own discounts resolved to more money
+            // and checked the authority cap against an inflated base.
+            const remainders = lines.map((l) => Math.max(0, Money(l.Net - (run.PerLine.get(l.ID) ?? 0))));
             const base = target
                 ? Money(target.Net - (run.PerLine.get(target.ID) ?? 0))
-                : lines.reduce((sum, l) => sum + l.Net, 0);
+                : Money(remainders.reduce((sum, r) => sum + r, 0));
             // A rate becomes money against the SAME base the authorization judges it on, so "20%"
             // and "$240 off a $1,200 line" are one request expressed two ways rather than two paths.
             const amount = ManualDiscountAmount(md, base);
             const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
             if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
+            if (auth.Held && this.ctx.Booking) {
+                throw new Error(
+                    `Manual discount refused: ${auth.Held} Save the order without confirming it, record a ` +
+                        `concession for the line, and confirm once it is approved.`,
+                );
+            }
 
             if (target) {
                 run.Applications.push({
@@ -360,7 +400,8 @@ export class OrderPricingService {
             } else {
                 // An order-level manual discount allocates exactly like an order-level promotion —
                 // it must reach the lines or tax and GL see the wrong base.
-                const parts = AllocateProRata(amount, lines.map((l) => l.Net));
+                // Pro rata on what each line has left, so no line's share exceeds its remainder.
+                const parts = AllocateProRata(amount, remainders);
                 lines.forEach((l, i) => {
                     if (parts[i] <= 0) return;
                     run.Applications.push({
@@ -599,19 +640,36 @@ export class OrderPricingService {
         // draft whose product was retired since. Refusing here aborts the confirm before any line is
         // written.
         const product = await this.loadProductForPricing(line.ProductID);
-        if (product) this.assertProductSellable(line, product);
+        if (product && !this.ctx.IgnoreSellability) this.assertProductSellable(line, product);
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price
-        // for a free line and must not be mistaken for silence.
+        // for a free line and must not be mistaken for silence. Changing a saved line's product
+        // without typing a new price clears the old product's stored price so the new product is priced.
         const field = line.GetFieldByName('UnitPrice');
-        const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
+        const productReplaced = IsProductReplacedWithoutPriceEdit(line);
+        const stated =
+            !productReplaced &&
+            (field?.Dirty === true || (line.UnitPrice ?? 0) > 0 || IsMarkedPriceStated(line));
         if (stated) {
             if (this.ctx.IncludeDefaultsForStatedLines) await this.recordDefaultForStatedLine(line);
             return;
         }
+        if (productReplaced) {
+            line.ProductPriceID = null;
+            line.ExtendedAmount = null;
+        }
 
-        const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
+        let resolved: ResolvedPrice | null;
+        try {
+            resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
+        } catch (err) {
+            if (!(err instanceof RevenueBandRequiredError) || !this.ctx.LeaveUndecidedBandsUnpriced) throw err;
+            // The rep has a band to pick on this line. The rest of the order still prices.
+            this.out.LineErrors.set(line, err.message);
+            this.out.EngineDefaults.set(line, null);
+            return;
+        }
 
         if (!resolved) {
             if (await this.refusesUnpricedLines()) {

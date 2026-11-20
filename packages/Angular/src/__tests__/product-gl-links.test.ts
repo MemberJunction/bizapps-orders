@@ -423,8 +423,8 @@ describe('#113 — what Remove tells the user, on a link that is in force TODAY'
 
     it('does NOT claim nothing has booked when the link is in force', () => {
         const warning = panel().RemoveWarning(row({ Active: true }));
-        expect(warning).not.toContain('nothing has booked');
-        expect(warning, 'it must say the link is live right now').toContain('IN FORCE');
+        expect(warning).not.toContain('nothing has posted');
+        expect(warning, 'it must say the link is live right now').toContain('active today');
     });
 
     it('explains WHY retiring is not offered instead, so the user is not left guessing', () => {
@@ -434,8 +434,8 @@ describe('#113 — what Remove tells the user, on a link that is in force TODAY'
 
     it('keeps the simple wording for a link that genuinely has not started', () => {
         const warning = panel().RemoveWarning(row({ Active: false, StartedAt: '2099-01-01' }));
-        expect(warning).toContain('nothing has booked through it');
-        expect(warning).not.toContain('IN FORCE');
+        expect(warning).toContain('nothing has posted through it');
+        expect(warning).not.toContain('active today');
     });
 
     it('and the two cases really do produce different sentences', () => {
@@ -453,18 +453,18 @@ describe('#113 — what a row that is NOT in force says about itself', () => {
         Status: 'Active', StartedAt: null, EndedAt: null, Active: false, ...over,
     });
 
-    it('says In force when it is the one resolution would pick', () => {
-        expect(panel().StatusLabel(row({ Active: true }))).toBe('In force');
+    it('says Active when it is the one resolution would pick', () => {
+        expect(panel().StatusLabel(row({ Active: true }))).toBe('Active');
     });
 
-    it('says Not started — NOT Superseded — for a link whose start is in the future', () => {
+    it('says Scheduled — NOT Superseded — for a link whose start is in the future', () => {
         /**
          * It used to print "Superseded" for every inactive Active-status row. A link added to take over
          * next quarter therefore read as superseded — it supersedes something, nothing supersedes it —
          * beside a Remove button saying it had not started. Two controls in one row telling opposite
          * stories is how a user concludes the save was rejected and adds another link.
          */
-        expect(panel().StatusLabel(row({ StartedAt: '2099-01-01' }))).toBe('Not started');
+        expect(panel().StatusLabel(row({ StartedAt: '2099-01-01' }))).toBe('Scheduled');
     });
 
     it('still says Superseded when a later link took over', () => {
@@ -858,7 +858,7 @@ describe('#113 — what the status chip says', () => {
     });
 
     it('the link that books reads as in force', () => {
-        expect(panel().StatusLabel(row({ Active: true }))).toBe('In force');
+        expect(panel().StatusLabel(row({ Active: true }))).toBe('Active');
     });
 
     it('an Active row that does NOT book reads as superseded, not as "Active"', () => {

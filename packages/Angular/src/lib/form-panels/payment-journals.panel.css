@@ -121,9 +121,9 @@
     font-weight: var(--mj-font-semibold, 600);
     padding: 2px 8px;
     border-radius: var(--mj-radius-full, 9999px);
-    background: var(--mj-status-danger-bg, #fef2f2);
-    color: var(--mj-status-danger-text, #991b1b);
-    border: 1px solid var(--mj-status-danger-border, #fecaca);
+    background: var(--mj-status-error-bg);
+    color: var(--mj-status-error-text);
+    border: 1px solid var(--mj-status-error-border);
 }
 
 .mjo-oh-chip--ok {

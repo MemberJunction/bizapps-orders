@@ -12,7 +12,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="pl-count">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="pl-count">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-filter"></i> Filters</button>
@@ -104,9 +104,9 @@ const MATCH = {
 };
 
 function payStatusChip(s) {
-  const map = { Captured: 'mj-chip--success', Pending: 'mj-chip--warning',
-                Failed: 'mj-chip--error', Refunded: 'mj-chip--violet', Disputed: 'mj-chip--error' };
-  return `<span class="mj-chip ${map[s] || ''}">${s}</span>`;
+  const map = { Captured: 'mjo-chip--success', Pending: 'mjo-chip--warning',
+                Failed: 'mjo-chip--error', Refunded: 'mjo-chip--violet', Disputed: 'mjo-chip--error' };
+  return `<span class="mjo-chip ${map[s] || ''}">${s}</span>`;
 }
 
 function partyName(p) {
@@ -176,7 +176,7 @@ function plOpen(number) {
   document.getElementById('pv-body').innerHTML = `
     <div class="row wrap" style="gap:6px;margin-bottom:var(--mj-space-3)">
       ${payStatusChip(p.status)}
-      <span class="mj-chip mj-chip--outline">${DB.paymentTypes.find(t => t.code === p.typeCode)?.name || p.typeCode}</span>
+      <span class="mjo-chip mjo-chip--outline">${DB.paymentTypes.find(t => t.code === p.typeCode)?.name || p.typeCode}</span>
       ${p.origin === 'LXP' ? H.origin('LXP') : ''}
     </div>
 
@@ -216,7 +216,7 @@ function plOpen(number) {
           <td>${x.dr || x.cr}</td><td class="num">${F.money(x.amount)}</td></tr>`).join('')}
       </tbody></table>
       <div class="small"><a href="#">${j.entry} — open in Accounting ↗</a>
-        ${j.mirror ? '<span class="mj-chip mj-chip--violet">mirrored</span>' : ''}</div>`).join('')}`
+        ${j.mirror ? '<span class="mjo-chip mjo-chip--violet">mirrored</span>' : ''}</div>`).join('')}`
       : `<div class="mj-banner mj-banner--neutral" style="margin-top:var(--mj-space-4)">
           <i class="fa-solid fa-hourglass-half"></i>
           <div class="body">Nothing booked yet — this payment is still <b>Pending</b>. Its allocations remain

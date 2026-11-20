@@ -1,8 +1,8 @@
-# The checks a migration must pass to enter `next`.
+# The checks a migration must pass to enter `next`, or a release line (`lts/X.Y`) by backport.
 #
 # Scoped by TRIGGER, not by a job-level `if:`. Required status checks are configured per
-# branch, and these are required on `next` only, so the workflow simply does not run on PRs
-# into `main`. That is safe precisely because nothing requires these contexts there — a
+# branch, and these are required on `next` and the line branches, so the workflow simply does not
+# run on PRs into `main`. That is safe precisely because nothing requires these contexts there — a
 # workflow filtered out at the `on:` level creates NO check run, which would leave a required
 # context Pending forever. Scope and requirement have to agree; here they do.
 #
@@ -23,7 +23,7 @@ on:
     # `migration-changeset-exempt` to a red PR re-triggers nothing (you have to push a no-op
     # commit), and REMOVING one leaves the stale green standing.
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
-    branches: [next]
+    branches: [next, 'lts/**']
 
 concurrency:
   group: changes-${{ github.ref }}
@@ -107,6 +107,11 @@ jobs:
           node ./.github/scripts/check-migration-no-prune.mjs --self-test
           node ./.github/scripts/check-migration-no-prune.mjs ${{ steps.mb.outputs.sha }} HEAD
 
+      - name: EntityFieldValue inserts must not key on a foreign EntityFieldID
+        run: |
+          node ./.github/scripts/check-migration-entityfieldvalue-ids.mjs --self-test
+          node ./.github/scripts/check-migration-entityfieldvalue-ids.mjs ${{ steps.mb.outputs.sha }} HEAD
+
       # Advisory here: a missing Postgres counterpart annotates the PR but never fails it, so a
       # migration can land and get its converted file in a later PR. The release gate
       # (`rr: pg counterparts`) is where it becomes required.
@@ -116,8 +121,12 @@ jobs:
           PG_COUNTERPART_LEVEL: warning
         run: ./.github/scripts/check-pg-counterpart.sh ${{ steps.mb.outputs.sha }} HEAD
 
+      # `next` only. On a line, a backported migration is the same file with the same timestamp as on
+      # `next`, so it is often older than the line's newest one, and backports can merge out of
+      # order. `lines: migrations` (release-lines-gates.yml) checks order on a line instead: no
+      # shared migration may be skipped past.
       - name: Validate migration timestamps are newer than existing
-        if: steps.migration_check.outputs.has_migrations == 'true'
+        if: steps.migration_check.outputs.has_migrations == 'true' && github.base_ref == 'next'
         run: |
           # Watermark is the base TIP, not the merge base — see the note on the step above.
           MAX_EXISTING=$(git show ${{ steps.mb.outputs.tip }}:migrations/ 2>/dev/null | \

@@ -11,11 +11,11 @@ import type {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '@mj-biz-apps/orders-entities';
+import { ComparePriceRows, ParseRevenueBand, RevenueBandRangeText, ToISODate, Today } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
-import { FormatListPriceFromRows } from '../panels/catalog-list-price';
 import { LoadProductLookupNames } from '../panels/product-lookup-names';
-import { FormatShortDate, FormatShortInstantDate, YesNo } from './document-form.helpers';
+import { FormatShortInstantDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
 
@@ -162,6 +162,37 @@ export class ProductCategoryOverviewPanel extends BaseFormPanel<mjBizAppsOrdersP
     }
 }
 
+/** The columns the product overview reads from a price row. */
+export type OverviewPriceRow = Pick<
+    mjBizAppsOrdersProductPriceEntity,
+    'Name' | 'PriceList' | 'Amount' | 'Status' | 'Priority' | 'Applicability' | 'EffectiveTo'
+>;
+
+/**
+ * The prices a customer can receive today, in the order the Pricing panel lists them (`ComparePriceRows`:
+ * highest priority first, revenue bands lowest band first within a priority, then by name). Inactive
+ * and expired rows are left out; the card says how many. Exported for the unit test.
+ */
+export function ActiveOverviewPrices(rows: OverviewPriceRow[]): OverviewPriceRow[] {
+    const today = Today();
+    return rows.filter((r) => r.Status === 'Active' && (ToISODate(r.EffectiveTo) ?? today) >= today).sort(ComparePriceRows);
+}
+
+/**
+ * Every price row of one product is loaded, not the first page of them: the active ones are picked
+ * out here, and a product with a ten-band ladder on Standard and two price lists already has thirty
+ * rows, so a page of 24 dropped active prices and miscounted the hidden ones (PR #1052 review). The
+ * ceiling is a guard against a runaway catalog, not a page size.
+ */
+const OVERVIEW_PRICE_ROWS_MAX = 1000;
+
+/** "All customers", "Annual revenue $2M – $5M", or "Member Pricing · Annual revenue Under $2M". */
+export function OverviewPriceScope(row: OverviewPriceRow): string {
+    const band = ParseRevenueBand(row.Applicability);
+    const who = band ? `Annual revenue ${RevenueBandRangeText(band)}` : row.Applicability?.trim() ? 'Conditional' : 'All customers';
+    return row.PriceList ? `${row.PriceList} · ${who}` : who;
+}
+
 @Component({
     standalone: false,
     selector: 'mjo-product-overview-panel',
@@ -186,8 +217,13 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
         const [prices, entitlements, events, orderCount, names] = await Promise.all([
-            LoadOverviewRows<Pick<mjBizAppsOrdersProductPriceEntity, 'PriceList' | 'PricingModel' | 'Amount' | 'Status'>>(
-                p, MJO_ENTITIES.ProductPrice, `ProductID='${this.Record.ID}'`, ['PriceList', 'PricingModel', 'Amount', 'Status'],
+            LoadOverviewRows<OverviewPriceRow>(
+                p,
+                MJO_ENTITIES.ProductPrice,
+                `ProductID='${this.Record.ID}'`,
+                ['Name', 'PriceList', 'Amount', 'Status', 'Priority', 'Applicability', 'EffectiveTo'],
+                OVERVIEW_PRICE_ROWS_MAX,
+                'Priority DESC, Amount ASC, Name ASC',
             ),
             LoadOverviewRows<Pick<mjBizAppsOrdersProductEntitlementEntity, 'Name' | 'Code' | 'EntitlementType' | 'IsActive'>>(
                 p, MJO_ENTITIES.ProductEntitlement, `ProductID='${this.Record.ID}'`, ['Name', 'Code', 'EntitlementType', 'IsActive'],
@@ -199,54 +235,43 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
             LoadProductLookupNames(this.Record),
         ]);
         const event = events[0];
+        const active = ActiveOverviewPrices(prices);
+        const hidden = prices.length - active.length;
+        // Type, category, company, availability, list price, revenue recognition and tax sit in the
+        // header strip above, so the prices get the full width here and a long ladder stays readable.
         const cards: MJOOverviewCard[] = [
             {
-                Title: 'What this sells',
-                Icon: 'fa-solid fa-id-card',
-                Facts: [
-                    { Label: 'Type', Value: names.Type },
-                    { Label: 'Category', Value: names.Category },
-                    { Label: 'Company', Value: this.Record.Company || '—' },
-                    { Label: 'Available from', Value: FormatShortDate(this.Record.AvailableFrom) || 'Open' },
-                    { Label: 'Available to', Value: FormatShortDate(this.Record.AvailableTo) || 'Open' },
-                    { Label: 'List price', Value: FormatListPriceFromRows(prices.map((row) => Number(row.Amount))) },
-                ],
-            },
-            {
-                Title: 'Live prices',
+                Title: 'Active prices',
                 Icon: 'fa-solid fa-tags',
-                Headers: ['List', 'Model', 'Amount', 'Status'],
-                Rows: prices.map((row) => [
-                    row.PriceList || 'Base',
-                    row.PricingModel,
-                    FormatMoney(row.Amount),
-                    row.Status,
-                ]),
+                Span: 2,
+                Headers: ['Price', 'Applies to', 'Amount'],
+                NumericColumns: [2],
+                Rows: active.map((row) => [row.Name?.trim() || 'Price', OverviewPriceScope(row), FormatMoney(row.Amount)]),
+                Note: hidden > 0 ? `${hidden} inactive or expired price${hidden === 1 ? '' : 's'} not shown. See the Pricing panel.` : undefined,
             },
             {
-                Title: 'Entitlements granted on confirm',
+                Title: 'Entitlements',
                 Icon: 'fa-solid fa-key',
+                Note: entitlements.length ? 'Granted when an order for this product is confirmed.' : undefined,
                 Items: entitlements.map((e) => ({
                     Title: e.Name || e.Code,
                     Detail: `${e.EntitlementType} · ${e.Code}`,
-                    Badge: e.IsActive ? 'Active' : 'Off',
+                    Badge: e.IsActive ? 'Active' : 'Inactive',
                     BadgeKind: e.IsActive ? 'ok' : 'muted',
                 })),
             },
             {
-                Title: 'Sales so far',
+                Title: 'Sales summary',
                 Icon: 'fa-solid fa-chart-column',
                 Facts: [
-                    { Label: 'Order lines', Value: String(orderCount) },
-                    { Label: 'Rev-rec', Value: names.RevRec },
-                    { Label: 'Tax', Value: this.Record.IsTaxable ? 'Taxable' : 'Exempt' },
-                    { Label: 'Successor', Value: names.Successor },
+                    { Label: 'Order lines sold', Value: String(orderCount) },
+                    { Label: 'Replaced by', Value: names.Successor },
                 ],
             },
         ];
         if (event) {
             cards.unshift({
-                Title: 'Event satellite',
+                Title: 'Event details',
                 Icon: 'fa-solid fa-location-dot',
                 Facts: [
                     { Label: 'Starts', Value: FormatShortInstantDate(event.EventStartsAt) || '—' },
@@ -254,7 +279,7 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                     { Label: 'Venue', Value: event.VenueName || '—' },
                     { Label: 'Capacity', Value: event.Capacity != null ? String(event.Capacity) : '—' },
                 ],
-                Note: 'Capacity and attendee rows live on the EventProduct satellite — they are not columns on Product.',
+                Note: 'Capacity and attendees are maintained on the event record.',
             });
         }
         this.Cards = cards;

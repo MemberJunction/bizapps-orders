@@ -108,12 +108,12 @@ const FINANCE_EXCEPTION_TYPE_ENTITY = 'MJ_BizApps_Accounting: Finance Exception 
     styles: [
         `
             .mjo-cx__note { margin-bottom: var(--mj-space-3); display: block; }
-            .mjo-cx__lead { margin: 0 0 var(--mj-space-3); color: var(--mj-color-text-secondary, inherit); }
+            .mjo-cx__lead { margin: 0 0 var(--mj-space-3); color: var(--mj-text-secondary); }
             .mjo-cx__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--mj-space-3); margin-bottom: var(--mj-space-3); }
             .mjo-cx__field { display: flex; flex-direction: column; gap: var(--mj-space-1); font-size: 0.85rem; font-weight: 600; }
             .mjo-cx__actions { align-items: center; gap: var(--mj-space-3); }
             .mjo-cx__result { display: grid; grid-template-columns: max-content 1fr; gap: var(--mj-space-1) var(--mj-space-4); margin: 0; }
-            .mjo-cx__result dt { color: var(--mj-color-text-muted); }
+            .mjo-cx__result dt { color: var(--mj-text-muted); }
             .mjo-cx__result dd { margin: 0; }
         `,
     ],

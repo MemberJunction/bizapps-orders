@@ -5,15 +5,18 @@ import { BuildDayBars } from '../../panels/day-bars';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
+import { AddOrderToAgingBuckets, EmptyAgingBuckets, GroupInstalmentsByOrder, NextDueDayOf, PastDueAmountOf, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabConfig, type MJAlertVariant } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { GetOrders } from '../../data/orders-queries';
-import { OverdueFilter, Today, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { GetDashboardOrders, GetOpenInstalments, type MJODashboardOrderRow, type MJOOpenInstalmentRow } from '../../data/orders-queries';
+import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
+import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
+import { MJOOrderReviewQueueComponent } from '../../panels/order-review-queue.component';
 
 /**
  * The payload `mj-view-workspace` emits from `OpenRecordRequested`.
@@ -45,7 +48,7 @@ interface MJOQueue {
 
 /** Something specific worth acting on, with the order it concerns. */
 interface MJOAttentionItem {
-    Order: mjBizAppsOrdersOrderHeaderEntity;
+    Order: MJODashboardOrderRow;
     Tone: MJAlertVariant;
     Icon: string;
     Headline: string;
@@ -71,7 +74,8 @@ interface MJOAttentionItem {
         MJEmptyStateComponent,
         MJOStatTileComponent,
         MJOBarListComponent,
-        MJODayBarsComponent
+        MJODayBarsComponent,
+        MJOOrderReviewQueueComponent
     ],
     template: `
         <div class="mjo-dashboard-container">
@@ -110,6 +114,9 @@ interface MJOAttentionItem {
                         Detail="Customer credit available to apply"
                         (Clicked)="OpenExplorerPreset('credits')" />
                 </div>
+
+                <!-- Order Review tasks waiting on the signed-in user (bc-aidp-next-golive#442). -->
+                <mjo-order-review-queue />
 
                 <div class="mjo-dash__split">
                     <div class="mj-card">
@@ -292,27 +299,27 @@ interface MJOAttentionItem {
                 <div class="mjo-aging-pane">
                     <div class="mj-stat-grid">
                         <mjo-stat-tile
-                            Label="Current (0-30 days)"
+                            Label="Current"
                             Icon="fa-solid fa-check"
                             [Value]="AgingCurrentDisplay"
-                            Detail="Due or recently invoiced" />
+                            Detail="Not yet due" />
                         <mjo-stat-tile
-                            Label="31–60 days"
+                            Label="1–30 days"
                             Icon="fa-solid fa-clock"
                             Tone="default"
-                            [Value]="Aging30Display"
-                            Detail="Second reminder" />
+                            [Value]="Aging1To30Display"
+                            Detail="First reminder" />
                         <mjo-stat-tile
-                            Label="61–90 days"
+                            Label="31–60 days"
                             Icon="fa-solid fa-triangle-exclamation"
                             Tone="alert"
-                            [Value]="Aging60Display"
-                            Detail="Phone call" />
+                            [Value]="Aging31To60Display"
+                            Detail="Second reminder" />
                         <mjo-stat-tile
-                            Label="90+ days overdue"
+                            Label="61+ days"
                             Icon="fa-solid fa-circle-xmark"
                             Tone="alert"
-                            [Value]="Aging90Display"
+                            [Value]="Aging61PlusDisplay"
                             Detail="At risk" />
                     </div>
 
@@ -454,7 +461,7 @@ interface MJOAttentionItem {
                 width: 24px;
                 height: 24px;
                 border-radius: 50%;
-                background: var(--mj-bg-subtle, #f3f4f6);
+                background: var(--mj-bg-surface-card);
                 color: var(--mj-text-muted);
                 font-size: 12px;
                 font-weight: var(--mj-font-bold, 600);
@@ -517,12 +524,12 @@ interface MJOAttentionItem {
                 justify-content: center;
                 font-size: 13px;
             }
-            .mjo-tone-neutral { background: var(--mj-status-neutral-bg); color: var(--mj-status-neutral-text); }
+            .mjo-tone-neutral { background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary); }
             .mjo-tone-info    { background: var(--mj-status-info-bg);    color: var(--mj-status-info-text); }
             .mjo-tone-warning { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
             .mjo-tone-error   { background: var(--mj-status-error-bg);   color: var(--mj-status-error-text); }
             .mjo-tone-success { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
-            .mjo-tone-violet  { background: var(--mj-status-violet-bg);  color: var(--mj-status-violet-text); }
+            .mjo-tone-violet  { background: color-mix(in srgb, var(--mj-color-violet-600) 12%, var(--mj-bg-surface));  color: var(--mj-color-violet-700); }
             .mjo-dash__queue-body { flex: 1; min-width: 0; }
             .mjo-dash__queue-label { font-weight: var(--mj-font-medium); }
             .mjo-dash__queue-note { display: block; }
@@ -549,7 +556,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     private readonly navigationService = inject(NavigationService, { optional: true });
 
     @Output() NavigateRequested = new EventEmitter<string>();
-    @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
+    @Output() OrderOpened = new EventEmitter<MJODashboardOrderRow>();
 
     public ActiveTab = 'overview';
     public Tabs: TabConfig[] = [
@@ -570,7 +577,12 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     /** Set when the working view cannot be loaded; the Order Headers grids show it instead. */
     public ViewError: string | null = null;
 
-    private orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
+    private orders: MJODashboardOrderRow[] = [];
+    /**
+     * Unpaid instalments by order id (lower case), so aging reads each on its own due date
+     * (golive#481). Undefined until the first load; every order then ages on its header date.
+     */
+    private instalmentsByOrder: Map<string, MJOOpenInstalmentRow[]> | undefined;
     /** Bumped per preset request, so a slow earlier request cannot land after a later one. */
     private presetRequest = 0;
 
@@ -583,7 +595,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     private async loadOrders(): Promise<void> {
-        this.orders = await GetOrders({ Preset: 'all' });
+        const [orders, instalments] = await Promise.all([GetDashboardOrders(), GetOpenInstalments()]);
+        this.orders = orders;
+        this.instalmentsByOrder = GroupInstalmentsByOrder(instalments);
         this.cdr.detectChanges();
     }
 
@@ -633,7 +647,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 presetName = 'Draft & Quoted Orders';
                 break;
             case 'credits':
-                whereClause = `Balance < 0 AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = CREDITS_HELD_WHERE;
                 presetName = 'Credit Balance Orders';
                 break;
             default:
@@ -663,7 +677,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
             if (match) {
                 this.OrderOpened.emit(match);
             } else {
-                const surrogate = { ID: id } as mjBizAppsOrdersOrderHeaderEntity;
+                const surrogate = { ID: id } as MJODashboardOrderRow;
                 this.OrderOpened.emit(surrogate);
             }
         }
@@ -675,7 +689,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return BuildDayBars((iso) => this.orders.filter((o) => ToISODate(o.OrderDate) === iso).length);
     }
 
-    public get LatestOrders(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get LatestOrders(): MJODashboardOrderRow[] {
         return [...this.orders]
             .sort((a, b) => String(b.OrderDate ?? '').localeCompare(String(a.OrderDate ?? '')))
             .slice(0, 7);
@@ -757,17 +771,18 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
         const worst = this.overdue
             .slice()
-            .sort((a, b) => DaysSince(b.DueDate, today) - DaysSince(a.DueDate, today))[0];
+            .sort((a, b) => DaysSince(NextDueDayOf(b), today) - DaysSince(NextDueDayOf(a), today))[0];
         if (worst) {
             // The cell itself, never `String(cell)`: on a `Date` that is the long human form, which
             // no day reader can parse, and the headline read "0 days past due".
-            const days = DaysSince(worst.DueDate, today);
+            const days = DaysSince(NextDueDayOf(worst), today);
             items.push({
                 Order: worst,
                 Tone: 'error',
                 Icon: 'fa-solid fa-hourglass-half',
                 Headline: `${worst.OrderNumber} is ${days} days past due.`,
-                Detail: `${FormatMoney((worst.Balance ?? 0))} from ${this.customerOf(worst)}.`,
+                // What is late, not the whole balance: only some instalments may be (golive#481).
+                Detail: `${FormatMoney(PastDueAmountOf(worst, this.instalmentsByOrder?.get(String(worst.ID).toLowerCase()), today))} from ${this.customerOf(worst)}.`,
             });
         }
 
@@ -787,42 +802,44 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return items;
     }
 
-    public customerOf(order: mjBizAppsOrdersOrderHeaderEntity): string {
+    public customerOf(order: MJODashboardOrderRow): string {
         return (order.BillToOrganization ?? order.BillToPerson ?? '—') as string;
     }
 
-    protected statusClass(order: mjBizAppsOrdersOrderHeaderEntity): string {
+    protected statusClass(order: MJODashboardOrderRow): string {
         switch (order.Status) {
             case 'Confirmed':
-                return 'mj-chip--success';
+                return 'mjo-chip--success';
             case 'Quoted':
-                return 'mj-chip--info';
+                return 'mjo-chip--info';
             case 'Voided':
-                return 'mj-chip--outline';
+                return 'mjo-chip--outline';
             default:
                 return '';
         }
     }
 
-    protected openFrom(event: Event, order: mjBizAppsOrdersOrderHeaderEntity): void {
+    protected openFrom(event: Event, order: MJODashboardOrderRow): void {
         event.preventDefault();
         this.OrderOpened.emit(order);
     }
 
-    public get open(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get open(): MJODashboardOrderRow[] {
         return this.orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status));
     }
 
-    public get owing(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get owing(): MJODashboardOrderRow[] {
         return this.open.filter((o) => (o.Balance ?? 0) > 0);
     }
 
-    public get overdue(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get overdue(): MJODashboardOrderRow[] {
         const today = Today();
-        return this.owing.filter((o) => o.DueDate && DaysSince(o.DueDate, today) > 0);
+        // The next unpaid instalment's day, as `IsOverdue` reads it; the header date alone called an
+        // instalment order late by a day that never moves (golive#481).
+        return this.owing.filter((o) => NextDueDayOf(o) && DaysSince(NextDueDayOf(o), today) > 0);
     }
 
-    public get credits(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get credits(): MJODashboardOrderRow[] {
         return this.open.filter((o) => (o.Balance ?? 0) < 0);
     }
 
@@ -838,8 +855,21 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return FormatMoney(this.owing.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
     }
 
+    /**
+     * The money that is actually late: the three past-due buckets, summed (bc-aidp-next-golive#481).
+     *
+     * This was the whole balance of every overdue order. For an order billed in instalments that
+     * counted instalments not due for months as late, and the tile then disagreed with the aging
+     * bar beside it. The tile and the past-due buckets are the same money (golive#361), so the
+     * tile reads the buckets.
+     */
+    public get OverdueValue(): number {
+        const b = this.AgingBuckets;
+        return Math.round((b.Days1To30 + b.Days31To60 + b.Days61Plus) * 100) / 100;
+    }
+
     public get OverdueValueDisplay(): string {
-        return FormatMoney(this.overdue.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+        return FormatMoney(this.OverdueValue, { Round: true });
     }
 
     public get OverdueDetail(): string {
@@ -852,40 +882,42 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return FormatMoney(total, { Zero: '—' });
     }
 
+    /**
+     * The open balance split by age, on the SAME rule the Customer A/R page uses (golive#361).
+     *
+     * These were four hand-rolled filters, and the first one swept everything up to thirty days PAST
+     * DUE into a tile labelled "Current". On QA that put $6.5M of overdue money under "Due or
+     * recently invoiced", while Receivables showed the same money as 1-30 days late. The breaks
+     * differed too: 61-90 and 90+ here, 61+ there.
+     *
+     * Now both screens bucket through `AddOrderToAgingBuckets` (which asks `AgingBucketOf` once per
+     * instalment, golive#481), so neither can drift, and the tiles below are
+     * the four buckets the shared bar already draws -- including its colour ramp, which was validated
+     * for exactly these four segments.
+     */
+    public get AgingBuckets(): MJOAgingBuckets {
+        const today = Today();
+        const buckets = EmptyAgingBuckets();
+        for (const order of this.owing) {
+            AddOrderToAgingBuckets(buckets, order, this.instalmentsByOrder?.get(String(order.ID).toLowerCase()), today);
+        }
+        return buckets;
+    }
+
     public get AgingCurrentDisplay(): string {
-        const today = Today();
-        const current = this.owing.filter((o) => !o.DueDate || DaysSince(o.DueDate, today) <= 30);
-        return FormatMoney(current.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+        return FormatMoney(this.AgingBuckets.Current, { Round: true });
     }
 
-    public get Aging30Display(): string {
-        const today = Today();
-        const b30 = this.owing.filter((o) => {
-            if (!o.DueDate) return false;
-            const days = DaysSince(o.DueDate, today);
-            return days > 30 && days <= 60;
-        });
-        return FormatMoney(b30.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+    public get Aging1To30Display(): string {
+        return FormatMoney(this.AgingBuckets.Days1To30, { Round: true });
     }
 
-    public get Aging60Display(): string {
-        const today = Today();
-        const b60 = this.owing.filter((o) => {
-            if (!o.DueDate) return false;
-            const days = DaysSince(o.DueDate, today);
-            return days > 60 && days <= 90;
-        });
-        return FormatMoney(b60.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+    public get Aging31To60Display(): string {
+        return FormatMoney(this.AgingBuckets.Days31To60, { Round: true });
     }
 
-    public get Aging90Display(): string {
-        const today = Today();
-        const b90 = this.owing.filter((o) => {
-            if (!o.DueDate) return false;
-            const days = DaysSince(o.DueDate, today);
-            return days > 90;
-        });
-        return FormatMoney(b90.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+    public get Aging61PlusDisplay(): string {
+        return FormatMoney(this.AgingBuckets.Days61Plus, { Round: true });
     }
 
     public get Queues(): MJOQueue[] {

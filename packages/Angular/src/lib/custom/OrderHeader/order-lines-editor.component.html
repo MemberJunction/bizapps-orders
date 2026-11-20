@@ -9,7 +9,7 @@
         <div class="mjo-ol-card">
             <div class="mjo-ol-card__top">
                 <div class="mjo-ol-card__id">
-                    <button type="button" class="mjo-ol-card__name" (click)="OpenProduct(line, $event)">
+                    <button type="button" class="mjo-ol-card__name" [mjRecordLink]="line" FieldName="ProductID" [HandleClick]="false" (click)="OpenProduct(line, $event)">
                         {{ ProductFor(line)?.Name ?? 'Product' }}
                     </button>
                     <div class="mjo-ol-card__meta">
@@ -39,13 +39,13 @@
                         <!-- The pencil opens the PRICE editor, the DISCOUNT editor, or both — a user
                              may hold one authority without the other, and an order that can be
                              discounted but not re-priced still needs a way in. -->
-                        @if (CanOverride || CanDiscount) {
+                        @if (CanOverride || CanDiscount || CanPickBand(line)) {
                             <button
                                 type="button"
                                 class="mjo-ol-iconbtn mjo-ol-price__pencil"
                                 (click)="ToggleOverrideEditor(line)"
                                 [attr.aria-expanded]="IsOverrideEditorOpen(line)"
-                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : 'Discount line'">
+                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : (CanPickBand(line) ? 'Pick revenue band' : 'Discount line')">
                                 <i class="fa-solid fa-pencil" aria-hidden="true"></i>
                             </button>
                         }
@@ -94,7 +94,7 @@
 
             @if (IsOverrideEditorOpen(line)) {
                 <div class="mjo-ol-override" role="region" [attr.aria-label]="'Price and discount for ' + (ProductFor(line)?.Name ?? 'line')">
-                    @if (CanOverride) {
+                    @if (CanOverride || CanPickBand(line)) {
                         <mjo-line-price-picker
                             [Line]="line"
                             [OverrideKind]="OverrideKind"
@@ -104,6 +104,12 @@
                             [PriceSource]="PricedLine(line)?.PriceSource ?? null"
                             [PricedUnit]="PricedLine(line)?.UnitPrice ?? null"
                             (PriceChanged)="OnLinePriceChanged()"></mjo-line-price-picker>
+                        @if (GiveawayHint(line); as hint) {
+                            <div class="mjo-ol-override__hint" role="note">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                <span>{{ hint }}</span>
+                            </div>
+                        }
                     }
 
                     <!--
@@ -163,6 +169,12 @@
                                 @if (DiscountError(line); as problem) {
                                     <div class="mjo-ol-discount__err" role="alert">{{ problem }}</div>
                                 }
+                                @if (DiscountApprovalNote(line); as note) {
+                                    <div class="mjo-ol-discount__approval" role="status">
+                                        <span class="mjo-ol-discount__badge">Needs approval</span>
+                                        <span>{{ note }}</span>
+                                    </div>
+                                }
                                 @if (HasStagedDiscount(line)) {
                                     <div class="mjo-ol-discount__staged">
                                         <span>Applies when this order is saved.</span>
@@ -212,13 +224,14 @@
             }
 
             <!--
-                TERM START — subscription lines only (D-TERMSTART).
+                TERM START — subscription lines, and bundle lines whose bundle contains a subscription
+                (D-TERMSTART, u623.1).
                 The order date says when the sale was booked; this says when coverage begins, and an
                 agreement settles the two independently. Shown on the card rather than behind the
                 extension disclosure because it is a term fact, and not every subscription product
                 type has an extension form to hide it in.
             -->
-            @if (IsSubscriptionLine(line)) {
+            @if (ShowsTermStart(line)) {
                 <div class="mjo-ol-term">
                     <!-- `for` only when there IS an input to point at. A label targeting a missing
                          id is a dead control to a screen reader. -->
@@ -254,7 +267,9 @@
                         <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
                     }
                     <span class="mjo-ol-term__hint">
-                        @if (TermStartIsDictated(line)) {
+                        @if (IsSubscriptionBundleLine(line)) {
+                            Applies to the subscriptions in this bundle.
+                        } @else if (TermStartIsDictated(line)) {
                             Continuing existing coverage, so the term begins the day after the current
                             one ends — not something this line can set.
                         } @else if (TermStartFollowsOrderDate(line)) {
@@ -265,15 +280,45 @@
                         }
                     </span>
                 </div>
+            }
+
+            <!--
+                TERM END — subscription lines only (golive #338), shown and not edited.
+                Confirm keeps an end already stated on the line: the coverage
+                runs to it, as one term or one term per type term length. Typing one here would change
+                the coverage without changing the price, and nothing reviews that yet, so the field
+                stays read-only until a stated length goes through approval.
+            -->
+            @if (IsSubscriptionLine(line)) {
+                <div class="mjo-ol-term">
+                    <span class="mjo-ol-term__label">Term end</span>
+                    <span class="mjo-ol-term__value">{{ TermEndValue(line) }}</span>
+                    @if (TermEndBeforeStart(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            The term end must be on or after the term start.
+                        </span>
+                    } @else if (!IsMoneyLocked) {
+                        <span class="mjo-ol-term__hint">
+                            @if (TermEndFollowsType(line)) {
+                                One term of the subscription type.
+                            } @else if (KeptTermEndValue(line); as kept) {
+                                Confirm keeps this length from the continuation date, so the term ends {{ kept }}.
+                            } @else {
+                                Stated on this line, and confirm keeps these dates.
+                            }
+                        </span>
+                    }
+                </div>
 
                 <!-- The customer already holds this product (golive #299): ask whether this line
                      extends that subscription or starts another, instead of letting the type's
-                     rule decide silently at confirm. -->
+                     rule decide silently at confirm. Worded as a question, with the dates each
+                     answer gives on its button (golive #480). -->
                 @if (ExistingHoldingFor(line); as holding) {
                     <div class="mjo-ol-holding" role="group" [attr.aria-label]="'Existing subscription ' + holding.SubscriptionNumber">
                         <span class="mjo-ol-holding__text">
-                            The customer already holds {{ holding.SubscriptionNumber }} for this product
-                            @if (HoldingCoverageEnd(holding)) { (covered through {{ HoldingCoverageEnd(holding) }}) }.
+                            This customer already has this product on {{ holding.SubscriptionNumber }}@if (HoldingCoverageEnd(holding)) {, which runs through {{ HoldingCoverageEnd(holding) }}}.
+                            Is this line a renewal of that subscription, or a new one?
                         </span>
                         @if (CanEditServicePeriod()) {
                             <div class="mjo-ol-holding__choices">
@@ -283,8 +328,7 @@
                                     [class.is-selected]="line.SubscriptionAction === 'ExtendExisting'"
                                     [attr.aria-pressed]="line.SubscriptionAction === 'ExtendExisting'"
                                     (click)="SetSubscriptionAction(line, 'ExtendExisting')">
-                                    Add as next term
-                                    @if (HoldingContinuationStart(holding)) { (starts {{ HoldingContinuationStart(holding) }}) }
+                                    {{ HoldingExtendLineText(line, holding).Choice }}
                                 </button>
                                 <button
                                     type="button"
@@ -292,20 +336,24 @@
                                     [class.is-selected]="line.SubscriptionAction === 'CreateNew'"
                                     [attr.aria-pressed]="line.SubscriptionAction === 'CreateNew'"
                                     (click)="SetSubscriptionAction(line, 'CreateNew')">
-                                    New subscription (keeps this line's dates)
+                                    {{ HoldingNewSubscriptionText(line) }}
                                 </button>
                             </div>
                         }
                         <span class="mjo-ol-term__hint" [class.is-error]="!line.SubscriptionAction">
                             @if (line.SubscriptionAction === 'CreateNew') {
-                                Confirm starts a separate subscription on this line's service period.
+                                Confirm creates a new subscription for this customer, separate from
+                                {{ holding.SubscriptionNumber }}.
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
-                                Confirm adds a term to {{ holding.SubscriptionNumber }}, starting the day after its coverage ends.
+                                {{ HoldingExtendLineText(line, holding).Hint }}
                             } @else {
-                                Not chosen. The subscription type's rule will decide at confirm, and it may move this
-                                line's dates.
+                                Not chosen. Confirm will not go ahead until you choose.
                             }
                         </span>
+                        <!-- Instalments the next term would leave behind (golive #467): confirm refuses them. -->
+                        @if (HoldingScheduleWarning(line, holding); as warning) {
+                            <span class="mjo-ol-term__hint is-error" role="alert">{{ warning }}</span>
+                        }
                     </div>
                 }
             }
@@ -349,6 +397,45 @@
                     } @else if (ServicePeriodMissing(line)) {
                         <span class="mjo-ol-term__hint">
                             Needed to confirm: revenue on this line is recognized against these dates.
+                        </span>
+                    }
+                </div>
+            }
+
+            <!--
+                EXPECTED DATES — percentage-of-completion lines (golive #455). Recognition follows
+                attested progress, so the dates are optional and only record the expected window.
+            -->
+            @if (ShowsExpectedServicePeriod(line)) {
+                <div class="mjo-ol-term">
+                    @if (CanEditServicePeriod()) {
+                        <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-exp-start-' + line.ID">Expected start</label>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [id]="'mjo-ol-exp-start-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'Start')"
+                            (change)="SetServicePeriod(line, 'Start', $event)">
+                        <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-exp-end-' + line.ID">Expected end</label>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [id]="'mjo-ol-exp-end-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'End')"
+                            (change)="SetServicePeriod(line, 'End', $event)">
+                    } @else {
+                        <span class="mjo-ol-term__label">Expected start</span>
+                        <span class="mjo-ol-term__value">{{ ServicePeriodValue(line, 'Start') || '—' }}</span>
+                        <span class="mjo-ol-term__label">Expected end</span>
+                        <span class="mjo-ol-term__value">{{ ServicePeriodValue(line, 'End') || '—' }}</span>
+                    }
+                    @if (ServicePeriodBackwards(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            End date must be on or after the start date.
+                        </span>
+                    } @else if (CanEditServicePeriod()) {
+                        <span class="mjo-ol-term__hint">
+                            Optional. Revenue on this line follows recorded progress, not these dates.
                         </span>
                     }
                 </div>
@@ -428,11 +515,11 @@
             }
         </div>
     } @empty {
-        <div class="mjo-ol-empty">
-            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
-            <div class="mjo-ol-empty__title">Nothing on this order yet</div>
-            <div>Search the catalog to add the first line.</div>
-        </div>
+        <mj-empty-state
+            Size="compact"
+            Icon="fa-solid fa-cart-plus"
+            Title="Nothing on this order yet"
+            Message="Search the catalog to add the first line." />
     }
 
     @if (EditMode) {
@@ -450,6 +537,19 @@
                 role="combobox"
                 aria-label="Add a product"
                 [attr.aria-expanded]="PickerOpen">
+            <!-- mousedown is cancelled so the input keeps focus and the open list re-filters in place. -->
+            <label
+                class="mjo-ol-picker__company-only"
+                [class.is-disabled]="!HasSellingCompany"
+                [attr.title]="HasSellingCompany ? null : 'Set the order\'s company to narrow the list to its products'"
+                (mousedown)="$event.preventDefault()">
+                <input
+                    type="checkbox"
+                    [(ngModel)]="SellingCompanyOnly"
+                    (ngModelChange)="OnSellingCompanyOnlyChange()"
+                    [disabled]="!HasSellingCompany">
+                Only selling company products
+            </label>
         </div>
 
         @if (PickerOpen) {
@@ -489,7 +589,16 @@
                         <span class="muted small">
                             @if (CatalogError) { {{ CatalogError }} }
                             @else if (Catalog.length === 0) { Loading catalog… }
-                            @else { No product matches that. }
+                            @else if (PickerHiddenByCompany === 0) { No product matches that. }
+                            @else { No product from this order's company matches that. }
+                        </span>
+                    </div>
+                }
+                @if (SellingCompanyOnly && PickerHiddenByCompany > 0) {
+                    <div class="mj-typeahead-item mjo-ol-pick__hidden" role="status">
+                        <span class="muted small">
+                            <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                            {{ PickerHiddenByCompany }} more from other companies. Uncheck "Only selling company products" to see them.
                         </span>
                     </div>
                 }

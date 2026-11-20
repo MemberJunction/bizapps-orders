@@ -13,12 +13,18 @@
 //
 // The same holds for another app's @mj-biz-apps/* packages: the host installs that app once.
 //
-// So, for every published package in packages/ (private packages are skipped):
+// So, for every published package in packages/:
 //   - @memberjunction/* and other apps' @mj-biz-apps/* packages never appear in `dependencies`;
-//   - their peerDependencies ranges are caret (^X.Y.Z), or `>=X.Y.Z` (optionally `<N.0.0`) for a
-//     0.x package, where a caret would pin the minor;
+//   - their peerDependencies ranges are caret (^X.Y.Z), or a bounded range `>=X.Y.Z <A.B.C`: a
+//     release line caps MJ below its next minor (`>=6.2.1 <6.3.0`), and a 0.x package is capped
+//     below 1.0.0 because a caret would pin the minor;
 //   - exact versions belong in devDependencies, which anchor local builds and never ship.
 // This repo's own packages may depend on each other with exact versions.
+//
+// Every range on these packages has an UPPER bound, private packages included. Each release line
+// has its own app major, so an open `>=5.37.0` crosses every future line boundary and pulls in
+// another line's release. A private package never ships, so for it only that bound is checked;
+// where it declares the dependency does not matter.
 //
 // Usage:  node .github/scripts/check-dependency-model.mjs [repo-root]
 //         node .github/scripts/check-dependency-model.mjs --self-test
@@ -31,11 +37,13 @@ import { fileURLToPath } from 'node:url';
 const MJ_SCOPE = '@memberjunction/';
 const APP_SCOPE = '@mj-biz-apps/';
 /**
- * `^6.1.5` / `^6.1.0-edge.5` (major 1 or above), or `>=0.5.0` with an optional upper bound on a major
- * boundary (`>=0.5.0 <1.0.0`). Caret on a 0.x version (`^0.5.0` = `>=0.5.0 <0.6.0`) pins the minor,
- * so it is checked separately below.
+ * `^6.1.5` / `^6.1.0-edge.5` (major 1 or above), or a lower bound WITH an upper bound
+ * (`>=0.5.0 <1.0.0`, `>=6.2.1 <6.3.0`). Caret on a 0.x version (`^0.5.0` = `>=0.5.0 <0.6.0`) pins the
+ * minor, so it is checked separately below.
  */
-const ACCEPTED_RANGE = /^(\^[1-9]\d*\.\d+\.\d+(-[0-9A-Za-z.-]+)?|>=\s*\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\s+<\s*\d+\.0\.0(-0)?)?)$/;
+const ACCEPTED_RANGE = /^(\^[1-9]\d*\.\d+\.\d+(-[0-9A-Za-z.-]+)?|>=\s*\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\s+<\s*\d+\.\d+\.\d+(-0)?)$/;
+/** Anything with an upper bound: a caret, a bounded range, or an exact version. */
+const BOUNDED = /^(\^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?|>=\s*\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\s+<\s*\d+\.\d+\.\d+(-0)?|=?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?|workspace:.*)$/;
 const ZERO_MAJOR_CARET = /^\^0\.\d+\.\d+/;
 const MAX_DEPTH = 3;
 
@@ -80,8 +88,24 @@ export function CheckManifest(manifest, ownNames) {
     }
     problems.push(ZERO_MAJOR_CARET.test(range)
       ? `peer ${name}@${spec}: ^0.x pins the minor version. Use >=${range.slice(1)} <1.0.0.`
-      : `peer ${name}@${spec}: use a caret range (^X.Y.Z), or >=X.Y.Z for a 0.x package. `
-        + '~ and exact versions reject every later minor release of the host.');
+      : /^>=\s*\S+$/.test(range)
+        ? `peer ${name}@${spec}: needs an upper bound. An open range crosses into the next release line's major.`
+        : `peer ${name}@${spec}: use a caret range (^X.Y.Z), or a bounded range (>=X.Y.Z <A.B.C). `
+          + '~ and exact versions reject every later minor release of the host.');
+  }
+  return problems;
+}
+
+/** The problems in a private package: only that every host-provided range has an upper bound. */
+export function CheckPrivateManifest(manifest, ownNames) {
+  const problems = [];
+  for (const section of ['dependencies', 'peerDependencies', 'devDependencies']) {
+    for (const [name, spec] of Object.entries(manifest[section] ?? {})) {
+      if (isHostProvided(name, ownNames) && !BOUNDED.test(String(spec).trim())) {
+        problems.push(`${section} ${name}@${spec}: needs an upper bound (a caret, an exact version, or >=X.Y.Z <A.B.C). `
+          + 'An open range crosses into the next release line\'s major.');
+      }
+    }
   }
   return problems;
 }
@@ -94,8 +118,11 @@ export function CheckRepo(root) {
   }));
   const ownNames = new Set(manifests.map((m) => m.json.name).filter(Boolean));
   return manifests
-    .filter((m) => m.json.name && m.json.private !== true)
-    .map((m) => ({ file: relative(root, m.file), problems: CheckManifest(m.json, ownNames) }))
+    .filter((m) => m.json.name)
+    .map((m) => ({
+      file: relative(root, m.file),
+      problems: m.json.private === true ? CheckPrivateManifest(m.json, ownNames) : CheckManifest(m.json, ownNames),
+    }))
     .filter((r) => r.problems.length > 0);
 }
 
@@ -108,10 +135,10 @@ function report(root) {
     }
   }
   if (failures.length > 0) {
-    console.log('\nSee the "Angular pinning model" / dependency rules in CLAUDE.md: host-provided packages are caret peers.');
+    console.log('\nSee "MemberJunction versions — the LTS line AIDP Next runs" in CLAUDE.md: host-provided packages are caret peers.');
     return 1;
   }
-  console.log('✓ Dependency model: MemberJunction and other apps\' packages are caret peers only.');
+  console.log('✓ Dependency model: MemberJunction and other apps\' packages are bounded peers only.');
   return 0;
 }
 
@@ -126,8 +153,12 @@ const FIXTURES = [
     devDependencies: { '@memberjunction/core': '6.1.5' } } },
   { name: 'major-bounded range passes', expect: 0, pkg: {
     name: '@mj-biz-apps/demo-ng', peerDependencies: { '@memberjunction/ng-shared': '>=6.1.5 <7.0.0' } } },
-  { name: 'open lower bound passes for a 0.x package', expect: 0, pkg: {
+  { name: 'bounded range passes for a 0.x package', expect: 0, pkg: {
+    name: '@mj-biz-apps/demo-ng', peerDependencies: { '@mj-biz-apps/accounting-entities': '>=0.5.0 <1.0.0' } } },
+  { name: 'open lower bound fails (crosses the next line)', expect: 1, pkg: {
     name: '@mj-biz-apps/demo-ng', peerDependencies: { '@mj-biz-apps/accounting-entities': '>=0.5.0' } } },
+  { name: 'a release line caps MJ below its next minor', expect: 0, pkg: {
+    name: '@mj-biz-apps/demo-ng', peerDependencies: { '@memberjunction/core': '>=6.2.1 <6.3.0' } } },
   { name: 'caret on a 0.x package fails (pins the minor)', expect: 1, pkg: {
     name: '@mj-biz-apps/demo-ng', peerDependencies: { '@mj-biz-apps/accounting-entities': '^0.5.0' } } },
   { name: 'MJ in dependencies fails', expect: 1, pkg: {
@@ -140,8 +171,10 @@ const FIXTURES = [
     name: '@mj-biz-apps/demo-server', dependencies: { '@mj-biz-apps/common-entities': '5.34.0' } } },
   { name: "this repo's own packages may pin each other", expect: 0, pkg: {
     name: '@mj-biz-apps/demo-server', dependencies: { '@mj-biz-apps/demo-entities': '1.2.3' } } },
-  { name: 'private packages are skipped', expect: 0, pkg: {
-    name: '@mj-biz-apps/demo-tests', private: true, dependencies: { '@memberjunction/core': '6.1.5' } } },
+  { name: 'private packages may declare MJ in dependencies', expect: 0, pkg: {
+    name: '@mj-biz-apps/demo-tests', private: true, dependencies: { '@memberjunction/core': '6.1.5', '@memberjunction/global': '^6.1.5' } } },
+  { name: "a private package's open range on another app fails", expect: 1, pkg: {
+    name: '@mj-biz-apps/demo-tests', private: true, dependencies: { '@mj-biz-apps/common-entities': '>=5.37.0' } } },
 ];
 
 function selfTest() {

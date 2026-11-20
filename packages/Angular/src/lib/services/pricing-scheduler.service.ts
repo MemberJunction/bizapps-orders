@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, OrderHeaderEntity, OrderPricingService, OrdersPriceOrderOperation, IsLinePriceOverridden, ReadPricedLineAmounts, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, LoadOrdersEngine, OrderHeaderEntity, OrderPricingService, OrdersEngine, OrdersPriceOrderOperation, IsLinePriceOverridden, ReadPricedLineAmounts, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -76,7 +76,8 @@ export interface MJOEngineDefault {
  *
  * Both pricing paths — `Orders.PriceOrder` and the walk run in this browser — read these figures
  * back off the same engine walk the booking runs, so `GrossTotal` includes the tax and charges that
- * walk decided. Charges entered by hand are not sent to either path yet, so they are not in it.
+ * walk decided. Charges entered by hand and not yet saved are sent to both paths as requests, the
+ * same requests the save drains (#838).
  *
  * Tax and charges are not reported as separate totals here. The engine remains the authority on
  * what the order actually comes to.
@@ -246,6 +247,7 @@ export class MJOPricingScheduler {
                 })),
                 PromotionCodes: order.PromotionCodes.Codes,
                 ManualDiscounts: StagedManualDiscounts(order),
+                Charges: await StagedCharges(order),
                 // KNOWN ASYMMETRY: this operation's input has no field for a discount the line
                 // ALREADY carries, so a saved order re-priced on this path shows its staged requests
                 // but not its stored concessions. The local walk above is handed the stored figure
@@ -319,12 +321,20 @@ export class MJOPricingScheduler {
             // A STATED price — being edited, or saved as an override — PINS the line; an absent one
             // is what tells the engine to resolve. Assigning 0 would read as a deliberate free line.
             const stated = StatedLineUnitPrice(source);
-            if (stated != null) line.UnitPrice = stated;
+            if (stated != null) {
+                line.UnitPrice = stated;
+                // The rule the pinned price was picked from travels with it (golive #470).
+                if (source.ProductPriceID) line.ProductPriceID = source.ProductPriceID;
+            }
             line.DiscountPct = Number(source.DiscountPct ?? 0);
             // The discount the line ALREADY carries comes across too. Without it a saved order
             // reopened on screen priced as though its concessions had never been granted, and a new
             // one staged on the same line would then read as the only discount there is.
             line.DiscountAmount = Number(source.DiscountAmount ?? 0);
+            // So do the charges it already carries. The walk restates tax but leaves a requested
+            // charge's share alone, so without this a saved shipping charge dropped out of the total
+            // the header shows (#838).
+            line.ChargeAmount = Number(source.ChargeAmount ?? 0);
             lines.push(line);
         }
 
@@ -346,9 +356,12 @@ export class MJOPricingScheduler {
                 Amount: d.Amount,
                 Reason: d.Reason,
             })),
-            Charges: [],
+            // Charges entered by hand and not yet saved (#838), as the save will request them.
+            Charges: (await StagedCharges(order)).map((c) => ({ Code: c.Code, Amount: c.Amount, Rate: c.Rate })),
             // The editor needs the rules' answer for a pinned line too — see `MJOLinePrice.Default`.
             IncludeDefaultsForStatedLines: true,
+            // A band still to pick on one line leaves that line unpriced, not the order (golive #470).
+            LeaveUndecidedBandsUnpriced: true,
         });
 
         if (issued <= this.applied) return true; // overtaken, but it WAS handled
@@ -368,7 +381,8 @@ export class MJOPricingScheduler {
                 Amount: Number((c as { Amount?: number }).Amount ?? 0),
             })),
             TaxExemptReason: result.TaxReasons.get(i) ?? null,
-            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? line.ProductPriceID ?? null,
+            Error: result.LineErrors?.get(line) ?? null,
             Default: engineDefault(result.EngineDefaults.get(line)),
         }));
         const sum = (pick: (l: (typeof priced)[number]) => number) =>
@@ -404,6 +418,7 @@ export class MJOPricingScheduler {
                 Components?: Array<{ Kind: string; Label: string; Amount: number }>;
                 TaxExemptReason?: string | null;
                 ProductPriceID?: string | null;
+                Error?: string | null;
                 Default?: MJOEngineDefault | null;
             }>;
             Totals: { Net: number; Discount: number; Gross: number };
@@ -427,7 +442,7 @@ export class MJOPricingScheduler {
                 UnitPrice: Number(priced.UnitPrice),
                 NetAmount: Number(priced.LineTotalNet),
                 PriceListName: null,
-                Error: null,
+                Error: priced.Error ?? null,
                 // Null means "priced and found nothing", which the badge renders as *no price rule*.
                 // A resolved price with no list is base pricing, and must not read as unpriced.
                 PriceSource: priced.UnitPrice > 0 ? (overridden ? 'stated' : rule) : null,
@@ -517,6 +532,30 @@ export function StagedManualDiscounts(
         const index = positionOf.get(String(row.OrderLineID).toLowerCase());
         if (index === undefined) continue;
         requests.push({ LineIndex: index, Amount: row.Amount ?? null, Percent: null, Reason: row.Reason ?? '' });
+    }
+    return requests;
+}
+
+/**
+ * The charges staged on an order but not yet saved, as requests by charge type code (#838).
+ *
+ * A charge entered on screen lives as an unsaved row on `Order.Charges`, which the save drains into
+ * requests (`OrderEntityServer.drainStagedPricingRequests`). Both pricing paths are handed the same
+ * requests so the total on screen includes them before the save. A row whose charge type is not in
+ * the catalog is left out here; the save refuses it with the reason.
+ */
+export async function StagedCharges(
+    order: OrderHeaderEntity,
+): Promise<Array<{ Code: string; Amount: number | null; Rate: number | null }>> {
+    const staged = (order.Charges?.Items ?? []).filter((c) => !c.IsSaved);
+    if (!staged.length) return [];
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider as unknown as IMetadataProvider, md.CurrentUser as UserInfo);
+    const requests: Array<{ Code: string; Amount: number | null; Rate: number | null }> = [];
+    for (const row of staged) {
+        const code = OrdersEngine.Instance.ChargeTypeByID(row.ChargeTypeID)?.Code;
+        if (!code) continue;
+        requests.push({ Code: code, Amount: row.Amount ?? null, Rate: row.Rate ?? null });
     }
     return requests;
 }

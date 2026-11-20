@@ -32,6 +32,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => ({
         Instance: {
             BaseProductPrices: () => [],
             ProductByID: (id: string) => ({ ID: id, SubscriptionTypeID: m.SubscriptionProducts.has(id) ? 'type' : null }),
+            ResolveSubscriptionTypeID: (id: string) => (m.SubscriptionProducts.has(id) ? 'type' : null),
         },
     },
 }));

@@ -43,7 +43,7 @@ export class ReplayCheckoutStepOperation extends OrdersReplayCheckoutStepOperati
         user: UserInfo,
     ): Promise<OrdersReplayCheckoutStepOutput> {
         if (!UserHasAuthorization(CHECKOUT_REPLAY_AUTH, user, provider)) {
-            return refuse(`Replaying a checkout step requires the ${CHECKOUT_REPLAY_AUTH} authorization (the Checkout Operator role).`);
+            return refuse("You don't have permission to re-run a checkout step. This is limited to the Checkout Operator role.");
         }
         const sessionID = RequireUUID(input?.CheckoutSessionID, 'CheckoutSessionID');
         const stepName = STEP_NAMES.find((s) => s === input?.StepName);

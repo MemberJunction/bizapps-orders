@@ -51,11 +51,58 @@ const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toL
 export function IsLinePriceOverridden(
     line: mjBizAppsOrdersOrderLineEntity,
     engine: LineEngineDefault | null | undefined,
+    applicable?: readonly ApplicablePrice[],
 ): boolean {
     const flag = line.GetFieldByName('PriceOverridden');
     if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
     if (!anyFieldIsDirty(line, ['UnitPrice', 'ProductPriceID'])) return false;
-    return engine ? !isEnginePrice(line, engine) : true;
+    if (engine) return !isEnginePrice(line, engine);
+    return !IsLineOnUndecidedBand(line, engine, applicable ?? []);
+}
+
+/**
+ * The line is on a revenue band the rules could not choose because the buyer's revenue is unknown.
+ * Choosing that band is the rep's job, not a deviation from the rules: it needs no override grant
+ * and no reason. Once the revenue is known the engine picks the band, and choosing another one is
+ * an ordinary override.
+ */
+export function IsLineOnUndecidedBand(
+    line: Pick<mjBizAppsOrdersOrderLineEntity, 'UnitPrice' | 'ProductPriceID'>,
+    engine: LineEngineDefault | null | undefined,
+    applicable: readonly ApplicablePrice[],
+): boolean {
+    if (engine) return false;
+    const id = uuidKey(line.ProductPriceID);
+    if (!id) return false;
+    const band = applicable.find((p) => p.BandUndecided === true && uuidKey(p.ID) === id);
+    return !!band && moneyEqual(Number(line.UnitPrice ?? 0), band.UnitPrice);
+}
+
+const statedPriceLines = new WeakSet<object>();
+
+/**
+ * Mark a line's current `UnitPrice` as deliberately stated even when it is `0` (such as a
+ * complimentary renewal priced by `Orders.SpawnRenewals`), so pricing keeps it across both the
+ * draft save and the confirm save.
+ */
+export function MarkLinePriceStated(line: mjBizAppsOrdersOrderLineEntity): void {
+    statedPriceLines.add(line);
+    const field = line.GetFieldByName?.('UnitPrice');
+    if (field && !field.Dirty && typeof field.RestoreOldValue === 'function') {
+        field.RestoreOldValue(null);
+    }
+}
+
+export function IsMarkedPriceStated(line: mjBizAppsOrdersOrderLineEntity): boolean {
+    return statedPriceLines.has(line);
+}
+
+/**
+ * True when a saved line's product was replaced in this edit without a hand-typed price change,
+ * so the old product's stored unit price must not be carried onto the new product.
+ */
+export function IsProductReplacedWithoutPriceEdit(line: mjBizAppsOrdersOrderLineEntity): boolean {
+    return line.IsSaved === true && anyFieldIsDirty(line, ['ProductID']) && !anyFieldIsDirty(line, ['UnitPrice']);
 }
 
 /**
@@ -74,8 +121,9 @@ export function IsLinePriceOverridden(
  * Null is not zero. Zero would pin the line as deliberately free.
  */
 export function StatedLineUnitPrice(line: mjBizAppsOrdersOrderLineEntity): number | null {
+    if (IsProductReplacedWithoutPriceEdit(line)) return null;
     const unit = Number(line.UnitPrice ?? 0);
-    if (!anyFieldIsDirty(line, ['UnitPrice']) && !(unit > 0)) return null;
+    if (!anyFieldIsDirty(line, ['UnitPrice']) && !(unit > 0) && !IsMarkedPriceStated(line)) return null;
     return unit;
 }
 
@@ -158,7 +206,10 @@ export function PinLineToNamedPrice(
     }
     stamp(line, 'ProductPriceID', price.ID);
     stamp(line, 'UnitPrice', price.UnitPrice);
-    stamp(line, 'PriceOverridden', true);
+    // A band chosen because the rules could not choose one is the rules' price, not an override.
+    const bandPick = !engine && price.BandUndecided === true;
+    stamp(line, 'PriceOverridden', !bandPick);
+    if (bandPick) stamp(line, 'PriceOverrideReason', null);
     return 'pinned';
 }
 
@@ -199,8 +250,9 @@ export function LinePriceOverrideReason(line: mjBizAppsOrdersOrderLineEntity): s
 export function LineNeedsOverrideReason(
     line: mjBizAppsOrdersOrderLineEntity,
     engine: LineEngineDefault | null | undefined,
+    applicable?: readonly ApplicablePrice[],
 ): boolean {
-    return IsLinePriceOverridden(line, engine) && LinePriceOverrideReason(line).trim() === '';
+    return IsLinePriceOverridden(line, engine, applicable) && LinePriceOverrideReason(line).trim() === '';
 }
 
 /** Record why the price left the rules. Whitespace is not a reason, so it is stored as none. */

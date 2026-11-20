@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-47 - Replace Payment Schedule",
+    "Description": "Orders.ReplacePaymentSchedule sets an order's payment schedule from a list (RP1-RP9). Rows become Scheduled instalments numbered by due date under the order's company; the same list twice writes nothing; a list that does not tie, or has a row with no amount, is refused with nothing written. On a confirmed order the instalment invoiced at confirm is kept with its number and the rest change in place; a list that changes it is refused naming it; an order confirmed without a schedule cannot be given one; a preview writes nothing. An instalment a payment names cannot be removed or re-dated; a confirmed order's schedule cannot be removed.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "Four rows sent out of order land as instalments 1-4 by date; a second identical call reports no change. A one-cent shortfall is refused as TIE_FAILED, a row with no amount as INVALID_ROW naming row 2. After confirm issues instalment 1, a four-row list keeping it leaves it Invoiced with the same document number and re-amounts row 2 in place; a list changing it is refused as INVOICED_ROW_CHANGED. A confirmed order with no schedule refuses BILLED_WITHOUT_SCHEDULE. A preview reports four rows with no IDs and writes none. With a payment naming instalment 2, a list dropping or re-dating it is refused as PAID_ROW_CHANGED with nothing written, and a list raising it keeps the payment on the same row. An empty list on a confirmed scheduled order is refused as SCHEDULE_REQUIRED."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "schedule-replace"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "5F3F62FB-C2D3-4177-BF9F-38A533E65C37"
+  }
+}

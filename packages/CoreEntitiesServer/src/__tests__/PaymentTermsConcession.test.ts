@@ -22,9 +22,14 @@ vi.mock('../PaymentTermsChange.js', () => terms);
 const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
+
+// No metadata here: the settings read is stubbed, unset (ConcessionSelfApprovalEscalation keeps self-approval).
+const settings = vi.hoisted(() => ({ OrdersSettings: { Load: vi.fn(), ConcessionSelfApprovalEscalation: [] as string[] } }));
+vi.mock('../OrdersSettings.js', () => settings);
 
 const { OrderConcessionEntityServer } = await import('../OrderConcessionEntityServer.js');
 
@@ -143,7 +148,7 @@ describe('recording a Terms concession', () => {
 
         expect(await row.Save()).toBe(true);
         expect(approval.RouteConcessionToApproval).toHaveBeenCalledWith(
-            { ID: 'concession-1', OrderHeaderID: ORDER_ID, RequestedByUserID: REQUESTER.ID },
+            { ID: 'concession-1', OrderHeaderID: ORDER_ID, RequestedByUserID: REQUESTER.ID, SalesRuleID: null },
             'role-1',
             'payment terms 30 days later',
             expect.objectContaining({ User: REQUESTER }),

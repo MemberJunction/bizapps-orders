@@ -100,8 +100,18 @@ const REAP_INTERVAL_MS = 60_000;
 
 const requireFromHere = createRequire(import.meta.url);
 
-/** Directory of the `<mj-orders-checkout>` Angular Element bundle, if it was built. */
-function resolveCheckoutElementDir(): string | null {
+/**
+ * Directory of the `<mj-orders-checkout>` Angular Element bundle, if it was built.
+ *
+ * `CHECKOUT_ELEMENT_DIR`, when set, is the only directory considered: a host can serve the
+ * bundle from a fixed location, and tests control whether an element "is built" without
+ * depending on what is on disk (#795).
+ */
+export function resolveCheckoutElementDir(env: NodeJS.ProcessEnv = process.env): string | null {
+    const configured = env.CHECKOUT_ELEMENT_DIR?.trim();
+    if (configured) {
+        return existsSync(path.join(configured, 'main.js')) ? configured : null;
+    }
     const candidates: string[] = [];
     try {
         const entry = requireFromHere.resolve('@mj-biz-apps/orders-ng');
@@ -719,13 +729,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const billingAddress = rawAddress && typeof rawAddress === 'object' && !Array.isArray(rawAddress)
             ? (rawAddress as CheckoutBillingAddressInput)
             : null;
-        // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
+        // Passed through unchecked: UpdateDraft keeps the attribution and tracking only when they read, and
         // judges the answers and choices against the widget's own questions and choice groups. The
         // member token is verified server-side by the widget's registered resolver and never stored (#324).
         // Promotion codes are passed as sent; the service normalises and bounds them
         // (NormalizeCheckoutPromotionCodes).
         const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user, {
             Attribution: req.body?.attribution,
+            Tracking: req.body?.tracking,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
             Choices: req.body?.choices as CheckoutChoicesInput | undefined,
             PromotionCodes: req.body?.promotionCodes,

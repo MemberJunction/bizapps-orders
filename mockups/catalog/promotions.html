@@ -21,7 +21,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="pm-count">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="pm-count">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-gear"></i> Stacking policy</button>
@@ -52,7 +52,7 @@
           <div class="sec-label" style="margin-top:var(--mj-space-4)">Two 10% offers on $400</div>
           <div class="pm-stack">
             <div>
-              <div class="row"><b>Sequential</b><span class="mj-chip mj-chip--brand spacer">default</span></div>
+              <div class="row"><b>Sequential</b><span class="mjo-chip mjo-chip--brand spacer">default</span></div>
               <div class="pm-calc" style="margin-top:6px">
                 400.00<br>
                 − 40.00 &nbsp;<span style="color:var(--mj-text-muted)">(10% of 400)</span><br>
@@ -90,9 +90,9 @@
             <thead><tr><th>Code</th><th class="num">Would give</th><th>Outcome</th></tr></thead>
             <tbody>
               <tr><td class="mono">SUMMIT26</td><td class="num">$154.95</td>
-                <td><span class="mj-chip mj-chip--success">applied</span></td></tr>
+                <td><span class="mjo-chip mjo-chip--success">applied</span></td></tr>
               <tr><td class="mono">MEMBER40</td><td class="num">$40.00</td>
-                <td><span class="mj-chip mj-chip--outline">offered, not applied</span>
+                <td><span class="mjo-chip mjo-chip--outline">offered, not applied</span>
                   <div class="secondary">lower value, neither stacks</div></td></tr>
             </tbody>
           </table>
@@ -174,19 +174,19 @@ function render() {
       <td><span class="mono strong">${p.code}</span></td>
       <td class="strong">${p.kind === 'Percent' ? F.pct(p.value) : F.money(p.value)}
         <div class="secondary">${p.kind.toLowerCase()}</div></td>
-      <td><span class="mj-chip mj-chip--outline">${p.scope}</span></td>
+      <td><span class="mjo-chip mjo-chip--outline">${p.scope}</span></td>
       <td class="small">${p.target}</td>
       <td class="small">${F.dateShort(p.from)} → ${F.dateShort(p.to)}</td>
       <td class="num">${p.redemptions}
         ${p.cap ? `<div class="secondary">of ${p.cap}</div>` : ''}</td>
-      <td>${p.status === 'Active' ? '<span class="mj-chip mj-chip--success">Active</span>'
-        : '<span class="mj-chip mj-chip--outline">Expired</span>'}</td>
+      <td>${p.status === 'Active' ? '<span class="mjo-chip mjo-chip--success">Active</span>'
+        : '<span class="mjo-chip mjo-chip--outline">Expired</span>'}</td>
     </tr>`).join('');
 
   document.getElementById('pm-stacking').innerHTML = Object.entries(DB.stackingPolicy).map(([co, mode]) => `
     <div class="row" style="padding:var(--mj-space-2) 0;border-bottom:1px solid var(--mj-border-subtle)">
       <span>${DB.companies[co].name}</span>
-      <span class="spacer mj-chip ${mode === 'Sequential' ? 'mj-chip--brand' : 'mj-chip--info'}">${mode}</span>
+      <span class="spacer mjo-chip ${mode === 'Sequential' ? 'mjo-chip--brand' : 'mjo-chip--info'}">${mode}</span>
     </div>`).join('') + `
     <div class="small muted" style="margin-top:var(--mj-space-2)">
       Per company, because the same offer can be run by two subsidiaries under different commercial policy.
@@ -226,7 +226,7 @@ function pmOpen(id) {
       <thead><tr><th>Code</th><th class="num">Redeemed</th><th>Status</th></tr></thead>
       <tbody>
         <tr><td class="mono">${p.code}</td><td class="num">${p.redemptions}</td>
-          <td><span class="mj-chip ${p.status === 'Active' ? 'mj-chip--success' : 'mj-chip--outline'}">${p.status}</span></td></tr>
+          <td><span class="mjo-chip ${p.status === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline'}">${p.status}</span></td></tr>
       </tbody>
     </table>
     <button class="mj-btn mj-btn--flat mj-btn--sm" style="margin-top:var(--mj-space-2)">

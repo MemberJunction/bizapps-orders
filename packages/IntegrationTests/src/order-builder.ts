@@ -54,6 +54,8 @@ export interface LineSpec {
     ShipToAddressID?: string;
     /** Renew this exact subscription rather than letting the engine resolve one (D61). */
     RenewsSubscriptionID?: string;
+    /** `OrderLine.SubscriptionAction`: the answer to "the customer already holds this product" (golive #299, #467). */
+    SubscriptionAction?: 'ExtendExisting' | 'CreateNew';
     /** `OrderLine.AcknowledgesCoverageOverlap` — the line is meant to run alongside another band. */
     AcknowledgesCoverageOverlap?: boolean;
     /** `OrderLine.CoverageOverlapReason` — why it runs alongside; confirm needs it with the acknowledgment. */
@@ -244,6 +246,7 @@ export async function BuildOrder(
         if (ls.ShipToPersonID) line.ShipToPersonID = ls.ShipToPersonID;
         if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
         if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
+        if (ls.SubscriptionAction) line.SubscriptionAction = ls.SubscriptionAction;
         if (ls.AcknowledgesCoverageOverlap) line.AcknowledgesCoverageOverlap = true;
         if (ls.CoverageOverlapReason) line.CoverageOverlapReason = ls.CoverageOverlapReason;
         if (ls.ReversesOrderLineID) line.ReversesOrderLineID = ls.ReversesOrderLineID;

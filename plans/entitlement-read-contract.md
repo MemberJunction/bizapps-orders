@@ -144,6 +144,17 @@ Bulk list is an optimisation for UI and sync, **not** a second source of truth f
 A “does X have Y” endpoint answers questions about people. Answering them is itself a capability.
 
 1. **Scope it narrowly.** An MJ API key restricted to entitlement checks, not general Orders read. The LXP must not enumerate orders because it can check access.
+
+   Narrow does not mean grants alone. The check reads as the key's user, and the renewal cut-off is decided at read time from the order and its payments, so that user needs read permission on all of these:
+
+   - `MJ_BizApps_Common: People`
+   - `MJ_BizApps_Orders: Entitlement Grants`, `Product Entitlements` and `Products`
+   - `MJ_BizApps_Orders: Subscriptions` and `Subscription Terms`
+   - `MJ_BizApps_Orders: Order Headers`, `Order Lines` and `Order Header Payment Schedules`
+   - `MJ_BizApps_Orders: Payment Lines`
+   - `MJ_BizApps_Orders: Entitlement Access Overrides`
+
+   A missing one does not raise an error: the check fails closed (item 4), so a customer whose renewal is paid is reported as having no access.
 2. **Rate limit and log.** Repeated checks are a customer-list oracle. Every decision should be recorded — that log is the audit trail when someone disputes access.
 3. **Don't leak existence.** Unknown person and known-person-without-access should be indistinguishable in response shape and, ideally, timing.
 4. **Fail closed**, and make the failure mode explicit in the contract rather than incidental to a caught exception.

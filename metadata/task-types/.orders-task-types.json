@@ -50,5 +50,26 @@
     "primaryKey": {
       "ID": "35D3CB53-1F39-411D-8624-A144E6995EE3"
     }
+  },
+  {
+    "_comments": [
+      "Review of an order that hit a review trigger before it may confirm (bc-aidp-next-golive#320 section 5). Its own",
+      "type, rather than the generic Approval Request or sales' ORDER_REVIEW (raised for every won deal), so the",
+      "confirm gate can find an order's reviews by Code and so a host can route its OnAssign notices separately.",
+      "IsApproval lists its tasks in the Tasks approvals inbox. An approving decision by an assignee lets the order",
+      "confirm; nothing runs on completion, the confirm reads the decision."
+    ],
+    "fields": {
+      "Name": "Order Review",
+      "Code": "ORDERS_ORDER_REVIEW",
+      "Description": "Review an order that hit a review trigger. Approve to let it confirm, or reject with a note saying what to correct. A change to the order after approval sends it back for review.",
+      "IconClass": "fa-solid fa-magnifying-glass-dollar",
+      "DefaultPriority": "High",
+      "IsActive": true,
+      "IsApproval": true
+    },
+    "primaryKey": {
+      "ID": "5BFCAA2B-F32E-4657-ABA4-D5C126211454"
+    }
   }
 ]

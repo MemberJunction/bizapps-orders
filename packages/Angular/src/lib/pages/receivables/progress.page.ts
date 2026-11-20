@@ -28,10 +28,14 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * SUPERSEDE IS THE WAY BACK FROM A WRONG ONE (golive #260). A user holding the supersede
  * authorization sees a toggle that makes the next post replace the line's last observation: its
  * recognition is reversed and the new observation posts as if it had never been there. Nothing is
- * edited. The reversal lands on the replaced date while that month is open, and on day 1 of the
- * first later open month when a posted batch has closed it, and the new catch-up follows it there;
- * the preview and the confirm both say which dates they got. The operation checks the grant again; the toggle only hides the action
- * from people who cannot use it.
+ * edited. The reversal lands on the replaced date, or on the first open day when finance has closed
+ * that month; the new catch-up posts on the date entered. The preview and the confirm both say which
+ * date the reversal got. The operation checks the grant again; the toggle only hides the action from
+ * people who cannot use it.
+ *
+ * A DATE IN A MONTH FINANCE HAS CLOSED IS REFUSED by the operation (golive #316), on preview and
+ * post, supersede included. The screen shows the refusal's message as the error notice, as it does
+ * every refusal.
  *
  * A LINE AT 100% IS STILL SUPERSEDABLE, so the same users get "Show 100%": the worklist omits
  * completed lines by default, and a mistyped 100% would otherwise leave the only screen that can
@@ -55,7 +59,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
         <div class="mj-stat-grid mjo-pg__tiles">
             <mjo-stat-tile Label="Open project lines" Icon="fa-solid fa-diagram-project" [Value]="String(OpenRows.length)" Detail="Percentage of completion, not yet at 100%" />
             <mjo-stat-tile Label="Contract value" Icon="fa-solid fa-file-signature" [Value]="money(TotalAmount, true)" Detail="Across the open lines" />
-            <mjo-stat-tile Label="Recognised to date" Icon="fa-solid fa-chart-line" Tone="alert" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
+            <mjo-stat-tile Label="Recognized to date" Icon="fa-solid fa-chart-line" Tone="alert" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
         </div>
 
         @if (LoadError) {
@@ -104,7 +108,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             <div class="small muted mjo-pg__context">
                 {{ row.OrderNumber }} line {{ row.LineNumber }} · {{ row.ProductName }} · {{ money(row.LineAmount) }} ·
                 last attested {{ row.LastMeasurementDate ? FormatDate(row.LastMeasurementDate, { Short: true }) + ' at ' + percent(row.LastPercentComplete) : 'never' }}
-                · recognised {{ money(row.RecognizedToDate) }}
+                · recognized {{ money(row.RecognizedToDate) }}
                 @if (Draft) {
                     <strong> → {{ Draft.Message }}</strong>
                 }
@@ -113,7 +117,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 <div class="mjo-pg__closed" role="status">
                     <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
                     Superseding the {{ FormatDate(row.LastMeasurementDate, { Short: true }) }} observation at {{ percent(row.LastPercentComplete) }}.
-                    Its recognition is reversed on its own date, or in the first open month if that month is in a posted batch, and the new catch-up books there too; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
+                    Its recognition is reversed on its own date, or on the first open day if finance has closed that month, and the new catch-up books on the date you enter; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
                 </div>
             }
             @if (reversalNote(Draft, row); as reversalText) {
@@ -156,8 +160,8 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             .mjo-pg__closed {
                 margin-bottom: var(--mj-space-4);
                 padding: var(--mj-space-3) var(--mj-space-4);
-                border-left: 3px solid var(--mj-color-warning, #b8860b);
-                background: var(--mj-color-warning-subtle, rgba(184, 134, 11, 0.08));
+                border-left: 3px solid var(--mj-status-warning);
+                background: var(--mj-status-warning-bg);
                 border-radius: var(--mj-radius-sm, 4px);
                 font-size: 0.9rem;
             }
@@ -199,8 +203,8 @@ export class MJOProgressPageComponent implements OnInit {
         { Key: 'CompanyName', Label: 'Sold by', HideBelow: 1000 },
         { Key: 'LineAmount', Label: 'Contract', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.LineAmount) },
         { Key: 'LastMeasurementDate', Label: 'Last attested', Kind: 'date', Width: '130px', Format: (r) => (r.LastMeasurementDate ? FormatDate(r.LastMeasurementDate, { Short: true }) : 'never'), Secondary: (r) => (r.LastAttestedBy ? `by ${r.LastAttestedBy}` : null) },
-        { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mj-chip--success' : 'mj-chip--outline') },
-        { Key: 'RecognizedToDate', Label: 'Recognised', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
+        { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline') },
+        { Key: 'RecognizedToDate', Label: 'Recognized', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
     ];
 
     public async ngOnInit(): Promise<void> {
@@ -302,31 +306,18 @@ export class MJOProgressPageComponent implements OnInit {
     }
 
     /**
-     * Where a supersede's entries are booked, in words — or null when nothing is reversed and the
-     * catch-up keeps its date. The reversal is said whichever date it got, with the reason when it is
-     * not the replaced observation's own date; the catch-up only when it moved off the chosen date.
+     * Where a supersede's reversal is booked, in words — or null when nothing is reversed. Said
+     * whichever date it got, with the reason when it is not the replaced observation's own date.
      */
     public reversalNote(draft: OrdersRecordProgressOutput | null, row: { LastMeasurementDate?: string | null }): string | null {
-        if (!draft) return null;
+        if (!draft?.ReversalDate || !draft.ReversalAmount) return null;
         const replaced = row.LastMeasurementDate ? row.LastMeasurementDate.slice(0, 10) : null;
-        const notes: string[] = [];
-        if (draft.ReversalDate && draft.ReversalAmount) {
-            const amount = this.money(Math.abs(draft.ReversalAmount));
-            const on = FormatDate(draft.ReversalDate, { Short: true });
-            notes.push(
-                !replaced || replaced === draft.ReversalDate
-                    ? `The ${amount} reversal is dated ${on}, the replaced observation's own date.`
-                    : `The ${amount} reversal is dated ${on}: the ${FormatDate(replaced, { Short: true })} observation's month is already in a posted batch, ` +
-                          `so the reversal books in the first month that is not.`,
-            );
-        }
-        if (draft.CatchUpDate && draft.MeasurementDate && draft.CatchUpDate !== draft.MeasurementDate && draft.RecognitionAmount) {
-            notes.push(
-                `The ${this.money(Math.abs(draft.RecognitionAmount))} catch-up books on ${FormatDate(draft.CatchUpDate, { Short: true })} too, ` +
-                    `so nothing new posts into the closed month; the observation keeps ${FormatDate(draft.MeasurementDate, { Short: true })}.`,
-            );
-        }
-        return notes.length ? notes.join(' ') : null;
+        const amount = this.money(Math.abs(draft.ReversalAmount));
+        const on = FormatDate(draft.ReversalDate, { Short: true });
+        return !replaced || replaced === draft.ReversalDate
+            ? `The ${amount} reversal is dated ${on}, the replaced observation's own date.`
+            : `The ${amount} reversal is dated ${on}: finance has closed the ${FormatDate(replaced, { Short: true })} observation's month, ` +
+                  `so the reversal books on the first open day.`;
     }
 
     /** One call shape for both buttons. Returns null (and shows why) when the operation refused. */

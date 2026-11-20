@@ -32,6 +32,10 @@ Add a new migration:
 migrations/V<yyyyMMddHHmm>__v<app-version>__<Short_Description>.sql
 ```
 
+`<app-version>` is the release that ships the file, not the one the work started in: with `next`
+at 5.41.0 and a minor changeset, it is `v5.42.x`. The timestamp must sort after the newest
+migration on `next` when the PR merges; if `next` gains a later one first, re-date yours.
+
 It runs once, after the baseline and every earlier migration, on every deploy — clean install or
 existing database — so both converge on the same schema. Write plain DDL: **no existence guards**
 (`IF NOT EXISTS`, `IF COL_LENGTH(...) IS NULL`, `IF OBJECT_ID(...) IS NULL`), and add each column

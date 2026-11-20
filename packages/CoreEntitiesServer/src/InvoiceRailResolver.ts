@@ -96,6 +96,9 @@ export async function FindInvoiceRailProviderID(companyID: string, provider: IMe
         },
         user,
     );
+    // Read as "no rail", a failure would let document sending add Orders' own invoice beside the
+    // rail's (#901). Throwing makes LoadExternallyInvoiced throw too, which stops the send.
+    if (!types.Success) throw new Error(`Could not read payment provider types for company ${companyID}: ${types.ErrorMessage}`);
     const typeIDs = (types.Results ?? []).map((t) => `'${RequireUUID(t.ID, 'PaymentProviderTypeID')}'`);
     if (!typeIDs.length) return null;
 
@@ -108,6 +111,7 @@ export async function FindInvoiceRailProviderID(companyID: string, provider: IMe
         },
         user,
     );
+    if (!rows.Success) throw new Error(`Could not read the payment providers of company ${companyID}: ${rows.ErrorMessage}`);
     const found = rows.Results ?? [];
     if (!found.length) return null;
     if (found.length > 1) {
@@ -135,12 +139,14 @@ async function listProviderIDs(codes: readonly string[], provider: IMetadataProv
         { EntityName: PAYMENT_PROVIDER_TYPE_ENTITY, ExtraFilter: `Code IN (${codes.map((c) => `'${c}'`).join(',')})`, Fields: ['ID'], ResultType: 'simple' },
         user,
     );
+    if (!types.Success) throw new Error(`Could not read payment provider types: ${types.ErrorMessage}`);
     const typeIDs = (types.Results ?? []).map((t) => `'${RequireUUID(t.ID, 'PaymentProviderTypeID')}'`);
     if (!typeIDs.length) return [];
     const rows = await rv.RunView<{ ID: string; CompanyID: string }>(
         { EntityName: PAYMENT_PROVIDER_ENTITY, ExtraFilter: `IsActive = 1 AND PaymentProviderTypeID IN (${typeIDs.join(',')})`, Fields: ['ID', 'CompanyID'], OrderBy: 'Name', ResultType: 'simple' },
         user,
     );
+    if (!rows.Success) throw new Error(`Could not read payment providers: ${rows.ErrorMessage}`);
     return rows.Results ?? [];
 }
 

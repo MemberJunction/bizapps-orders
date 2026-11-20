@@ -71,7 +71,7 @@ export type MJOPaymentStatus = 'Unpaid' | 'PartiallyPaid' | 'Paid' | 'Overdue' |
                  nothing-to-say case. -->
             @if (ShowStatus && statusLabel) {
                 <div class="mj-money-strip__status">
-                    <span class="mj-chip" [class]="statusChipClass">{{ statusLabel }}</span>
+                    <span class="mjo-chip" [class]="statusChipClass">{{ statusLabel }}</span>
                     @if (Note) {
                         <span class="small muted mjo-money-strip__note">{{ Note }}</span>
                     }
@@ -158,13 +158,13 @@ export class MJOMoneyStripComponent {
     protected get statusChipClass(): string {
         switch (this.PaymentStatus) {
             case 'Paid':
-                return 'mj-chip--success';
+                return 'mjo-chip--success';
             case 'PartiallyPaid':
-                return 'mj-chip--warning';
+                return 'mjo-chip--warning';
             case 'Overdue':
-                return 'mj-chip--error';
+                return 'mjo-chip--error';
             case 'WrittenOff':
-                return 'mj-chip--outline';
+                return 'mjo-chip--outline';
             default:
                 return '';
         }

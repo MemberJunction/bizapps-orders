@@ -1,5 +1,7 @@
 :host {
     display: block;
+    /* Pay-button colour; follows the public --mj-primary-color theme hook when the embedding page sets it. */
+    --mjo-co-primary: var(--mj-primary-color, #2563eb);
 }
 
 .mj-checkout-public {
@@ -263,7 +265,7 @@
     padding: 0.8rem 1rem;
     border: none;
     border-radius: 6px;
-    background: var(--mj-checkout-primary, #2563eb);
+    background: var(--mjo-co-primary);
     color: #ffffff;
     font-size: 1rem;
     font-weight: 700;

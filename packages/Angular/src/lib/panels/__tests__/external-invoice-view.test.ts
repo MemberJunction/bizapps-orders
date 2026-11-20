@@ -13,12 +13,16 @@ import {
     CanResolveInFlight,
     CanSend,
     DispositionChipClass,
+    NothingToBill,
+    SendApplies,
+    SendDisabledReason,
     SendIsReissue,
     DispositionLabel,
     StateChipClass,
     StateLabel,
     type ExternalInvoiceLike,
     type PaymentExceptionDisposition,
+    type SendButtonState,
 } from '../external-invoice-view';
 
 const row = (Status: ExternalInvoiceLike['Status'], ExternalStatus: string | null = null): ExternalInvoiceLike => ({ Status, ExternalStatus });
@@ -71,6 +75,91 @@ describe('CanSend', () => {
     it('refuses when no company on the order has a rail', () => {
         expect(CanSend('Confirmed', [], false)).toBe(false);
     });
+
+    it('refuses an order with nothing left to bill, and allows a credit or an unknown balance (#457)', () => {
+        expect(CanSend('Confirmed', [], true, false, 0)).toBe(false);
+        expect(CanSend('Confirmed', [], true, false, -25)).toBe(true);
+        expect(CanSend('Confirmed', [], true, false, 120)).toBe(true);
+        expect(CanSend('Confirmed', [], true, false, null)).toBe(true);
+    });
+});
+
+describe('NothingToBill', () => {
+    it('is true only for an exact zero balance', () => {
+        expect(NothingToBill(0)).toBe(true);
+        expect(NothingToBill(-0)).toBe(true);
+        expect(NothingToBill(0.01)).toBe(false);
+        expect(NothingToBill(-0.01)).toBe(false);
+        expect(NothingToBill(1500)).toBe(false);
+    });
+
+    it('treats a credit as something to show, not as nothing to bill', () => {
+        expect(NothingToBill(-250)).toBe(false);
+    });
+
+    it('does not read a missing balance as zero', () => {
+        expect(NothingToBill(null)).toBe(false);
+        expect(NothingToBill(undefined)).toBe(false);
+    });
+});
+
+describe('SendApplies', () => {
+    it('applies on any status, so an unconfirmed order still shows the button', () => {
+        expect(SendApplies([], true)).toBe(true);
+        expect(SendApplies([row('Failed'), row('Canceled')], true)).toBe(true);
+    });
+
+    it('does not apply without a rail, on a scheduled order, or with a unit live or in flight', () => {
+        expect(SendApplies([], false)).toBe(false);
+        expect(SendApplies([], true, true)).toBe(false);
+        expect(SendApplies([row('Sent')], true)).toBe(false);
+        expect(SendApplies([row('Sending')], true)).toBe(false);
+    });
+
+    it('does not apply when the balance is zero: paid in full or free, whatever the status (#457)', () => {
+        expect(SendApplies([], true, false, 0)).toBe(false);
+        expect(SendApplies([row('Failed')], true, false, 0)).toBe(false);
+    });
+
+    it('still applies on a credit balance and when the balance is not known', () => {
+        expect(SendApplies([], true, false, -40)).toBe(true);
+        expect(SendApplies([], true, false, undefined)).toBe(true);
+        expect(SendApplies([], true, false, null)).toBe(true);
+    });
+});
+
+describe('SendDisabledReason', () => {
+    const ready: SendButtonState = { OrderStatus: 'Confirmed', EditMode: false, Dirty: false, Busy: false, Blocked: null };
+
+    it('is enabled on a saved, confirmed order with nothing running and nothing blocking', () => {
+        expect(SendDisabledReason(ready)).toBe(false);
+    });
+
+    it('waits for confirmation on every other status', () => {
+        for (const OrderStatus of ['Draft', 'Quoted', 'Voided', '', null, undefined]) {
+            expect(SendDisabledReason({ ...ready, OrderStatus })).toBe('Available once the order is confirmed');
+        }
+    });
+
+    it('asks for edits to be saved or discarded, in edit mode or with unsaved changes', () => {
+        expect(SendDisabledReason({ ...ready, EditMode: true })).toBe('Save or discard your edits first');
+        expect(SendDisabledReason({ ...ready, Dirty: true })).toBe('Save or discard your edits first');
+    });
+
+    it('says it is working while a rail call runs', () => {
+        expect(SendDisabledReason({ ...ready, Busy: true })).toBe('Working…');
+    });
+
+    it("repeats the send preview's refusal", () => {
+        expect(SendDisabledReason({ ...ready, Blocked: 'The bill-to party has no billing email.' })).toBe('The bill-to party has no billing email.');
+    });
+
+    it('names the most fundamental reason first', () => {
+        const all: SendButtonState = { OrderStatus: 'Draft', EditMode: true, Dirty: true, Busy: true, Blocked: 'No email.' };
+        expect(SendDisabledReason(all)).toBe('Available once the order is confirmed');
+        expect(SendDisabledReason({ ...all, OrderStatus: 'Confirmed' })).toBe('Save or discard your edits first');
+        expect(SendDisabledReason({ ...all, OrderStatus: 'Confirmed', EditMode: false, Dirty: false })).toBe('Working…');
+    });
 });
 
 describe('CanCancel', () => {
@@ -104,10 +193,10 @@ describe('how a row reads', () => {
     });
 
     it('styles a failure as danger and a live invoice as success', () => {
-        expect(StateChipClass(row('Failed'))).toBe('mj-chip--danger');
-        expect(StateChipClass(row('Sent'))).toBe('mj-chip--success');
-        expect(StateChipClass(row('Sending'))).toBe('mj-chip--info');
-        expect(StateChipClass(row('Canceled'))).toBe('mj-chip--outline');
+        expect(StateChipClass(row('Failed'))).toBe('mjo-chip--error');
+        expect(StateChipClass(row('Sent'))).toBe('mjo-chip--success');
+        expect(StateChipClass(row('Sending'))).toBe('mjo-chip--info');
+        expect(StateChipClass(row('Canceled'))).toBe('mjo-chip--outline');
     });
 });
 
@@ -125,10 +214,10 @@ describe('why a payment is waiting', () => {
     });
 
     it('marks only a needed reversal as danger', () => {
-        expect(DispositionChipClass('ReversalNeeded')).toBe('mj-chip--danger');
-        expect(DispositionChipClass('Held')).toBe('mj-chip--info');
-        expect(DispositionChipClass('Unmatched')).toBe('mj-chip--outline');
-        expect(DispositionChipClass('Refused')).toBe('mj-chip--outline');
+        expect(DispositionChipClass('ReversalNeeded')).toBe('mjo-chip--error');
+        expect(DispositionChipClass('Held')).toBe('mjo-chip--info');
+        expect(DispositionChipClass('Unmatched')).toBe('mjo-chip--outline');
+        expect(DispositionChipClass('Refused')).toBe('mjo-chip--outline');
     });
 });
 
