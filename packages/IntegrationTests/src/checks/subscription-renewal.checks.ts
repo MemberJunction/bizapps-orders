@@ -1042,8 +1042,10 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                          OR je.ID IN (SELECT JournalEntryID FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${orderID}'))`,
                 );
                 // The BUSINESS day the instalment was issued (#209), which is what the entry is
-                // dated by — not the UTC day of the InvoicedAt instant.
-                const invoiceDay = Today();
+                // dated by — not the UTC day of the InvoicedAt instant. A pass run as of a day already
+                // gone invoices on that day (#831), and this subscription is bought on a fixed date, so
+                // from 60 days before its term ends the pass day here is in the past.
+                const invoiceDay = asOf < Today() ? asOf : Today();
                 const orderDay = isoDate(daysBefore(Term.EndDate, -1));
                 AssertEqual(
                     Math.round(ar.reduce((t, l) => t + Number(l.DebitAmount ?? 0) - Number(l.CreditAmount ?? 0), 0) * 100) / 100,

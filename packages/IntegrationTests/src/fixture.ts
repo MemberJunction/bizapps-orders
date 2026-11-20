@@ -324,12 +324,14 @@ export async function InRolledBackTransaction(
 ): Promise<void> {
     const p = provider(ctx);
     await p.BeginTransaction();
+    const restoreEngineCaching = ApplyEngineCacheChangesInsideTransaction(p);
     try {
         // Work the code under test runs on an isolated provider (`WithIsolatedProvider`: the checkout
         // capture, the webhook's delivery row) joins this transaction instead. On its own connection it
         // would wait on this transaction's locks while the check waited for it (#947).
         await JoinCallerTransactionForTests(p, body);
     } finally {
+        restoreEngineCaching();
         try {
             // A trigger that refused a write has already rolled the transaction back on the server.
             // mssql marks it `_aborted` but leaves its last request recorded as active, and from 6.1.4
@@ -353,6 +355,54 @@ export async function InRolledBackTransaction(
         }
         await ReloadOrdersEngine(ctx);
     }
+}
+
+/**
+ * Let an engine's cache follow a save made INSIDE the check's transaction, for as long as `p` stays
+ * hooked. Returns the function that removes the hook.
+ *
+ * WHY. A check writes the catalog row it is about (a price, a promotion, a tax rule, an intercompany
+ * pair) through the entity and then confirms an order, all inside one transaction that rolls back.
+ * The code under test reads those rows from engines that cache them (`OrdersEngine`, accounting's
+ * engine) and are kept current by `BaseEngine` reacting to each save. `BaseEngine` holds that
+ * reaction until the enclosing transaction commits and drops it on rollback, which is right for a
+ * server: a rolled-back row must not stay cached. Here the transaction never commits, so the engine
+ * would answer with the committed row for the whole check and the check would be judged against a
+ * price it did not set.
+ *
+ * HOW. `BaseEngine` hands its cache change to the provider's `RunAfterCommit` under a description
+ * beginning `BaseEngine`. While hooked, such a task runs at once and everything else registered for
+ * after-commit is passed through untouched, so it is still dropped with the rollback. The rows this
+ * leaves in `OrdersEngine` are cleared by the reload that follows every rollback.
+ *
+ * It depends on that description, which is the engine's own log label and not a contract. If the
+ * label changes, the hook stops matching and the checks that set a price fail again, naming the
+ * committed price: that is the symptom to recognise.
+ */
+function ApplyEngineCacheChangesInsideTransaction(p: unknown): () => void {
+    type PostCommitTask = () => unknown;
+    type Hooked = { RunAfterCommit?: (task: PostCommitTask, description?: string, token?: unknown) => void };
+    const target = p as Hooked;
+    const original = target.RunAfterCommit;
+    if (typeof original !== 'function') return () => undefined;
+    const ownBefore = Object.prototype.hasOwnProperty.call(target, 'RunAfterCommit');
+
+    target.RunAfterCommit = function (this: unknown, task: PostCommitTask, description?: string, token?: unknown): void {
+        if (typeof description === 'string' && description.startsWith('BaseEngine')) {
+            // Never rethrown, as the provider's own after-commit path never rethrows: a cache change
+            // that fails must not fail the save that caused it.
+            void Promise.resolve()
+                .then(task)
+                .catch((e) => console.error(`An engine cache change inside the check's transaction failed (${description}):`, e));
+            return;
+        }
+        original.call(this, task, description, token);
+    };
+
+    return () => {
+        if (ownBefore) target.RunAfterCommit = original;
+        else delete target.RunAfterCommit;
+    };
 }
 
 /**
