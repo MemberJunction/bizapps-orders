@@ -215,6 +215,7 @@ async function generate() {
   dropPlatformBindingPins(rootPkg.PnpmSettings?.overrides ?? {});
   dropOlderMajorPins(rootPkg.PnpmSettings?.overrides ?? {});
   preferMjResolutions(members, rootPkg.PnpmSettings?.overrides ?? {});
+  pinLockstepFamilies(members, rootPkg.PnpmSettings?.overrides ?? {});
   const files = [
     { Name: 'pnpm-workspace.yaml', Content: BuildWorkspaceYaml(members, rootPkg.PnpmSettings) },
     { Name: '.npmrc', Content: BuildNpmrc() },
@@ -317,13 +318,62 @@ function preferMjResolutions(members, overrides) {
     const candidates = [...(mjVersions.get(name) ?? [])].filter((v) => v.split('.')[0] === major && v !== pinned);
     if (candidates.length !== 1 || mjVersions.get(name).has(pinned)) continue;
     const mjVersion = candidates[0];
-    if (!(declared.get(name) ?? []).every((range) => satisfies(mjVersion, range))) continue;
+    // A member that declares a range MJ's version does not meet (bizapps-common pins `beasties`
+    // 0.3.5 exactly) keeps its own version through a `member>name` selector; everything else,
+    // including the Angular build tooling that needs MJ's 0.4.1, gets MJ's resolution.
+    const unmet = (declared.get(name) ?? []).filter((d) => !satisfies(mjVersion, d.range));
+    if (unmet.some((d) => !d.owner || !satisfies(pinned, d.range))) continue;
     overrides[key] = mjVersion;
-    changed.push(`${key} ${pinned} -> ${mjVersion}`);
+    for (const d of unmet) overrides[`${d.owner}>${name}`] = pinned;
+    changed.push(`${key} ${pinned} -> ${mjVersion}${unmet.length > 0 ? ` (kept ${pinned} for ${unmet.map((d) => d.owner).join(', ')})` : ''}`);
   }
   if (changed.length > 0) log(`kept MJ's lockfile resolution for ${changed.length}: ${changed.join(', ')}`);
 }
 
+/**
+ * The generator pins what members declare directly; everything below floats on generation day.
+ * That splits packages released in lockstep: Angular's build resolved parse5-sax-parser 8.0.1
+ * (unpinned, newest) against parse5 8.0.0 (pinned), and every `ng build` died in the HTML
+ * rewriter. For each pin `name = V`, an undeclared package of the same family (`name-*`, or the
+ * same npm scope) that MJ's lockfile resolves to exactly V is pinned to V as well. Unrelated
+ * transitives keep floating: holding all of them to MJ split other pairs the other way.
+ */
+function pinLockstepFamilies(members, overrides) {
+  const mj = members.find((m) => m.Name === 'MJ');
+  const resolutions = mj?.Lockfile?.Resolutions;
+  if (!Array.isArray(resolutions)) return;
+  const versions = new Map();
+  for (const entry of resolutions) {
+    if (!versions.has(entry.Name)) versions.set(entry.Name, new Set());
+    versions.get(entry.Name).add(entry.Version);
+  }
+  const declared = declaredRanges(members);
+  const pinned = new Map();
+  for (const [key, value] of Object.entries(overrides)) {
+    const name = /^(@?[^@>]+)(?:@\^\d+)?$/.exec(key)?.[1];
+    if (name && typeof value === 'string' && /^\d+\.\d+\.\d+/.test(value)) pinned.set(name, value);
+  }
+  const added = [];
+  for (const [name, set] of versions) {
+    if (set.size !== 1 || declared.has(name) || pinned.has(name) || PLATFORM_BINDING.test(name) || name.startsWith('@memberjunction/')) continue;
+    const [version] = set;
+    for (const [pinnedName, pinnedVersion] of pinned) {
+      if (pinnedVersion !== version || !sameFamily(name, pinnedName)) continue;
+      overrides[name] = version;
+      added.push(`${name}@${version}`);
+      break;
+    }
+  }
+  if (added.length > 0) log(`pinned ${added.length} lockstep packages with their family: ${added.join(', ')}`);
+}
+
+function sameFamily(name, pinnedName) {
+  if (name.startsWith(`${pinnedName}-`)) return true;
+  const scope = (n) => (n.startsWith('@') ? n.split('/')[0] : null);
+  return scope(name) !== null && scope(name) === scope(pinnedName);
+}
+
+/** Every declared range for each package, with the name of the manifest that declares it. */
 function declaredRanges(members) {
   const ranges = new Map();
   for (const member of members) {
@@ -332,7 +382,7 @@ function declaredRanges(members) {
       for (const deps of [manifest?.dependencies, manifest?.devDependencies, manifest?.peerDependencies, manifest?.optionalDependencies]) {
         for (const [name, range] of Object.entries(deps ?? {})) {
           if (!ranges.has(name)) ranges.set(name, []);
-          ranges.get(name).push(range);
+          ranges.get(name).push({ range, owner: manifest?.name });
         }
       }
     }
