@@ -152,7 +152,7 @@ function cloneSiblings() {
       if (cloned.size >= MAX_SIBLINGS) fail(`more than ${MAX_SIBLINGS} sibling apps; is mj-app.json cyclic?`);
       const target = path.join(parentDir, dirName);
       try {
-        const sha = shallowCloneQuiet(`https://github.com/${owner}/${repo}`, 'next', target);
+        const sha = cloneSibling(owner, repo, target);
         cloned.set(dirName, { appId, repo: `${owner}/${repo}`, sha });
         queue.push(target);
       } catch (error) {
@@ -164,10 +164,31 @@ function cloneSiblings() {
   return cloned;
 }
 
-function shallowCloneQuiet(url, ref, dir) {
+/**
+ * Public siblings clone anonymously. A private or internal one (bizapps-caliber is internal)
+ * needs SIBLING_TOKEN, an org App token the caller mints; it is passed to git through an
+ * environment-scoped header, never in the URL, so it cannot reach a log or an error message.
+ */
+function cloneSibling(owner, repo, target) {
+  const url = `https://github.com/${owner}/${repo}`;
+  try {
+    return shallowCloneQuiet(url, 'next', target);
+  } catch (error) {
+    const token = process.env.SIBLING_TOKEN;
+    if (!token) throw error;
+    const basic = Buffer.from(`x-access-token:${token}`).toString('base64');
+    return shallowCloneQuiet(url, 'next', target, {
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+      GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${basic}`,
+    });
+  }
+}
+
+function shallowCloneQuiet(url, ref, dir, extraEnv = {}) {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0' };
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...extraEnv };
   capture('git', ['init', '-q'], { cwd: dir, env });
   capture('git', ['fetch', '-q', '--depth', '1', '--no-tags', url, ref], { cwd: dir, env });
   capture('git', ['checkout', '-q', 'FETCH_HEAD'], { cwd: dir, env });
@@ -386,12 +407,17 @@ function prepare() {
  * package pnpm hoists (`@types/express` 4 instead of 5), and MJ's server stops compiling.
  */
 function install() {
-  run('pnpm', ['install', '--no-frozen-lockfile'], { cwd: parentDir });
+  // Lifecycle scripts are off for this install because a member's own `prepare` can need MJ's
+  // dist/, which does not exist yet (bizapps-caliber's Angular package runs its prebuild there).
+  // Dependencies' install scripts (esbuild, lmdb, sharp ...) then run through `pnpm rebuild`, and
+  // a member's prebuild still runs as part of its own build.
+  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], { cwd: parentDir });
+  run('pnpm', ['rebuild'], { cwd: parentDir });
 }
 
 /** Re-links package bins (e.g. `mj`) whose targets only exist once dist/ is built. */
 function relink() {
-  run('pnpm', ['install', '--no-frozen-lockfile', '--offline'], { cwd: parentDir });
+  run('pnpm', ['install', '--no-frozen-lockfile', '--offline', '--ignore-scripts'], { cwd: parentDir });
 }
 
 function fetchDist() {

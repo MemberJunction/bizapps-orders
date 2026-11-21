@@ -29,6 +29,19 @@ inputs:
   mode:
     description: auto (from the event), next, or published.
     default: auto
+  app-client-id:
+    description: >-
+      Optional. With app-private-key, mints an org App token so next mode can clone private or
+      internal sibling apps (e.g. bizapps-caliber). Public siblings never need it.
+    default: ''
+  app-private-key:
+    description: Optional. The org App's private key, paired with app-client-id.
+    default: ''
+
+outputs:
+  mode:
+    description: The install mode that ran — next or published — for steps that differ by mode.
+    value: ${{ steps.mode.outputs.mode }}
 
 runs:
   using: composite
@@ -66,12 +79,23 @@ runs:
       shell: bash
       run: command -v pnpm >/dev/null || npm install -g pnpm@10.33.0
 
+    - name: Token for private sibling apps
+      id: app-token
+      if: steps.mode.outputs.mode == 'next' && inputs.app-client-id != '' && inputs.app-private-key != ''
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        private-key: ${{ inputs.app-private-key }}
+        owner: MemberJunction
+        permission-contents: read
+
     - name: Clone MJ next and sibling apps, generate the workspace
       id: prepare
       if: steps.mode.outputs.mode == 'next'
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        SIBLING_TOKEN: ${{ steps.app-token.outputs.token }}
       run: node "$GITHUB_ACTION_PATH/mj-next-workspace.mjs" prepare
 
     - name: Install the workspace
