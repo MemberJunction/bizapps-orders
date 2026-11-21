@@ -447,7 +447,9 @@ async function zeroRenewalBooked(subscriptionID: string, invoiceID: string, prov
             EntityName: SUBSCRIPTION_EVENT_ENTITY,
             ExtraFilter:
                 `SubscriptionID = '${RequireUUID(subscriptionID, 'SubscriptionID')}' AND EventType = 'PaymentSucceeded' ` +
-                `AND EventData LIKE '%"InvoiceID":"${EscapeText(invoiceID)}"%'`,
+                // Gateway-originated id: escape LIKE wildcards too, or a % / _ in the value broadens
+                // the match and can report "already booked" for a renewal that was not (ESCAPE '\').
+                `AND EventData LIKE '%"InvoiceID":"${EscapeText(invoiceID).replace(/[\\[%_]/g, '\\$&')}"%' ESCAPE '\\'`,
             Fields: ['ID'],
             ResultType: 'simple',
             BypassCache: true,
