@@ -359,12 +359,20 @@ function pinLockstepFamilies(members, overrides) {
     const [version] = set;
     for (const [pinnedName, pinnedVersion] of pinned) {
       if (pinnedVersion !== version || !sameFamily(name, pinnedName)) continue;
-      overrides[name] = version;
+      // Within that major only: another major of the same family (typescript-eslint 8 beside MJ's
+      // @typescript-eslint 7) keeps its own versions.
+      overrides[`${name}@${majorRange(version)}`] = version;
       added.push(`${name}@${version}`);
       break;
     }
   }
   if (added.length > 0) log(`pinned ${added.length} lockstep packages with their family: ${added.join(', ')}`);
+}
+
+/** The caret range of a version's major (`^7`), or of its minor for 0.x (`~0.4`). */
+function majorRange(version) {
+  const [major, minor] = version.split('.');
+  return major === '0' ? `~0.${minor}` : `^${major}`;
 }
 
 function sameFamily(name, pinnedName) {
