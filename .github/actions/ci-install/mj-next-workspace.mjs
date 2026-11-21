@@ -204,10 +204,10 @@ function generateWorkspace() {
 
 async function generate() {
   const lib = process.env.MJ_WORKSPACE_LIB;
-  const { DetectCandidates } = await import(path.join(lib, 'detect.ts'));
+  const { DetectCandidates, LoadRepo, ParseWorkspacePackagesGlobs, SelectAppGlobs } = await import(path.join(lib, 'detect.ts'));
   const { AssertAppPackageNamesUnique, BuildRootPackageJson, BuildWorkspaceYaml, BuildNpmrc } = await import(path.join(lib, 'build.ts'));
   const { WriteWorkspaceFiles } = await import(path.join(lib, 'write.ts'));
-  const members = DetectCandidates(parentDir);
+  const members = withOwnAppGlobs(DetectCandidates(parentDir), { LoadRepo, ParseWorkspacePackagesGlobs, SelectAppGlobs });
   log(`members: ${members.map((m) => m.Name).join(', ')}`);
   AssertAppPackageNamesUnique(members);
   const rootPkg = BuildRootPackageJson(path.basename(parentDir), members);
@@ -222,6 +222,30 @@ async function generate() {
   ];
   const result = WriteWorkspaceFiles(parentDir, files, true);
   log(`wrote ${result.Written.join(', ')} at ${parentDir}`);
+}
+
+/**
+ * The generator admits only `packages/*` from each member, because app shells (`apps/*`) collide
+ * across repos. The app under test is the exception: its own non-packages workspace members (an
+ * `e2e` project, `apps/MJAPI`) are part of its CI, and no other member can collide with them. This
+ * is `mj dev workspace --apps` applied to that one member.
+ */
+function withOwnAppGlobs(members, { LoadRepo, ParseWorkspacePackagesGlobs, SelectAppGlobs }) {
+  const yamlPath = path.join(appDir, 'pnpm-workspace.yaml');
+  if (!existsSync(yamlPath)) return members;
+  const appGlobs = ParseWorkspacePackagesGlobs(readFileSync(yamlPath, 'utf8')).filter((glob) => {
+    const body = glob.replace(/^\.\//, '');
+    if (glob.startsWith('!') || body.startsWith('packages/') || body === '.' || body === '') return false;
+    try {
+      return SelectAppGlobs([glob]).length === 1;
+    } catch {
+      log(`not admitting ${appName}'s workspace glob '${glob}' (a shape the generator does not take)`);
+      return false;
+    }
+  });
+  if (appGlobs.length === 0) return members;
+  log(`admitting ${appName}'s own workspace members: ${appGlobs.join(', ')}`);
+  return members.map((member) => (member.Name === appName ? LoadRepo(parentDir, appName, { AppGlobs: appGlobs }) ?? member : member));
 }
 
 /**
