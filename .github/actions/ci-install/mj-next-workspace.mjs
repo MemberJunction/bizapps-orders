@@ -407,12 +407,27 @@ function prepare() {
  * package pnpm hoists (`@types/express` 4 instead of 5), and MJ's server stops compiling.
  */
 function install() {
-  // Lifecycle scripts are off for this install because a member's own `prepare` can need MJ's
-  // dist/, which does not exist yet (bizapps-caliber's Angular package runs its prebuild there).
-  // Dependencies' install scripts (esbuild, lmdb, sharp ...) then run through `pnpm rebuild`, and
-  // a member's prebuild still runs as part of its own build.
-  run('pnpm', ['install', '--no-frozen-lockfile', '--ignore-scripts'], { cwd: parentDir });
-  run('pnpm', ['rebuild'], { cwd: parentDir });
+  const logFile = path.join(process.env.RUNNER_TEMP || parentDir, 'mj-next-install.log');
+  const result = spawnSync('bash', ['-c', `set -o pipefail; pnpm install --no-frozen-lockfile 2>&1 | tee "${logFile}"`], {
+    cwd: parentDir,
+    stdio: 'inherit',
+  });
+  if (result.status === 0) return;
+  const failedMember = memberLifecycleFailure(readFileSync(logFile, 'utf8'));
+  if (!failedMember) fail(`pnpm install exited ${result.status}`);
+  // A workspace member's own install-time script (bizapps-caliber's Angular `prepare` runs its
+  // prebuild) can need MJ's dist/, which does not exist until the build step. Dependencies'
+  // scripts have already run by then; finish the linking without lifecycle scripts and carry on.
+  // The member's prebuild still runs as part of its own build.
+  log(`${failedMember} failed at install time, before MJ is built; finishing the install without lifecycle scripts`);
+  run('pnpm', ['install', '--no-frozen-lockfile', '--offline', '--ignore-scripts'], { cwd: parentDir });
+}
+
+/** The workspace member whose own lifecycle script failed the install, if that is the only failure. */
+function memberLifecycleFailure(output) {
+  const match = /^(\S+) (preinstall|install|postinstall|prepare): Failed$/m.exec(output.replace(/\x1b\[[0-9;]*m/g, ''));
+  if (!match || match[1].includes('node_modules')) return null;
+  return `${match[1]} (${match[2]})`;
 }
 
 /** Re-links package bins (e.g. `mj`) whose targets only exist once dist/ is built. */
