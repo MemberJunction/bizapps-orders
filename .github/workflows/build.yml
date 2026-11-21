@@ -43,7 +43,7 @@ jobs:
     # unlike a workflow filtered out at the `on:` level, which creates no check run at all.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -82,8 +82,11 @@ jobs:
       - name: CI guard specs
         run: node --test .github/scripts/__tests__/*.spec.mjs
 
+      # PRs into next (and next itself) build against MJ next and the sibling apps' next, from
+      # source, in one generated pnpm workspace; release PRs and lts/* lines install the committed
+      # lockfile, i.e. the published versions. See .github/actions/ci-install/action.yml.
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        uses: ./.github/actions/ci-install
 
       - name: Build all packages
         run: pnpm run build:packages
