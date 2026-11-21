@@ -144,6 +144,19 @@
     color: var(--mj-text-secondary);
 }
 
+.mjo-oh-reversal {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mj-space-2);
+    margin-top: var(--mj-space-3);
+}
+
+.mjo-oh-reversal__reason {
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-secondary);
+}
+
 .mjo-oh-kicker {
     font-size: var(--mj-text-xs);
     font-weight: var(--mj-font-bold);
