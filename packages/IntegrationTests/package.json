@@ -31,15 +31,15 @@
     "@mj-biz-apps/orders-core-entities-server": "^5.51.0"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^6.2.1",
-    "@memberjunction/global": "^6.2.1",
-    "@memberjunction/testing-integration": "^6.2.1",
+    "@memberjunction/core": "^6.3.0-edge.1",
+    "@memberjunction/global": "^6.3.0-edge.1",
+    "@memberjunction/testing-integration": "^6.3.0-edge.1",
     "@mj-biz-apps/accounting-engine-base": ">=0.24.0 <1.0.0",
     "@mj-biz-apps/accounting-server": ">=0.24.0 <1.0.0",
     "@mj-biz-apps/common-entities": ">=5.56.0 <6.0.0",
-    "@memberjunction/actions": "^6.2.1",
-    "@memberjunction/actions-base": "^6.2.1",
-    "@memberjunction/core-entities": "^6.2.1"
+    "@memberjunction/actions": "^6.3.0-edge.1",
+    "@memberjunction/actions-base": "^6.3.0-edge.1",
+    "@memberjunction/core-entities": "^6.3.0-edge.1"
   },
   "repository": {
     "type": "git",
