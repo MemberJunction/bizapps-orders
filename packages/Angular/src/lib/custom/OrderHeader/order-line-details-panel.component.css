@@ -122,6 +122,13 @@
 
 .mjo-ldp__section-hint { margin: var(--mj-space-1) 0 var(--mj-space-4); }
 
+/* A second section on the panel (revenue recognition, golive #495) is set apart from the one above. */
+.mjo-ldp__section--divided {
+    margin-top: var(--mj-space-5);
+    padding-top: var(--mj-space-5);
+    border-top: 1px solid var(--mj-border-default);
+}
+
 .mjo-ldp__locked {
     margin: 0 0 var(--mj-space-4);
     padding: var(--mj-space-2) var(--mj-space-3);

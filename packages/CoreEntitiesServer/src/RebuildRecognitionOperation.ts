@@ -130,7 +130,7 @@ export class RebuildRecognitionOperation extends OrdersRebuildRecognitionOperati
         };
         const summary = (verb: string) =>
             `${label}: ${verb} ${plan.Voided.length} pending entr${plan.Voided.length === 1 ? 'y' : 'ies'} and ` +
-            `${preview ? 'would stage' : 'staged'} ${plan.Created.length} under ${revRec.Name}, ${plan.AmountReplaced.toFixed(2)} in all.` +
+            `${preview ? 'would stage' : 'staged'} ${plan.Created.length} under ${revRec.Name}, ${amount(plan.AmountReplaced)} in all.` +
             (plan.Kept.length ? ` ${plan.Kept.length} batched or posted entr${plan.Kept.length === 1 ? 'y stays' : 'ies stay'}.` : '');
         if (preview) {
             return { Success: true, Preview: true, ...numbers, OrderLineRecognitionRebuildID: null, Message: summary('would void') };
@@ -187,6 +187,11 @@ export class RebuildRecognitionOperation extends OrdersRebuildRecognitionOperati
         if (progress.Results.length) return 'it has progress recorded against it.';
         return null;
     }
+}
+
+/** An amount as finance reads it: grouped, two decimals. */
+function amount(value: number): string {
+    return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function refuse(preview: boolean, message: string, echo: Partial<OrdersRebuildRecognitionOutput> = {}): OrdersRebuildRecognitionOutput {
