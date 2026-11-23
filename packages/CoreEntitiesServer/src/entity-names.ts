@@ -67,3 +67,5 @@ export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Famil
 
 /** What each instalment invoice billed each line, part by part (#681). */
 export const INSTALMENT_LINE_BILLING_ENTITY = 'MJ_BizApps_Orders: Instalment Line Billings';
+/** One rebuild of a confirmed line's revenue recognition (golive #495). */
+export const ORDER_LINE_RECOGNITION_REBUILD_ENTITY = 'MJ_BizApps_Orders: Order Line Recognition Rebuilds';

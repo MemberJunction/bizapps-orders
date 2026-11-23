@@ -734,5 +734,59 @@
       "lastModified": "2026-09-27T18:11:41.514Z",
       "checksum": "3aaabb59f796836d5a822fa2585fb8a3ec024e5b03584d97f6602fefd3e9033d"
     }
+  },
+  {
+    "fields": {
+      "Name": "Rebuild Recognition",
+      "OperationKey": "Orders.RebuildRecognition",
+      "Description": "Rebuild a confirmed, non-subscription order line's revenue recognition from its product's current recognition type (golive #495). The line's RevenueRecognition entries still Pending in no batch are voided (Accounting.VoidPendingJournalEntries) and what they were going to recognize is staged again through the current type's driver, over what is left of the line's service period after the entries already batched or posted; their accounts, dimensions and discount share are kept. Records the run, its reason and the entries voided and created on OrderLineRecognitionRebuild. Preview computes without writing. Requires MJ.BizApps.Orders.Recognition.Rebuild. Refuses an unconfirmed line, a reversal, a line with returns, a subscription line, a line with recorded progress, a current type that is up front or measured by progress, a line with nothing staged (booked up front), and a schedule the staged entries do not add up to.",
+      "InputTypeName": "OrdersRebuildRecognitionInput",
+      "InputTypeDefinition": "@file:types/orders-rebuild-recognition.input.ts",
+      "OutputTypeName": "OrdersRebuildRecognitionOutput",
+      "OutputTypeDefinition": "@file:types/orders-rebuild-recognition.output.ts",
+      "RequiredScope": "orders:write",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A96D6ADD-870F-41E5-9BB3-05C9DC03AE0D"
+    },
+    "sync": {
+      "lastModified": "2026-11-23T21:24:36.624Z",
+      "checksum": "573a841964326741fa0306e9f97f1e7113336c9bd994526af69a5e22421cf634"
+    }
+  },
+  {
+    "fields": {
+      "Name": "List Recognition Rebuild Candidates",
+      "OperationKey": "Orders.ListRecognitionRebuildCandidates",
+      "Description": "The confirmed, non-subscription order lines of a product that still hold RevenueRecognition entries Pending in no batch, so would follow a new schedule if rebuilt (golive #495). Shown after the product's recognition type changes, so finance knows which orders to rebuild with Orders.RebuildRecognition. Read only.",
+      "InputTypeName": "OrdersListRecognitionRebuildCandidatesInput",
+      "InputTypeDefinition": "@file:types/orders-list-recognition-rebuild-candidates.input.ts",
+      "OutputTypeName": "OrdersListRecognitionRebuildCandidatesOutput",
+      "OutputTypeDefinition": "@file:types/orders-list-recognition-rebuild-candidates.output.ts",
+      "RequiredScope": "orders:read",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "InputTypeIsArray": false,
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "80966A2E-3354-475F-8413-3F559572087D"
+    },
+    "sync": {
+      "lastModified": "2026-11-23T21:24:36.644Z",
+      "checksum": "2fade7040cf517149ce135123417db67b203960d2ce5aa16e9f299bfefc71404"
+    }
   }
 ]

@@ -1950,6 +1950,37 @@ export interface ListEntitlementsOutput {
 }
 
 /**
+ * Input for `Orders.ListRecognitionRebuildCandidates`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersListRecognitionRebuildCandidatesInput {
+    /** The product whose booked lines are listed. */
+    ProductID: string;
+}
+
+/**
+ * Output for `Orders.ListRecognitionRebuildCandidates`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersRecognitionRebuildCandidate {
+    OrderLineID: string;
+    OrderHeaderID: string;
+    OrderNumber: string;
+    LineNumber: number;
+    /** How many of the line's RevenueRecognition entries are still Pending in no batch. */
+    PendingEntries: number;
+}
+
+export interface OrdersListRecognitionRebuildCandidatesOutput {
+    Success: boolean;
+    Message?: string;
+    /** Oldest order first. */
+    Lines?: OrdersRecognitionRebuildCandidate[];
+}
+
+/**
  * Input for `Orders.PollExternalPayments`.
  *
  * Read receivable payments from every company's external AR rail (Bill.com) since the last
@@ -2211,6 +2242,66 @@ export interface PriceOrderOutput {
      * screen can too, before the order is saved.
      */
     UnusableCodes: Array<{ Code: string; Reason: string }>;
+}
+
+/**
+ * Input for `Orders.RebuildRecognition`.
+ *
+ * Rebuild one confirmed order line's revenue recognition from its product's current recognition type
+ * (golive #495). The entries still Pending in no batch are voided and staged again; entries already
+ * batched or posted stay, and the new schedule covers only what they have not recognized.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersRebuildRecognitionInput {
+    /** The confirmed, non-subscription order line to rebuild. */
+    OrderLineID: string;
+    /** Why the schedule is rebuilt. Recorded on the rebuild and on each voided entry. Required unless previewing. */
+    Reason?: string | null;
+    /** Compute and return what WOULD change, writing nothing, for the confirmation step. */
+    Preview?: boolean;
+}
+
+/**
+ * Output for `Orders.RebuildRecognition`.
+ *
+ * What the rebuild voids, keeps and creates, returned whether or not anything was written.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersRebuildRecognitionEntry {
+    /** Null for an entry a preview would create. */
+    JournalEntryID?: string | null;
+    /** Null for an entry a preview would create. */
+    EntryNumber?: string | null;
+    /** YYYY-MM-DD. */
+    EffectiveDate: string;
+    /** What the entry releases from Deferred Revenue. */
+    Amount: number;
+    /** The entry's status: Pending, Batched or GLPosted. Null for a new entry. */
+    Status?: string | null;
+}
+
+export interface OrdersRebuildRecognitionOutput {
+    Success: boolean;
+    Message?: string;
+    /** True when `Preview` was set: nothing was written. */
+    Preview: boolean;
+    OrderNumber?: string;
+    LineNumber?: number;
+    ProductName?: string;
+    /** The product's current recognition type, which the new schedule follows. */
+    RevenueRecognitionTypeName?: string;
+    /** Entries already batched or posted: left as they are. */
+    Kept?: OrdersRebuildRecognitionEntry[];
+    /** Entries still Pending in no batch: voided. */
+    Voided?: OrdersRebuildRecognitionEntry[];
+    /** The new schedule. */
+    Created?: OrdersRebuildRecognitionEntry[];
+    /** What the voided entries were going to recognize, and so what the new schedule recognizes. */
+    AmountReplaced?: number;
+    /** The OrderLineRecognitionRebuild row. Null on a preview. */
+    OrderLineRecognitionRebuildID?: string | null;
 }
 
 /**
@@ -3410,6 +3501,24 @@ export class OrdersListEntitlementsOperation extends BaseRemotableOperation<List
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-read";
     public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_96653f3c5ff495b2";
+}
+
+// ============================================================
+// Orders.ListRecognitionRebuildCandidates — List Recognition Rebuild Candidates
+// ============================================================
+/**
+ * List Recognition Rebuild Candidates
+ * The confirmed, non-subscription order lines of a product that still hold RevenueRecognition entries Pending in no batch, so would follow a new schedule if rebuilt (golive #495). Shown after the product's recognition type changes, so finance knows which orders to rebuild with Orders.RebuildRecognition. Read only.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ListRecognitionRebuildCandidates'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersListRecognitionRebuildCandidatesOperation extends BaseRemotableOperation<OrdersListRecognitionRebuildCandidatesInput, OrdersListRecognitionRebuildCandidatesOutput> {
+    public readonly OperationKey = "Orders.ListRecognitionRebuildCandidates";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
+    public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_e88cae52c98f4a84";
 }
 
 // ============================================================
@@ -3458,6 +3567,24 @@ export class OrdersPriceOrderOperation extends BaseRemotableOperation<PriceOrder
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_2a8ff523f16a9b99";
+}
+
+// ============================================================
+// Orders.RebuildRecognition — Rebuild Recognition
+// ============================================================
+/**
+ * Rebuild Recognition
+ * Rebuild a confirmed, non-subscription order line's revenue recognition from its product's current recognition type (golive #495). The line's RevenueRecognition entries still Pending in no batch are voided (Accounting.VoidPendingJournalEntries) and what they were going to recognize is staged again through the current type's driver, over what is left of the line's service period after the entries already batched or posted; their accounts, dimensions and discount share are kept. Records the run, its reason and the entries voided and created on OrderLineRecognitionRebuild. Preview computes without writing. Requires MJ.BizApps.Orders.Recognition.Rebuild. Refuses an unconfirmed line, a reversal, a line with returns, a subscription line, a line with recorded progress, a current type that is up front or measured by progress, a line with nothing staged (booked up front), and a schedule the staged entries do not add up to.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RebuildRecognition'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRebuildRecognitionOperation extends BaseRemotableOperation<OrdersRebuildRecognitionInput, OrdersRebuildRecognitionOutput> {
+    public readonly OperationKey = "Orders.RebuildRecognition";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_9501035381e703cd";
 }
 
 // ============================================================

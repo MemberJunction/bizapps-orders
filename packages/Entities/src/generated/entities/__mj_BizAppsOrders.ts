@@ -3232,6 +3232,81 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
 export type mjBizAppsOrdersOrderLineProgressMeasurementEntityType = z.infer<typeof mjBizAppsOrdersOrderLineProgressMeasurementSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Order Line Recognition Rebuilds
+ */
+export const mjBizAppsOrdersOrderLineRecognitionRebuildSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The confirmed order line whose recognition was rebuilt.`),
+    RevenueRecognitionTypeID: z.string().describe(`
+        * * Field Name: RevenueRecognitionTypeID
+        * * Display Name: Revenue Recognition Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
+        * * Description: The recognition type the new schedule was built from: the product's type when the rebuild ran.`),
+    RebuiltByUserID: z.string().describe(`
+        * * Field Name: RebuiltByUserID
+        * * Display Name: Rebuilt By User ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user who ran the rebuild.`),
+    RebuiltAt: z.date().describe(`
+        * * Field Name: RebuiltAt
+        * * Display Name: Rebuilt At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When the rebuild ran.`),
+    Reason: z.string().describe(`
+        * * Field Name: Reason
+        * * Display Name: Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why the schedule was rebuilt, as the user stated it. Also the reason recorded on each voided entry.`),
+    AmountReplaced: z.number().describe(`
+        * * Field Name: AmountReplaced
+        * * Display Name: Amount Replaced
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: What the voided entries were going to recognize, and so what the new schedule recognizes.`),
+    VoidedEntries: z.string().describe(`
+        * * Field Name: VoidedEntries
+        * * Display Name: Voided Entries
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: JSON array of the entries voided: JournalEntryID, EntryNumber, EffectiveDate and Amount (what each released from Deferred Revenue).`),
+    CreatedEntries: z.string().describe(`
+        * * Field Name: CreatedEntries
+        * * Display Name: Created Entries
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: JSON array of the entries created: JournalEntryID, EntryNumber, EffectiveDate and Amount.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    RevenueRecognitionType: z.string().nullable().describe(`
+        * * Field Name: RevenueRecognitionType
+        * * Display Name: Revenue Recognition Type
+        * * SQL Data Type: nvarchar(200)`),
+    RebuiltByUser: z.string().nullable().describe(`
+        * * Field Name: RebuiltByUser
+        * * Display Name: Rebuilt By User
+        * * SQL Data Type: nvarchar(100)`),
+});
+
+export type mjBizAppsOrdersOrderLineRecognitionRebuildEntityType = z.infer<typeof mjBizAppsOrdersOrderLineRecognitionRebuildSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Lines
  */
 export const mjBizAppsOrdersOrderLineSchema = z.object({
@@ -16916,6 +16991,294 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     */
     get SourceEntity(): string | null {
         return this.Get('SourceEntity');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Order Line Recognition Rebuilds - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: OrderLineRecognitionRebuild
+ * * Base View: vwOrderLineRecognitionRebuilds
+ * * @description One rebuild of a confirmed order line's revenue recognition by Orders.RebuildRecognition: the entries still Pending in no batch were voided and a new schedule was staged from the product's recognition type. Written by the operation only; never edited.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Line Recognition Rebuilds')
+export class mjBizAppsOrdersOrderLineRecognitionRebuildEntity extends BaseEntity<mjBizAppsOrdersOrderLineRecognitionRebuildEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Order Line Recognition Rebuilds record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Order Line Recognition Rebuilds record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersOrderLineRecognitionRebuildEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Order Line Recognition Rebuilds entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * AmountReplaced: The replaced amount must be zero or greater.
+    * * CreatedEntries: Created entries must contain valid JSON formatting to properly record generated audit or accounting transaction data.
+    * * Reason: A non-empty reason must be provided and cannot consist solely of whitespace.
+    * * VoidedEntries: Voided entries must be stored as a valid JSON string.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateAmountReplacedNonNegative(result);
+        this.ValidateCreatedEntriesIsValidJson(result);
+        this.ValidateReasonNotEmpty(result);
+        this.ValidateVoidedEntriesIsValidJson(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * The replaced amount must be zero or greater.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateAmountReplacedNonNegative(result: ValidationResult) {
+    	if (this.AmountReplaced != null && this.AmountReplaced < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"AmountReplaced",
+    			"Amount replaced must be greater than or equal to zero.",
+    			this.AmountReplaced,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Created entries must contain valid JSON formatting to properly record generated audit or accounting transaction data.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateCreatedEntriesIsValidJson(result: ValidationResult) {
+    	if (this.CreatedEntries != null) {
+    		try {
+    			JSON.parse(this.CreatedEntries);
+    		} catch {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"CreatedEntries",
+    				"Created entries must be a valid JSON string.",
+    				this.CreatedEntries,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
+    * A non-empty reason must be provided and cannot consist solely of whitespace.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateReasonNotEmpty(result: ValidationResult): void {
+    	if (this.Reason == null || this.Reason.trim().length === 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"Reason",
+    			"A reason must be provided and cannot be blank.",
+    			this.Reason,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Voided entries must be stored as a valid JSON string.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateVoidedEntriesIsValidJson(result: ValidationResult) {
+    	if (this.VoidedEntries != null) {
+    		try {
+    			JSON.parse(this.VoidedEntries);
+    		} catch (e) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"VoidedEntries",
+    				"Voided entries must be a valid JSON string.",
+    				this.VoidedEntries,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The confirmed order line whose recognition was rebuilt.
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: RevenueRecognitionTypeID
+    * * Display Name: Revenue Recognition Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Revenue Recognition Types (vwRevenueRecognitionTypes.ID)
+    * * Description: The recognition type the new schedule was built from: the product's type when the rebuild ran.
+    */
+    get RevenueRecognitionTypeID(): string {
+        return this.Get('RevenueRecognitionTypeID');
+    }
+    set RevenueRecognitionTypeID(value: string) {
+        this.Set('RevenueRecognitionTypeID', value);
+    }
+
+    /**
+    * * Field Name: RebuiltByUserID
+    * * Display Name: Rebuilt By User ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user who ran the rebuild.
+    */
+    get RebuiltByUserID(): string {
+        return this.Get('RebuiltByUserID');
+    }
+    set RebuiltByUserID(value: string) {
+        this.Set('RebuiltByUserID', value);
+    }
+
+    /**
+    * * Field Name: RebuiltAt
+    * * Display Name: Rebuilt At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When the rebuild ran.
+    */
+    get RebuiltAt(): Date {
+        return this.Get('RebuiltAt');
+    }
+    set RebuiltAt(value: Date) {
+        this.Set('RebuiltAt', value);
+    }
+
+    /**
+    * * Field Name: Reason
+    * * Display Name: Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why the schedule was rebuilt, as the user stated it. Also the reason recorded on each voided entry.
+    */
+    get Reason(): string {
+        return this.Get('Reason');
+    }
+    set Reason(value: string) {
+        this.Set('Reason', value);
+    }
+
+    /**
+    * * Field Name: AmountReplaced
+    * * Display Name: Amount Replaced
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: What the voided entries were going to recognize, and so what the new schedule recognizes.
+    */
+    get AmountReplaced(): number {
+        return this.Get('AmountReplaced');
+    }
+    set AmountReplaced(value: number) {
+        this.Set('AmountReplaced', value);
+    }
+
+    /**
+    * * Field Name: VoidedEntries
+    * * Display Name: Voided Entries
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: JSON array of the entries voided: JournalEntryID, EntryNumber, EffectiveDate and Amount (what each released from Deferred Revenue).
+    */
+    get VoidedEntries(): string {
+        return this.Get('VoidedEntries');
+    }
+    set VoidedEntries(value: string) {
+        this.Set('VoidedEntries', value);
+    }
+
+    /**
+    * * Field Name: CreatedEntries
+    * * Display Name: Created Entries
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: JSON array of the entries created: JournalEntryID, EntryNumber, EffectiveDate and Amount.
+    */
+    get CreatedEntries(): string {
+        return this.Get('CreatedEntries');
+    }
+    set CreatedEntries(value: string) {
+        this.Set('CreatedEntries', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: RevenueRecognitionType
+    * * Display Name: Revenue Recognition Type
+    * * SQL Data Type: nvarchar(200)
+    */
+    get RevenueRecognitionType(): string | null {
+        return this.Get('RevenueRecognitionType');
+    }
+
+    /**
+    * * Field Name: RebuiltByUser
+    * * Display Name: Rebuilt By User
+    * * SQL Data Type: nvarchar(100)
+    */
+    get RebuiltByUser(): string | null {
+        return this.Get('RebuiltByUser');
     }
 }
 

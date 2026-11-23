@@ -3,7 +3,7 @@ import { LogError } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import { MJConfirmService } from '@memberjunction/ng-ui-components';
-import { OrdersEngine } from '@mj-biz-apps/orders-entities';
+import { OrdersEngine, OrdersListRecognitionRebuildCandidatesOperation } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersProductFormComponent } from '../../generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component';
 
 /** The product type extension entity that makes a product an event product. */
@@ -76,7 +76,40 @@ export class BizAppsProductSaveGuardFormComponent extends mjBizAppsOrdersProduct
             });
             if (!proceed) return false;
         }
-        return super.SaveRecord(StopEditModeAfterSave);
+        const typeChanged = !!this.record?.IsSaved && !!this.record.GetFieldByName('RevenueRecognitionTypeID')?.Dirty;
+        const saved = await super.SaveRecord(StopEditModeAfterSave);
+        if (saved && typeChanged) await this.ShowLinesOnOldSchedule();
+        return saved;
+    }
+
+    /**
+     * After the recognition type changes, names the booked lines that still follow the old schedule (golive #495).
+     * A line keeps the schedule it was confirmed with until finance rebuilds it from the line's details. Fails
+     * quietly: the product is already saved, and a list that cannot be read must not look like a failed save.
+     */
+    protected async ShowLinesOnOldSchedule(): Promise<void> {
+        const productID = this.record?.ID;
+        if (!productID) return;
+        try {
+            const result = await new OrdersListRecognitionRebuildCandidatesOperation().Execute({ ProductID: productID });
+            const lines = result.Success && result.Output?.Success ? result.Output.Lines ?? [] : [];
+            if (lines.length === 0) return;
+            const shown = lines.slice(0, 20).map((l) => `${l.OrderNumber} line ${l.LineNumber}`);
+            const more = lines.length > shown.length ? `, and ${lines.length - shown.length} more` : '';
+            await this.ConfirmService.Confirm({
+                title: 'Booked orders keep their old schedule',
+                message:
+                    `${lines.length} confirmed order line${lines.length === 1 ? '' : 's'} of this product still recognize revenue on the ` +
+                    `schedule they were booked with. To move one to the new type, open its order, show the line's details and ` +
+                    `choose Rebuild revenue recognition.`,
+                detail: `${shown.join(', ')}${more}.`,
+                type: 'info',
+                confirmText: 'OK',
+                cancelText: 'Close',
+            });
+        } catch (e) {
+            LogError(`Listing the lines on the old recognition schedule failed: ${e}`);
+        }
     }
 
     /**

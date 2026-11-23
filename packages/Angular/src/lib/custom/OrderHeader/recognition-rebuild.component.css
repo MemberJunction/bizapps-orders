@@ -1,0 +1,135 @@
+.mjo-rr {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2);
+}
+
+.mjo-rr__title {
+    margin: 0;
+    font-size: var(--mj-text-sm);
+    font-weight: 600;
+}
+
+.mjo-rr__hint,
+.mjo-rr__explain,
+.mjo-rr__reason {
+    margin: 0;
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-muted);
+}
+
+.mjo-rr__history {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--mj-text-sm);
+}
+
+.mjo-rr__when {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    margin-right: var(--mj-space-1);
+}
+
+.mjo-rr__reason {
+    display: block;
+}
+
+.mjo-rr__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-1);
+    font-size: var(--mj-text-sm);
+}
+
+.mjo-rr__field textarea {
+    font: inherit;
+    padding: var(--mj-space-2);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+}
+
+.mjo-rr__tables {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mj-space-3);
+}
+
+.mjo-rr__table {
+    border-collapse: collapse;
+    font-size: var(--mj-text-sm);
+    font-variant-numeric: tabular-nums;
+}
+
+.mjo-rr__table caption {
+    text-align: left;
+    font-weight: 600;
+    padding-bottom: var(--mj-space-1);
+}
+
+.mjo-rr__table th,
+.mjo-rr__table td {
+    padding: var(--mj-space-1) var(--mj-space-2);
+    border-bottom: 1px solid var(--mj-border-default);
+    text-align: left;
+}
+
+.mjo-rr__table .is-num {
+    text-align: right;
+}
+
+.mjo-rr__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--mj-space-2);
+}
+
+.mjo-rr__btn {
+    align-self: flex-start;
+    padding: var(--mj-space-1) var(--mj-space-3);
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+    font-size: var(--mj-text-sm);
+    cursor: pointer;
+}
+
+.mjo-rr__btn.is-primary {
+    background: var(--mj-brand-primary);
+    border-color: var(--mj-brand-primary);
+    color: var(--mj-text-inverse);
+}
+
+.mjo-rr__btn.is-flat {
+    border-color: transparent;
+    background: transparent;
+}
+
+.mjo-rr__btn:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.mjo-rr__btn:focus-visible {
+    outline: 2px solid var(--mj-brand-primary);
+    outline-offset: 2px;
+}
+
+.mjo-rr__done {
+    margin: 0;
+    font-size: var(--mj-text-sm);
+    color: var(--mj-status-success);
+}
+
+.mjo-rr__error {
+    margin: 0;
+    font-size: var(--mj-text-sm);
+    color: var(--mj-status-error);
+}

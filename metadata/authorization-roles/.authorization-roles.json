@@ -124,5 +124,47 @@
     "primaryKey": {
       "ID": "371E0243-B1B6-4C32-8561-011DC1504328"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Recognition.Rebuild",
+      "RoleID": "@lookup:MJ: Roles.Name=Finance",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "17002B14-DE3D-47AE-8768-D55D39B59EF7"
+    },
+    "sync": {
+      "lastModified": "2026-11-23T21:24:38.109Z",
+      "checksum": "667627c826c22073ff613ead8b6fc37532c42648e818b76edc2e9daa1ad9178c"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Recognition.Rebuild",
+      "RoleID": "@lookup:MJ: Roles.Name=CFO",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "30894EBF-CE2F-4B08-8C97-4F7C7CE96FDA"
+    },
+    "sync": {
+      "lastModified": "2026-11-23T21:24:38.122Z",
+      "checksum": "d1c96496b5addd1ecb21c6a96b3533e473e1fd2a762a8989e6671a11b04b8cd7"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Recognition.Rebuild",
+      "RoleID": "@lookup:MJ: Roles.Name=Developer",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "83A19DFC-CBB5-4AD8-8433-05BB12C4B018"
+    },
+    "sync": {
+      "lastModified": "2026-11-23T21:24:38.136Z",
+      "checksum": "46fa41fa375f08144b7ef742852ae872932f0017dbda285ae9a900437ae9f8bd"
+    }
   }
 ]

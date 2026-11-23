@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersInstalmentLineBillingEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesAuthorityMixTierEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersInstalmentLineBillingEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineRecognitionRebuildEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesAuthorityMixTierEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -8255,6 +8255,224 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementResolver extends Resolve
         const provider = GetReadWriteProvider(providers);
         const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
         return this.DeleteRecord('MJ_BizApps_Orders: Order Line Progress Measurements', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Order Line Recognition Rebuilds
+//****************************************************************************
+@ObjectType({ description: "One rebuild of a confirmed order line's revenue recognition by Orders.RebuildRecognition: the entries still Pending in no batch were voided and a new schedule was staged from the product's recognition type. Written by the operation only; never edited." })
+export class mjBizAppsOrdersOrderLineRecognitionRebuild_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: "The confirmed order line whose recognition was rebuilt."}) 
+    @MaxLength(36)
+    OrderLineID?: string;
+        
+    @Field({nullable: true, description: "The recognition type the new schedule was built from: the product's type when the rebuild ran."}) 
+    @MaxLength(36)
+    RevenueRecognitionTypeID?: string;
+        
+    @Field({nullable: true, description: "The user who ran the rebuild."}) 
+    @MaxLength(36)
+    RebuiltByUserID?: string;
+        
+    @Field({nullable: true, description: "When the rebuild ran."}) 
+    RebuiltAt?: Date;
+        
+    @Field({nullable: true, description: "Why the schedule was rebuilt, as the user stated it. Also the reason recorded on each voided entry."}) 
+    @MaxLength(1000)
+    Reason?: string;
+        
+    @Field(() => Float, {nullable: true, description: "What the voided entries were going to recognize, and so what the new schedule recognizes."}) 
+    AmountReplaced?: number;
+        
+    @Field({nullable: true, description: "JSON array of the entries voided: JournalEntryID, EntryNumber, EffectiveDate and Amount (what each released from Deferred Revenue)."}) 
+    VoidedEntries?: string;
+        
+    @Field({nullable: true, description: "JSON array of the entries created: JournalEntryID, EntryNumber, EffectiveDate and Amount."}) 
+    CreatedEntries?: string;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    RevenueRecognitionType?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    RebuiltByUser?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Line Recognition Rebuilds
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersOrderLineRecognitionRebuildInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    OrderLineID?: string;
+
+    @Field({ nullable: true })
+    RevenueRecognitionTypeID?: string;
+
+    @Field({ nullable: true })
+    RebuiltByUserID?: string;
+
+    @Field({ nullable: true })
+    RebuiltAt?: Date;
+
+    @Field({ nullable: true })
+    Reason?: string;
+
+    @Field(() => Float, { nullable: true })
+    AmountReplaced?: number;
+
+    @Field({ nullable: true })
+    VoidedEntries?: string;
+
+    @Field({ nullable: true })
+    CreatedEntries?: string;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Order Line Recognition Rebuilds
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersOrderLineRecognitionRebuildInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    OrderLineID?: string;
+
+    @Field({ nullable: true })
+    RevenueRecognitionTypeID?: string;
+
+    @Field({ nullable: true })
+    RebuiltByUserID?: string;
+
+    @Field({ nullable: true })
+    RebuiltAt?: Date;
+
+    @Field({ nullable: true })
+    Reason?: string;
+
+    @Field(() => Float, { nullable: true })
+    AmountReplaced?: number;
+
+    @Field({ nullable: true })
+    VoidedEntries?: string;
+
+    @Field({ nullable: true })
+    CreatedEntries?: string;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Order Line Recognition Rebuilds
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersOrderLineRecognitionRebuildViewResult {
+    @Field(() => [mjBizAppsOrdersOrderLineRecognitionRebuild_])
+    Results: mjBizAppsOrdersOrderLineRecognitionRebuild_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersOrderLineRecognitionRebuild_)
+export class mjBizAppsOrdersOrderLineRecognitionRebuildResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersOrderLineRecognitionRebuildViewResult)
+    async RunmjBizAppsOrdersOrderLineRecognitionRebuildViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderLineRecognitionRebuildViewResult)
+    async RunmjBizAppsOrdersOrderLineRecognitionRebuildViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersOrderLineRecognitionRebuildViewResult)
+    async RunmjBizAppsOrdersOrderLineRecognitionRebuildDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Order Line Recognition Rebuilds';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersOrderLineRecognitionRebuild_, { nullable: true })
+    async mjBizAppsOrdersOrderLineRecognitionRebuild(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersOrderLineRecognitionRebuild_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Order Line Recognition Rebuilds', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwOrderLineRecognitionRebuilds')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Order Line Recognition Rebuilds', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Order Line Recognition Rebuilds', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderLineRecognitionRebuild_)
+    async CreatemjBizAppsOrdersOrderLineRecognitionRebuild(
+        @Arg('input', () => CreatemjBizAppsOrdersOrderLineRecognitionRebuildInput) input: CreatemjBizAppsOrdersOrderLineRecognitionRebuildInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Order Line Recognition Rebuilds', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersOrderLineRecognitionRebuild_)
+    async UpdatemjBizAppsOrdersOrderLineRecognitionRebuild(
+        @Arg('input', () => UpdatemjBizAppsOrdersOrderLineRecognitionRebuildInput) input: UpdatemjBizAppsOrdersOrderLineRecognitionRebuildInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Order Line Recognition Rebuilds', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersOrderLineRecognitionRebuild_)
+    async DeletemjBizAppsOrdersOrderLineRecognitionRebuild(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Order Line Recognition Rebuilds', key, options, provider, userPayload, pubSub);
     }
     
 }
