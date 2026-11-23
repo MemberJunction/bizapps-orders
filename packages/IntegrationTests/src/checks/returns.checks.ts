@@ -49,7 +49,8 @@ import {
 } from "../fixture.js";
 import { Metadata } from "@memberjunction/core";
 import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
-import { ORDER_HEADER_ENTITY, SALES_AUTHORITY_ENTITY } from "../entity-names.js";
+import type { mjBizAppsOrdersProductEntity } from "@mj-biz-apps/orders-entities";
+import { ORDER_HEADER_ENTITY, PRODUCT_ENTITY, SALES_AUTHORITY_ENTITY } from "../entity-names.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
@@ -816,6 +817,47 @@ export const ReturnsChecks: NamedCheck[] = [
         const back = await lineTotals(ctx, returnID);
         AssertEqual(Number(back.Discount), 25, "two of four units carry half the discount");
         AssertEqual(Number(back.Net), -175, "the return refunds what two units were paid");
+      }),
+  },
+  {
+    Id: "returns.RT18",
+    Name: "RT18: a return mirrors the release the sale staged, not a schedule from the product's type as it is now",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Sold on completion: one release of 1,200 on the service period's last day. Finance then moves the
+        // product to straight-line. The return used to rebuild the origin's schedule from the product's type
+        // as it is now and mirrored twelve monthly releases that were never staged (golive #495).
+        const f = Fx();
+        await addPrice(ctx, f.Products.DeferredA, 1200);
+        const setType = async (code: string) => {
+          const product = await new Metadata().GetEntityObject<mjBizAppsOrdersProductEntity>(PRODUCT_ENTITY, ctx.User);
+          Assert(await product.Load(f.Products.DeferredA), "the product did not load");
+          product.RevenueRecognitionTypeID = f.RevRecTypeIDs.get(code) as string;
+          Assert(await product.Save(), `moving the product to ${code} failed: ${product.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        };
+        await setType("AllBackEnd");
+        const sale = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.DeferredA, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: "2026-07-01", ServicePeriodEnd: "2027-06-30" }],
+        });
+        Assert(sale.Saved, `the sale did not confirm: ${sale.Message}`);
+        AssertEqual(JSON.stringify(await recognitionByDate(ctx, sale.Order.ID as string)), JSON.stringify([{ On: "2027-06-30", Net: 1200 }]), "the sale stages one release");
+
+        await setType("EvenOverTime");
+        const back = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.DeferredA,
+          quantity: 1,
+          unitPrice: 1200,
+          servicePeriod: { Start: "2026-07-01", End: "2027-06-30" },
+        });
+        Assert(back.Saved, `the return did not confirm: ${back.Message}`);
+        AssertEqual(
+          JSON.stringify(await recognitionByDate(ctx, back.Order.ID as string)),
+          JSON.stringify([{ On: "2027-06-30", Net: -1200 }]),
+          "the return mirrors the one staged release",
+        );
       }),
   },
 ];
