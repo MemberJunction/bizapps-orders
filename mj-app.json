@@ -12,7 +12,8 @@
     "url": "https://memberjunction.com"
   },
   "repository": "https://github.com/MemberJunction/bizapps-orders",
-  "mjVersionRange": ">=6.2.1 <7.0.0",
+  "line": "6.2",
+  "mjVersionRange": ">=6.2.1 <6.3.0",
   "dependencies": {
     "mj-bizapps-common": {
       "version": ">=5.56.0 <6.0.0",
