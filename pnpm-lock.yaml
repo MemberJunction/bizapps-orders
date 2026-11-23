@@ -304,7 +304,7 @@ importers:
         specifier: 0.24.0
         version: 0.24.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)(@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1))
       '@mj-biz-apps/accounting-entities':
-        specifier: '>=0.24.0 <1.0.0'
+        specifier: '>=0.24.0 <2.0.0'
         version: 0.24.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)(@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1))
       '@mj-biz-apps/accounting-ng':
         specifier: 0.24.0
@@ -448,10 +448,10 @@ importers:
         version: link:../Server
     devDependencies:
       '@mj-biz-apps/accounting-engine-base':
-        specifier: '>=0.24.0 <1.0.0'
+        specifier: '>=0.24.0 <2.0.0'
         version: 0.24.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1)(@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.2.1)(@memberjunction/global@6.2.1))
       '@mj-biz-apps/accounting-server':
-        specifier: '>=0.24.0 <1.0.0'
+        specifier: '>=0.24.0 <2.0.0'
         version: 0.24.0(3d758b83c9cd387de1088baa8886cfd7)
       '@mj-biz-apps/common-entities':
         specifier: '>=5.56.0 <6.0.0'
