@@ -49,6 +49,19 @@
             </div>
         </div>
 
+        <!-- Outside the collapsed region: a reversal's link to what it reverses is how anyone finds it. -->
+        @if (record.IsSaved && (ReversalLinks.length > 0 || record.ReversalReason)) {
+        <div class="mjo-oh-reversal">
+            <bizapps-related-chips
+                [Links]="ReversalLinks"
+                [Provider]="ProviderToUse"
+                (Navigate)="OnFormNavigate($event)" />
+            @if (record.ReversalReason) {
+                <span class="mjo-oh-reversal__reason">Reason: {{ record.ReversalReason }}</span>
+            }
+        </div>
+        }
+
         @if (HeaderExpanded) {
         <div class="mjo-oh-facts">
             <div class="mjo-oh-fact">
