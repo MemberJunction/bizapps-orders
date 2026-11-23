@@ -6,7 +6,7 @@ name: Repo checks
 # inside this repo's old changes.yml.
 on:
   pull_request:
-    branches: [next, main]
+    branches: [next, main, 'lts/**']
     types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
@@ -65,3 +65,14 @@ jobs:
         run: |
           node ./.github/scripts/check-migrations-locked.mjs --self-test
           node ./.github/scripts/check-migrations-locked.mjs ${{ steps.base.outputs.sha }} ${{ github.sha }}
+
+      # The release-line model relies on `mj migrate` refusing an out-of-order migration. Through
+      # `mj app install` / `upgrade` that check is always on, but the CLI path passes
+      # mj.config.cjs `outOfOrder` straight to Skyway, and `true` switches it off. Keep it unset.
+      - name: mj.config.cjs does not turn on out-of-order migrations
+        run: |
+          if grep -nE '^\s*[^/]*outOfOrder\s*:\s*true' mj.config.cjs; then
+            echo "::error file=mj.config.cjs::outOfOrder: true lets 'mj migrate' apply a migration older than one the database already ran. Release lines depend on that refusal; remove the setting."
+            exit 1
+          fi
+          echo "outOfOrder is not enabled"

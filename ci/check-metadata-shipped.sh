@@ -12,7 +12,8 @@ set -euo pipefail
 
 . "$(dirname "$0")/lib/release-surface.sh"
 
-LAST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -1)
+. "$(dirname "$0")/lib/last-release.sh"
+LAST_TAG=$(last_release_tag)
 if [ -z "$LAST_TAG" ]; then
   echo "No v* tag yet — nothing to compare against"
   exit 0
