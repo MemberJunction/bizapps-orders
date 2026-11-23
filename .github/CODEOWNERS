@@ -1,0 +1,4 @@
+# lts/6.2 is a release line that production hosts run. Every change to it needs one of these
+# reviewers (protect-lts requires code-owner review). GitHub reads this file from the PR's base
+# branch, so this applies to PRs into lts/6.2 only; next keeps its own CODEOWNERS.
+* @bg-BC

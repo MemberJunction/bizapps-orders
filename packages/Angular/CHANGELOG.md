@@ -1,5 +1,17 @@
 # @mj-biz-apps/orders-ng
 
+## 5.52.0
+
+### Minor Changes
+
+- 4325ab4: Customer A/R now opens on the whole book: one row per customer with A/R, past due, each aging bucket, what is scheduled but not yet invoiced, and the next due date and amount, sortable and totalled. Choosing a customer folds that table into a side list and opens their detail beside it; the open customer is kept in the tab's address. A/R and its aging count invoiced amounts only: a scheduled instalment has no invoice behind it, so it is shown as its own figure and is never aged, and one whose date has arrived is flagged as ready to invoice and can be issued from the row. Open items list one row per invoice or instalment with its company, invoice number, invoice date, due date, days past due, amount, paid and balance; the columns sort, and A/R and scheduled are subtotalled apart. The customer's name links to their record, payments and subscriptions open their own records, and a Last payment card sits beside Next due. Added a Company filter, search, quick filters on the tiles, Refresh, Record payment, and exports (an aging summary and an open-items detail, Excel or CSV, stamped with the as-of day, with A/R and scheduled amounts in separate columns). Dates on the page read MM/DD/YYYY. The page now reads every open order (the read it replaces stopped at 5,000, newest first), keeps what is on screen when a read fails, and says so when a customer's history cannot be read. The Receivables menu descriptions were reworded.
+
+### Patch Changes
+
+- f1ba3a8: Accounting ranges accept 1.x (`>=0.24.0 <2.0.0`), here and in `mj-app.json`. Accounting's first release from the `lts/6.2` line is 1.0.0, so a `<1.0.0` bound would keep a host on that line from installing it with orders.
+- 3791a27: Peer ranges on other BizApps packages now have an upper bound at the next major (accounting `<1.0.0`, tasks `<2.0.0`, common `<6.0.0`), matching `mj-app.json`. An open `>=` range would let a host pair this release with another app's next major, which belongs to a different release line.
+  - @mj-biz-apps/orders-entities@5.52.0
+
 ## 5.51.0
 
 ### Minor Changes
@@ -1219,8 +1231,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                            "FK_EntityFieldValue_EntityField"
+                                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

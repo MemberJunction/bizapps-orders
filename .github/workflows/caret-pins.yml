@@ -14,7 +14,7 @@ permissions:
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [next, main]
+    branches: [next, main, 'lts/**']
     # Safe to filter because nothing requires this check: a filtered-out workflow creates no
     # check run, which would only matter for a required context.
     paths:
