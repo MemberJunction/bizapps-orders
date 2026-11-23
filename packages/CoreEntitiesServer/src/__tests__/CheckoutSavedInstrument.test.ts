@@ -33,7 +33,7 @@ vi.mock('../PaymentProviderResolver.js', () => ({
     ResolvePaymentProvider: async () => ({ RetrieveIntent: state.retrieve }),
 }));
 
-import { SaveCheckoutInstrumentForRenewals, SnapshotSellsSubscription } from '../CheckoutSavedInstrument.js';
+import { SaveCheckoutInstrumentForRenewals, SnapshotSellsSubscription, StopAutoRenewWithoutRenewalCard } from '../CheckoutSavedInstrument.js';
 
 const user = { ID: 'u-1' } as unknown as UserInfo;
 
@@ -172,6 +172,27 @@ describe('SaveCheckoutInstrumentForRenewals', () => {
         const result = await SaveCheckoutInstrumentForRenewals(input, provider, user);
         expect(result.Saved).toBe(false);
         expect(result.Reason).toContain('unreachable');
+    });
+});
+
+describe('StopAutoRenewWithoutRenewalCard', () => {
+    it('turns auto-renew off on the order\'s subscriptions that have no renewal card', async () => {
+        const sub = subscription('sub-1');
+        sub.AutoRenew = true;
+        state.views['MJ_BizApps_Orders: Subscriptions'] = [sub];
+
+        expect(await StopAutoRenewWithoutRenewalCard(ORDER, user)).toEqual(['sub-1']);
+        expect(sub.AutoRenew).toBe(false);
+        const subFilter = state.filters.find((f) => f.EntityName === 'MJ_BizApps_Orders: Subscriptions')!.ExtraFilter!;
+        expect(subFilter).toContain('AutoRenew = 1');
+        expect(subFilter).toContain('DefaultCustomerPaymentMethodID IS NULL');
+    });
+
+    it('is fail-soft: a subscription that will not save is reported, never thrown', async () => {
+        const sub = subscription('sub-1');
+        sub.Save = async () => false;
+        state.views['MJ_BizApps_Orders: Subscriptions'] = [sub];
+        expect(await StopAutoRenewWithoutRenewalCard(ORDER, user)).toEqual([]);
     });
 });
 
