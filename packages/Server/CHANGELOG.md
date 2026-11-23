@@ -1,5 +1,17 @@
 # @mj-biz-apps/orders-server
 
+## 5.52.0
+
+### Patch Changes
+
+- f1ba3a8: Accounting ranges accept 1.x (`>=0.24.0 <2.0.0`), here and in `mj-app.json`. Accounting's first release from the `lts/6.2` line is 1.0.0, so a `<1.0.0` bound would keep a host on that line from installing it with orders.
+- 3791a27: Peer ranges on other BizApps packages now have an upper bound at the next major (accounting `<1.0.0`, tasks `<2.0.0`, common `<6.0.0`), matching `mj-app.json`. An open `>=` range would let a host pair this release with another app's next major, which belongs to a different release line.
+- Updated dependencies [f1ba3a8]
+- Updated dependencies [3791a27]
+  - @mj-biz-apps/orders-core-entities-server@5.52.0
+  - @mj-biz-apps/orders-actions@5.52.0
+  - @mj-biz-apps/orders-entities@5.52.0
+
 ## 5.51.0
 
 ### Patch Changes
@@ -1211,8 +1223,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                            "FK_EntityFieldValue_EntityField"
+                                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
