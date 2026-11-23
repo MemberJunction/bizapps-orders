@@ -5,6 +5,7 @@ import { UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import type { MJODimensionOption } from '../../data/orders-queries';
 import { DefaultReplacedBy, StampedOn, type MJOStampedTag } from './line-stamped-tags';
+import { MJORecognitionRebuildComponent } from './recognition-rebuild.component';
 
 /**
  * The details a line has but the line card should not carry.
@@ -34,7 +35,7 @@ import { DefaultReplacedBy, StampedOn, type MJOStampedTag } from './line-stamped
 @Component({
     standalone: true,
     selector: 'mjo-order-line-details-panel',
-    imports: [CommonModule, FormsModule],
+    imports: [CommonModule, FormsModule, MJORecognitionRebuildComponent],
     templateUrl: './order-line-details-panel.component.html',
     styleUrls: ['./order-line-details-panel.component.css'],
 })

@@ -1,0 +1,18 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Recognition.Rebuild",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Rebuild a confirmed order line's revenue recognition through Orders.RebuildRecognition: void the line's recognition entries still Pending in no batch and stage a new schedule from its product's current recognition type. Held by Finance, CFO and Developer."
+    },
+    "primaryKey": {
+      "ID": "AB2D50D5-6521-4336-80E1-8F4C0B10E94D"
+    },
+    "sync": {
+      "lastModified": "2026-11-23T21:24:37.109Z",
+      "checksum": "c0075f9ac5ee012295dbd5885ef4a45ca0d0afeb58e30e502e2a00e58ff733c6"
+    }
+  }
+]

@@ -46,6 +46,7 @@ import { mjBizAppsOrdersOrderLineDimensionFormComponent } from "./Entities/mjBiz
 import { mjBizAppsOrdersOrderLineFormComponent } from "./Entities/mjBizAppsOrdersOrderLine/mjbizappsordersorderline.form.component";
 import { mjBizAppsOrdersOrderLinePriceComponentFormComponent } from "./Entities/mjBizAppsOrdersOrderLinePriceComponent/mjbizappsordersorderlinepricecomponent.form.component";
 import { mjBizAppsOrdersOrderLineProgressMeasurementFormComponent } from "./Entities/mjBizAppsOrdersOrderLineProgressMeasurement/mjbizappsordersorderlineprogressmeasurement.form.component";
+import { mjBizAppsOrdersOrderLineRecognitionRebuildFormComponent } from "./Entities/mjBizAppsOrdersOrderLineRecognitionRebuild/mjbizappsordersorderlinerecognitionrebuild.form.component";
 import { mjBizAppsOrdersOrderSequenceFormComponent } from "./Entities/mjBizAppsOrdersOrderSequence/mjbizappsordersordersequence.form.component";
 import { mjBizAppsOrdersOutboundDeliveryFormComponent } from "./Entities/mjBizAppsOrdersOutboundDelivery/mjbizappsordersoutbounddelivery.form.component";
 import { mjBizAppsOrdersOutboundEventFormComponent } from "./Entities/mjBizAppsOrdersOutboundEvent/mjbizappsordersoutboundevent.form.component";
@@ -225,6 +226,7 @@ export class GeneratedForms_SubModule_6 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersOrderLineRecognitionRebuildFormComponent,
     mjBizAppsOrdersPromotionTargetFormComponent,
     mjBizAppsOrdersStoredValueTransactionFormComponent
 ],

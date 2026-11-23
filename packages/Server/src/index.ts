@@ -57,6 +57,8 @@ import {
     LoadIssueInstalmentInvoiceOperation,
     LoadReplacePaymentScheduleOperation,
     LoadRecordProgressOperation,
+    LoadRebuildRecognitionOperation,
+    LoadListRecognitionRebuildCandidatesOperation,
     LoadGetProgressWorklistOperation,
     LoadReplayCheckoutStepOperation,
     LoadDetectUnattestedProgressOperation,
@@ -171,6 +173,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
     LoadReplacePaymentScheduleOperation(); // 'Orders.ReplacePaymentSchedule' — set the schedule from a list; invoiced rows kept, tie enforced (golive #290)
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
+    LoadRebuildRecognitionOperation(); // 'Orders.RebuildRecognition' — rebuild a booked line's recognition from its product's current type (golive #495)
+    LoadListRecognitionRebuildCandidatesOperation(); // 'Orders.ListRecognitionRebuildCandidates' — booked lines still on a product's old schedule (golive #495)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
     LoadReplayCheckoutStepOperation(); // 'Orders.ReplayCheckoutStep' — an operator re-drives one failed post-payment checkout step (#326)
     LoadDetectUnattestedProgressOperation(); // 'Orders.DetectUnattestedProgress' — POC lines left unattested, onto finance's review list (golive #279)

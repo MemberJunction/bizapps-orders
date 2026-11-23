@@ -1,0 +1,76 @@
+<section class="mjo-rr" aria-labelledby="mjo-rr-title">
+    <h3 id="mjo-rr-title" class="mjo-rr__title">Revenue recognition</h3>
+
+    @if (History.length) {
+        <ul class="mjo-rr__history" aria-label="Earlier rebuilds">
+            @for (row of History; track row.ID) {
+                <li>
+                    <span class="mjo-rr__when">{{ Day(row.RebuiltAt) }}</span>
+                    Rebuilt under {{ row.RevenueRecognitionType ?? 'the product\'s type' }} by {{ row.RebuiltByUser ?? 'unknown' }},
+                    {{ row.AmountReplaced | number: '1.2-2' }} restaged.
+                    <span class="mjo-rr__reason">{{ row.Reason }}</span>
+                </li>
+            }
+        </ul>
+    }
+
+    @if (Done) {
+        <p class="mjo-rr__done" role="status"><i class="fa-solid fa-check" aria-hidden="true"></i> {{ Done }}</p>
+    }
+
+    @if (CanRebuild && !Open) {
+        <p class="mjo-rr__hint">If the product's recognition type changed after this line was booked, rebuild its schedule. Entries still pending are voided and staged again under the current type; batched or posted entries stay.</p>
+        <button type="button" class="mjo-rr__btn" (click)="Start()">
+            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Rebuild revenue recognition
+        </button>
+    }
+
+    @if (Open) {
+        <label class="mjo-rr__field">
+            <span>Reason</span>
+            <textarea id="mjo-rr-reason" rows="2" maxlength="1000" [(ngModel)]="Reason" (ngModelChange)="Changed()" [disabled]="Busy"
+                placeholder="Why the schedule changes, e.g. the statement of work recognizes over time"></textarea>
+        </label>
+
+        @if (Preview; as p) {
+            <p class="mjo-rr__explain" aria-live="polite">{{ p.Message }}</p>
+            <div class="mjo-rr__tables">
+                <table class="mjo-rr__table">
+                    <caption>Voided ({{ p.Voided?.length ?? 0 }})</caption>
+                    <thead><tr><th scope="col">Entry</th><th scope="col">Date</th><th scope="col" class="is-num">Amount</th></tr></thead>
+                    <tbody>
+                        @for (e of p.Voided ?? []; track e.JournalEntryID) {
+                            <tr><td>{{ e.EntryNumber }}</td><td>{{ e.EffectiveDate }}</td><td class="is-num">{{ e.Amount | number: '1.2-2' }}</td></tr>
+                        }
+                    </tbody>
+                </table>
+                <table class="mjo-rr__table">
+                    <caption>New schedule ({{ p.Created?.length ?? 0 }}) — {{ p.RevenueRecognitionTypeName }}</caption>
+                    <thead><tr><th scope="col">Date</th><th scope="col" class="is-num">Amount</th></tr></thead>
+                    <tbody>
+                        @for (e of p.Created ?? []; track $index) {
+                            <tr><td>{{ e.EffectiveDate }}</td><td class="is-num">{{ e.Amount | number: '1.2-2' }}</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (p.Kept?.length) {
+                <p class="mjo-rr__hint">{{ p.Kept?.length }} batched or posted entr{{ p.Kept?.length === 1 ? 'y stays' : 'ies stay' }} as they are.</p>
+            }
+        }
+
+        @if (Error) {
+            <p class="mjo-rr__error" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ Error }}</p>
+        }
+
+        <div class="mjo-rr__actions">
+            <button type="button" class="mjo-rr__btn is-flat" (click)="Close()" [disabled]="Busy">Cancel</button>
+            @if (Preview) {
+                <button type="button" class="mjo-rr__btn is-primary" (click)="Confirm()" [disabled]="Busy || !Reason.trim()"
+                    [attr.title]="Reason.trim() ? null : 'Enter a reason first'">Rebuild</button>
+            } @else {
+                <button type="button" class="mjo-rr__btn is-primary" (click)="RunPreview()" [disabled]="Busy">Preview</button>
+            }
+        </div>
+    }
+</section>
