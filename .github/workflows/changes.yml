@@ -123,8 +123,8 @@ jobs:
 
       # `next` only. On a line, a backported migration is the same file with the same timestamp as on
       # `next`, so it is often older than the line's newest one, and backports can merge out of
-      # order. `lines: migrations` (release-lines-gates.yml) checks order on a line instead: no
-      # shared migration may be skipped past.
+      # order. `lines: migrations` (release-lines-gates.yml) keeps a watermark on a line instead: a
+      # backport may not add a migration older than the line's newest.
       - name: Validate migration timestamps are newer than existing
         if: steps.migration_check.outputs.has_migrations == 'true' && github.base_ref == 'next'
         run: |

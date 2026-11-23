@@ -10,11 +10,11 @@
 //   1. every migration on the line exists on `next` with identical content (no line-only
 //      migration, no edited copy);
 //   2. no edge-only migration is on the line;
-//   3. no shared migration on `next` is skipped: each one at or below the line's newest
-//      timestamp is on the line. Backports land in `next`'s order, so a host never applies a
-//      migration that is newer than one it has not run. This replaces `next`'s timestamp
-//      watermark on a line, where a backported file is often older than the line's newest.
-//   The line need not have every migration `next` has: the newer ones arrive with later backports.
+//   3. the PR adds no migration older than the line's newest before the PR. The line's hosts
+//      have run that one, and `mj migrate` refuses an older version (outOfOrder is off).
+//   The line may skip any of `next`'s migrations. It need not follow `next`'s order: when hosts
+//   move to a new line, `next`'s migrations are re-stamped after the old line's
+//   (guides/RELEASE_LINES.md, "Moving to a new line").
 //
 // LTS line. The PR adds, changes or removes no file under migrations/, migrations-pg/ or
 // metadata/ (README files aside), and its changesets carry no minor or major bump. A frozen line's
@@ -67,23 +67,23 @@ function stamp(path) {
   return STAMP.exec(path.split('/').pop())?.[1] ?? '0';
 }
 
-/** Problems for an OPEN line, comparing the line after the PR with `next`. */
-export function CheckOpenLine(line, next, edgeOnly) {
+/** Problems for an OPEN line: the line after the PR (`line`), `next`, and the line before the PR (`before`). */
+export function CheckOpenLine(line, next, edgeOnly, before) {
   const problems = [];
   const edge = new Set(edgeOnly.map(Stem));
   for (const [path, blob] of Object.entries(line)) {
     if (edge.has(Stem(path))) {
       problems.push(`${path} is edge-only (release-lines.json next.edgeOnlyMigrations): it needs the upcoming MJ version and stays off every line until the next cut.`);
     } else if (!(path in next)) {
-      problems.push(`${path} is not on next. Every migration lands on next first; a line-only migration would make the older line's hosts run it out of order.`);
+      problems.push(`${path} is not on next. Every migration lands on next first; backport next's file.`);
     } else if (next[path] !== blob) {
       problems.push(`${path} differs from next's copy. A shared migration is the same file on every line; backport next's version.`);
     }
   }
-  const newest = Object.keys(line).map(stamp).sort().at(-1) ?? '0';
-  for (const path of Object.keys(next).sort()) {
-    if (!(path in line) && !edge.has(Stem(path)) && stamp(path) <= newest) {
-      problems.push(`${path} is on next and older than this line's newest migration (V${newest}) but is not on the line. Backport it first: a host that applied the newer one would refuse it as out of order.`);
+  const newest = Object.keys(before).map(stamp).sort().at(-1) ?? '0';
+  for (const path of Object.keys(line).sort()) {
+    if (!(path in before) && stamp(path) <= newest) {
+      problems.push(`${path} is older than this line's newest migration (V${newest}). The line's hosts have run that one, so \`mj migrate\` would refuse this as out of order. Re-stamp it on next after V${newest} before backporting, or leave it off the line.`);
     }
   }
   return problems;
@@ -126,13 +126,13 @@ function main(args) {
     return 1;
   }
   let problems;
+  if (!base) {
+    console.error('✗ a line needs --base <merge-base sha> to know what this PR changed');
+    return 2;
+  }
   if (line.status === 'open') {
-    problems = CheckOpenLine(MigrationsAt('HEAD'), MigrationsAt(nextRef), record.next?.edgeOnlyMigrations ?? []);
+    problems = CheckOpenLine(MigrationsAt('HEAD'), MigrationsAt(nextRef), record.next?.edgeOnlyMigrations ?? [], MigrationsAt(base));
   } else {
-    if (!base) {
-      console.error('✗ an LTS line needs --base <merge-base sha> to know what this PR changed');
-      return 2;
-    }
     const changed = git(['diff', '--name-only', base, 'HEAD']).split('\n').filter(Boolean);
     const added = git(['diff', '--name-only', '--diff-filter=A', base, 'HEAD', '--', '.changeset/']).split('\n')
       .filter((p) => p.endsWith('.md') && !p.endsWith('README.md'))
@@ -146,7 +146,7 @@ function main(args) {
     return 1;
   }
   console.log(line.status === 'open'
-    ? `✓ The ${line.key} line's migrations are next's, in next's order, with no edge-only migration`
+    ? `✓ The ${line.key} line's migrations are next's, none older than the line's newest was added, and none is edge-only`
     : `✓ The ${line.key} line is LTS and this PR changes no migration or metadata and bumps no minor`);
   return 0;
 }
@@ -156,21 +156,26 @@ function main(args) {
 // ---------------------------------------------------------------------------
 function selfTest() {
   const cases = [
-    ['an open line equal to next passes', CheckOpenLine({ 'migrations/V202601010000__a.sql': 'x' }, { 'migrations/V202601010000__a.sql': 'x' }, []), 0],
+    ['an open line equal to next passes', CheckOpenLine({ 'migrations/V202601010000__a.sql': 'x' }, { 'migrations/V202601010000__a.sql': 'x' }, [], {}), 0],
     ['an open line behind next passes (newer ones come with later backports)', CheckOpenLine(
       { 'migrations/V202601010000__a.sql': 'x' },
-      { 'migrations/V202601010000__a.sql': 'x', 'migrations/V202602010000__b.sql': 'y' }, []), 0],
-    ['a line-only migration fails', CheckOpenLine({ 'migrations/V202601010000__a.sql': 'x' }, {}, []), 1],
-    ['an edited copy fails', CheckOpenLine({ 'migrations/V202601010000__a.sql': 'x' }, { 'migrations/V202601010000__a.sql': 'z' }, []), 1],
-    ['a skipped older migration fails (backports out of order)', CheckOpenLine(
-      { 'migrations/V202603010000__c.sql': 'z' },
-      { 'migrations/V202602010000__b.sql': 'y', 'migrations/V202603010000__c.sql': 'z' }, []), 1],
-    ['a skipped edge-only migration is fine', CheckOpenLine(
-      { 'migrations/V202603010000__c.sql': 'z' },
-      { 'migrations/V202602010000__b.sql': 'y', 'migrations-pg/V202602010000__b.pg.sql': 'p', 'migrations/V202603010000__c.sql': 'z' },
-      ['V202602010000__b.sql']), 0],
+      { 'migrations/V202601010000__a.sql': 'x', 'migrations/V202602010000__b.sql': 'y' }, [], {}), 0],
+    ['a line-only migration fails', CheckOpenLine({ 'migrations/V202601010000__a.sql': 'x' }, {}, [], {}), 1],
+    ['an edited copy fails', CheckOpenLine({ 'migrations/V202601010000__a.sql': 'x' }, { 'migrations/V202601010000__a.sql': 'z' }, [], {}), 1],
+    ['skipping an older next migration passes', CheckOpenLine(
+      { 'migrations/V202601010000__a.sql': 'x', 'migrations/V202603010000__c.sql': 'z' },
+      { 'migrations/V202601010000__a.sql': 'x', 'migrations/V202602010000__b.sql': 'y', 'migrations/V202603010000__c.sql': 'z' }, [],
+      { 'migrations/V202601010000__a.sql': 'x' }), 0],
+    ['adding a migration older than the line\'s newest fails', CheckOpenLine(
+      { 'migrations/V202602010000__b.sql': 'y', 'migrations/V202603010000__c.sql': 'z' },
+      { 'migrations/V202602010000__b.sql': 'y', 'migrations/V202603010000__c.sql': 'z' }, [],
+      { 'migrations/V202603010000__c.sql': 'z' }), 1],
+    ['adding two migrations newer than the line\'s newest passes', CheckOpenLine(
+      { 'migrations/V202601010000__a.sql': 'x', 'migrations/V202602010000__b.sql': 'y', 'migrations-pg/V202602010000__b.pg.sql': 'p' },
+      { 'migrations/V202601010000__a.sql': 'x', 'migrations/V202602010000__b.sql': 'y', 'migrations-pg/V202602010000__b.pg.sql': 'p' }, [],
+      { 'migrations/V202601010000__a.sql': 'x' }), 0],
     ['an edge-only migration on a line fails', CheckOpenLine(
-      { 'migrations/V202602010000__b.sql': 'y' }, { 'migrations/V202602010000__b.sql': 'y' }, ['V202602010000__b.sql']), 1],
+      { 'migrations/V202602010000__b.sql': 'y' }, { 'migrations/V202602010000__b.sql': 'y' }, ['V202602010000__b.sql'], {}), 1],
     ['LTS: a code fix passes', CheckLtsLine(['packages/Core/src/a.ts'], []), 0],
     ['LTS: a migration fails', CheckLtsLine(['migrations/V202601010000__a.sql'], []), 1],
     ['LTS: a metadata change fails', CheckLtsLine(['metadata/tasks/.tasks.json'], []), 1],
