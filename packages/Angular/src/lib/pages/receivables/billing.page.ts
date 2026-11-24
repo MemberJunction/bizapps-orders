@@ -10,6 +10,7 @@ import {
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import { IssueInvoiceBlockedReason } from './billing-issue';
 
 /** How far ahead the worklist looks. Finance's renewal lead is 90 days; a month is the working view. */
 const WINDOW_DAYS = 30;
@@ -24,7 +25,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
  *
  * THE CONTROL FINANCE RUNS BY HAND TODAY. A multi-year contract billed in instalments has rows due
  * in 2027 and 2029 that nobody will remember. This screen is where they surface on their own: every
- * `Scheduled` instalment whose due date is inside the window, earliest first, with the act that
+ * `Scheduled` instalment of a confirmed order whose due date is inside the window, earliest first, with the act that
  * turns it into a receivable document one confirmation away.
  *
  * ISSUING IS THE IRREVERSIBLE STEP, so it asks first — through `MJConfirmService`, never
@@ -85,12 +86,15 @@ const RAIL_TYPE_CODES = ['BillCom'];
             <button type="button" mjButton variant="outline" [disabled]="!Selected" (click)="OpenSelected()">
                 <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open order
             </button>
-            <button type="button" mjButton variant="primary" [disabled]="!Selected || Issuing" (click)="IssueSelected()">
+            <button type="button" mjButton variant="primary" [disabled]="!Selected || Issuing || !!IssueBlockedReason" (click)="IssueSelected()">
                 <i class="fa-solid fa-file-invoice" aria-hidden="true"></i>
                 {{ Issuing ? 'Issuing…' : 'Issue invoice' }}
             </button>
             @if (Selected; as row) {
                 <span class="small muted">{{ row.OrderNumber }} · installment {{ row.InstallmentNumber }} of {{ row.InstallmentCount }} · {{ money(row.Amount) }}</span>
+            }
+            @if (IssueBlockedReason; as why) {
+                <span class="small mjo-bl__blocked">{{ why }}</span>
             }
         </div>
 
@@ -118,6 +122,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
             }
             .mjo-bl__tiles { margin-bottom: var(--mj-space-4); }
             .mjo-bl__note { margin-bottom: var(--mj-space-4); }
+            .mjo-bl__blocked { color: var(--mj-status-warning-text); }
             .mjo-bl__actions {
                 align-items: center;
                 gap: var(--mj-space-3);
@@ -219,9 +224,14 @@ export class MJOBillingPageComponent implements OnInit {
         if (this.Selected) this.OrderOpened.emit({ ID: this.Selected.OrderHeaderID });
     }
 
+    /** Why the selected instalment cannot be issued, or null when it can. */
+    public get IssueBlockedReason(): string | null {
+        return IssueInvoiceBlockedReason(this.Selected);
+    }
+
     public async IssueSelected(): Promise<void> {
         const row = this.Selected;
-        if (!row || this.Issuing) return;
+        if (!row || this.Issuing || this.IssueBlockedReason) return;
         const proceed = await this.confirm.Confirm({
             title: `Issue installment ${row.InstallmentNumber} of ${row.InstallmentCount}?`,
             message: `${row.OrderNumber} · ${row.CustomerName} · ${FormatMoney(row.Amount)} due ${FormatDate(row.DueDate, { Short: true })}.`,
