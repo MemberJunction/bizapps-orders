@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { type DateCell } from '@mj-biz-apps/orders-entities';
 import { DaysSince, FormatMoney } from './money-format';
@@ -182,8 +182,11 @@ interface AgingSegment {
                     @for (seg of segments; track seg.Key) {
                         <span
                             [class]="seg.ClassName"
+                            [class.mjo-aging--pick]="BucketClicked.observed"
+                            [class.mjo-aging--dim]="Active !== null && Active !== seg.Key"
                             [style.width.%]="seg.Percent"
-                            [title]="seg.Label + ': ' + money(seg.Amount)">
+                            [title]="seg.Label + ': ' + money(seg.Amount)"
+                            (click)="pick(seg.Key)">
                             @if (seg.Percent > 13) {
                                 {{ money(seg.Amount) }}
                             }
@@ -193,10 +196,24 @@ interface AgingSegment {
 
                 <div class="mj-aging-legend">
                     @for (seg of allSegments; track seg.Key) {
-                        <span>
-                            <i [style.background]="seg.Colour" aria-hidden="true"></i>
-                            {{ seg.Label }} {{ money(seg.Amount) }}
-                        </span>
+                        @if (BucketClicked.observed && (seg.Amount > 0 || Active === seg.Key)) {
+                            <!-- The legend carries the keyboard and screen-reader path: the bar itself is one image. -->
+                            <button
+                                type="button"
+                                class="mjo-aging__legend-pick"
+                                [class.is-on]="Active === seg.Key"
+                                [attr.aria-pressed]="Active === seg.Key"
+                                [attr.title]="Active === seg.Key ? 'Show every age' : 'Show only ' + seg.Label"
+                                (click)="pick(seg.Key)">
+                                <i [style.background]="seg.Colour" aria-hidden="true"></i>
+                                {{ seg.Label }} {{ money(seg.Amount) }}
+                            </button>
+                        } @else {
+                            <span>
+                                <i [style.background]="seg.Colour" aria-hidden="true"></i>
+                                {{ seg.Label }} {{ money(seg.Amount) }}
+                            </span>
+                        }
                     }
                 </div>
             </div>
@@ -206,6 +223,23 @@ interface AgingSegment {
     `,
     styles: [
         `
+            .mjo-aging--pick { cursor: pointer; }
+            .mjo-aging--dim { opacity: 0.35; }
+            .mjo-aging__legend-pick {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font: inherit;
+                color: inherit;
+                padding: 2px 8px;
+                border: 1px solid transparent;
+                border-radius: 999px;
+                background: none;
+                cursor: pointer;
+            }
+            .mjo-aging__legend-pick i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+            .mjo-aging__legend-pick:hover, .mjo-aging__legend-pick:focus-visible { border-color: var(--mj-border-strong); outline: none; }
+            .mjo-aging__legend-pick.is-on { border-color: var(--mj-brand-primary); color: var(--mj-brand-primary); }
             @media (max-width: 560px) {
                 :host ::ng-deep .mj-aging-legend {
                     gap: var(--mj-space-2);
@@ -225,6 +259,14 @@ export class MJOAgingBarComponent {
 
     /** Shown when nothing is outstanding. */
     @Input() EmptyText = 'Nothing outstanding.';
+    /** The bucket a filter is on, if the host filters by one; the others are dimmed. */
+    @Input() Active: keyof MJOAgingBuckets | null = null;
+    /** A bucket was clicked, on the bar or in the legend. Only offered when something listens. */
+    @Output() BucketClicked = new EventEmitter<keyof MJOAgingBuckets>();
+
+    protected pick(key: keyof MJOAgingBuckets): void {
+        if (this.BucketClicked.observed) this.BucketClicked.emit(key);
+    }
 
     protected get total(): number {
         const b = this.Buckets;

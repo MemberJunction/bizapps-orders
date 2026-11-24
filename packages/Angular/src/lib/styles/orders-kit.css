@@ -608,6 +608,16 @@ mjo-section-shell .mj-select:focus {
 :where(mjo-section-shell) .mj-table tbody tr.is-total td { border-bottom: none; border-top: 2px solid var(--mj-border-strong); }
 :where(mjo-section-shell) .mj-table .primary { font-weight: var(--mj-font-semibold); }
 :where(mjo-section-shell) .mj-table .secondary { font-size: var(--mj-text-xs); color: var(--mj-text-muted); }
+/* A worklist and the side panel for its open row (`mjo-side-panel`), side by side. Here and not in
+   the panel's own styles because the layout wraps the list whether or not a panel is open. The
+   panel drops below the list on a narrow screen. */
+:where(mjo-section-shell) .mjo-split { display: flex; gap: var(--mj-space-4); align-items: flex-start; }
+:where(mjo-section-shell) .mjo-split__main { flex: 1; min-width: 0; }
+:where(mjo-section-shell) .mjo-split__side { flex: 0 0 360px; min-width: 0; }
+@media (max-width: 1100px) {
+  :where(mjo-section-shell) .mjo-split { flex-direction: column; }
+  :where(mjo-section-shell) .mjo-split__main, :where(mjo-section-shell) .mjo-split__side { flex: 1 1 auto; width: 100%; }
+}
 :where(mjo-section-shell) .mj-table-wrap {
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
   border-radius: var(--mj-radius-md); overflow: auto;
