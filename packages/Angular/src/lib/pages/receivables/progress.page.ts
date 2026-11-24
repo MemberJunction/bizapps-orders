@@ -9,9 +9,48 @@ import {
     type OrdersRecordProgressOutput,
     type ProgressWorklistRow,
 } from '@mj-biz-apps/orders-entities';
+import { MJOSidePanelComponent } from '../../panels/side-panel.component';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
+import { MJOWorklistBarComponent, type MJOWorklistExport } from '../../panels/worklist-bar.component';
 import { MJOWorklistTableComponent, type MJOColumn } from '../../panels/worklist-table.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import {
+    BuildWorklistExport,
+    AddressKey,
+    AdoptCompanyChoice,
+    COMPANY_ADDRESS_KEY,
+    CompaniesToAddress,
+    ExportFileName,
+    FilterByCompanies,
+    MatchesText,
+    NextSort,
+    ReadWorklistState,
+    ReconcileCompanies,
+    RestoreSort,
+    SameChoice,
+    ShownSummary,
+    SortRows,
+    WriteSharedCompanies,
+    WriteWorklistState,
+    type WorklistCompanyOption,
+    type WorklistExportField,
+    type WorklistSort,
+} from './worklist-view.model';
+
+const PROGRESS_STATE_KEY = 'mjOrders.progressAttestation.view';
+
+/** Which lines a quick filter keeps, by when they were last attested. `monthStart` is the first day of the business month. */
+export function MatchesAttestationFilter(row: { LastMeasurementDate?: string | null }, filter: string, monthStart: string): boolean {
+    const last = row.LastMeasurementDate ? String(row.LastMeasurementDate).slice(0, 10) : null;
+    switch (filter) {
+        case 'due':
+            return !last || last < monthStart;
+        case 'never':
+            return !last;
+        default:
+            return true;
+    }
+}
 
 /**
  * `mjo-progress-page` — the monthly progress attestation (AIDP-26, plan §9.4 version 1).
@@ -21,6 +60,10 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * and the period date, previews what would move, and posts it. Revenue catches up to the attested
  * percent — forwards or backwards — through `Orders.RecordProgress`; a posted observation is
  * immutable, so the confirmation is the last chance to look.
+ *
+ * THE LINE OPENS BESIDE THE LIST. Its facts, the two inputs, the preview and the warnings sit
+ * together in a side panel, so what is about to be posted is read next to the line it is posted
+ * against, not in a toolbar above every other line.
  *
  * POSTING IS THE IRREVERSIBLE STEP, so it asks first — through `MJConfirmService`, never
  * `window.confirm`, which throws under the Electron host.
@@ -37,9 +80,9 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * post, supersede included. The screen shows the refusal's message as the error notice, as it does
  * every refusal.
  *
- * A LINE AT 100% IS STILL SUPERSEDABLE, so the same users get "Show 100%": the worklist omits
- * completed lines by default, and a mistyped 100% would otherwise leave the only screen that can
- * correct it. The tiles count open lines either way.
+ * A LINE AT 100% IS STILL SUPERSEDABLE, so the same users get "Show completed lines": the worklist
+ * omits completed lines by default, and a mistyped 100% would otherwise leave the only screen that
+ * can correct it. The tiles count open lines either way.
  *
  * A DATE AFTER TODAY, OR TWO OR MORE MONTHS BACK, WARNS. Neither is blocked, but a mistyped year is
  * the mistake that made supersede necessary, so both warnings ride the preview, the confirm and the
@@ -48,18 +91,58 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
  * ## Example
  *
  * ```html
- * <mjo-progress-page (OrderOpened)="open($event)" />
+ * <mjo-progress-page (OrderOpened)="open($event)" (AddressChanged)="write($event)" />
  * ```
  */
 @Component({
     selector: 'mjo-progress-page',
     standalone: true,
-    imports: [CommonModule, FormsModule, MJButtonDirective, MJAlertComponent, MJOStatTileComponent, MJOWorklistTableComponent],
+    imports: [CommonModule, FormsModule, MJButtonDirective, MJAlertComponent, MJOSidePanelComponent, MJOStatTileComponent, MJOWorklistBarComponent, MJOWorklistTableComponent],
     template: `
+        <mjo-worklist-bar
+            [Companies]="Companies"
+            [CompanyPicks]="CompanyPicks"
+            [Search]="Search"
+            SearchPlaceholder="Search project, customer or order number"
+            [ActiveFilter]="DueOnly ? 'Not attested this month' : null"
+            [Summary]="Summary"
+            [Loading]="Loading"
+            [BuildExport]="BuildExport"
+            [CanExport]="Rows.length > 0"
+            (CompanyPicksChange)="OnCompanies($event)"
+            (SearchChange)="OnSearch($event)"
+            (ActiveFilterCleared)="OnDueOnly(false)"
+            (RefreshRequested)="Refresh()">
+            @if (CanSupersede) {
+                <label class="mjo-pg__toggle small">
+                    <input type="checkbox" [checked]="ShowComplete" [disabled]="Busy" (change)="ToggleShowComplete()" />
+                    Show completed lines
+                </label>
+            }
+        </mjo-worklist-bar>
+
         <div class="mj-stat-grid mjo-pg__tiles">
-            <mjo-stat-tile Label="Open project lines" Icon="fa-solid fa-diagram-project" [Value]="String(OpenRows.length)" Detail="Percentage of completion, not yet at 100%" />
+            <mjo-stat-tile
+                class="mjo-pg__tile"
+                Hint="Show every open line"
+                Label="Open project lines"
+                Icon="fa-solid fa-diagram-project"
+                [Value]="String(OpenRows.length)"
+                Detail="Percentage of completion, below 100%"
+                (Clicked)="OnDueOnly(false)" />
+            <mjo-stat-tile
+                class="mjo-pg__tile"
+                [class.is-on]="DueOnly"
+                [Pressed]="DueOnly"
+                Hint="Show lines with no observation this month"
+                Label="Not attested this month"
+                Icon="fa-regular fa-calendar-xmark"
+                [Tone]="DueCount ? 'alert' : 'default'"
+                [Value]="String(DueCount)"
+                [Detail]="DueCount ? NeverCount + ' never attested' : 'Every open line is attested'"
+                (Clicked)="OnDueOnly(!DueOnly)" />
             <mjo-stat-tile Label="Contract value" Icon="fa-solid fa-file-signature" [Value]="money(TotalAmount, true)" Detail="Across the open lines" />
-            <mjo-stat-tile Label="Recognized to date" Icon="fa-solid fa-chart-line" Tone="alert" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
+            <mjo-stat-tile Label="Recognized to date" Icon="fa-solid fa-chart-line" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
         </div>
 
         @if (LoadError) {
@@ -74,91 +157,140 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="mjo-pg__note"><strong>List truncated.</strong> Not every open line is shown.</mj-alert>
         }
 
-        <div class="row mjo-pg__actions">
-            <button type="button" mjButton variant="outline" [disabled]="!Selected" (click)="OpenSelected()">
-                <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open order
-            </button>
-            <label class="mj-field mjo-pg__field">
-                <span class="small muted">Period</span>
-                <input class="mj-input" type="date" [(ngModel)]="MeasurementDate" name="measurementDate" [disabled]="!Selected" (ngModelChange)="Draft = null" aria-label="Measurement date">
-            </label>
-            <label class="mj-field mjo-pg__field">
-                <span class="small muted">Complete to date (%)</span>
-                <input class="mj-input is-num" type="number" min="0" max="100" step="0.01" [(ngModel)]="PercentInput" name="percent" [disabled]="!Selected" (ngModelChange)="Draft = null" aria-label="Percent complete">
-            </label>
-            @if (CanSupersede) {
-                <button type="button" mjButton [variant]="ShowComplete ? 'primary' : 'outline'" [attr.aria-pressed]="ShowComplete" [disabled]="Busy" (click)="ToggleShowComplete()">
-                    <i class="fa-solid fa-circle-check" aria-hidden="true"></i> Show 100%
-                </button>
-            }
-            @if (CanSupersede && Selected?.LastMeasurementID) {
-                <button type="button" mjButton [variant]="Supersede ? 'primary' : 'outline'" [attr.aria-pressed]="Supersede" [disabled]="Busy" (click)="ToggleSupersede()">
-                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i> Supersede last
-                </button>
-            }
-            <button type="button" mjButton variant="outline" [disabled]="!CanSubmit || Busy" (click)="PreviewSelected()">
-                <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
-            </button>
-            <button type="button" mjButton variant="primary" [disabled]="!CanSubmit || Busy" (click)="PostSelected()">
-                <i class="fa-solid fa-file-signature" aria-hidden="true"></i> {{ Busy ? 'Working…' : 'Attest & post' }}
-            </button>
-        </div>
-
-        @if (Selected; as row) {
-            <div class="small muted mjo-pg__context">
-                {{ row.OrderNumber }} line {{ row.LineNumber }} · {{ row.ProductName }} · {{ money(row.LineAmount) }} ·
-                last attested {{ row.LastMeasurementDate ? FormatDate(row.LastMeasurementDate, { Short: true }) + ' at ' + percent(row.LastPercentComplete) : 'never' }}
-                · recognized {{ money(row.RecognizedToDate) }}
-                @if (Draft) {
-                    <strong> → {{ Draft.Message }}</strong>
-                }
+        <div class="mjo-split">
+            <div class="mjo-split__main">
+                <mjo-worklist-table
+                    [Columns]="Columns"
+                    [Rows]="Rows"
+                    [Searchable]="false"
+                    [Loading]="Loading"
+                    [Totals]="Totals"
+                    MaxHeight="calc(100vh - 290px)"
+                    [SortKey]="Sort.Key"
+                    [SortDescending]="Sort.Descending"
+                    RowKey="OrderLineID"
+                    [SelectedKey]="Selected?.OrderLineID ?? null"
+                    [EmptyTitle]="AllRows.length ? 'Nothing matches' : 'Nothing to attest'"
+                    [EmptyHint]="AllRows.length ? 'No project line matches these filters. Clear one to see more.' : 'No booked percentage-of-completion line is below 100%.'"
+                    EmptyIcon="fa-solid fa-diagram-project"
+                    (SortChanged)="OnSort($event)"
+                    (LinkClicked)="OpenOrder($event.Row)"
+                    (RowClicked)="Select($event)" />
             </div>
-            @if (Supersede && row.LastMeasurementDate) {
-                <div class="mjo-pg__closed" role="status">
-                    <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-                    Superseding the {{ FormatDate(row.LastMeasurementDate, { Short: true }) }} observation at {{ percent(row.LastPercentComplete) }}.
-                    Its recognition is reversed on its own date, or on the first open day if finance has closed that month, and the new catch-up books on the date you enter; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
-                </div>
-            }
-            @if (reversalNote(Draft, row); as reversalText) {
-                <div class="mjo-pg__closed" role="status">
-                    <i class="fa-solid fa-calendar-day" aria-hidden="true"></i> {{ reversalText }}
-                </div>
-            }
-            @if (Draft?.FutureDateWarning; as future) {
-                <div class="mjo-pg__closed" role="status">
-                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ future }}
-                </div>
-            }
-            @if (Draft?.BackDatedWarning; as backDated) {
-                <div class="mjo-pg__closed" role="status">
-                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ backDated }}
-                </div>
-            }
-        }
 
-        <mjo-worklist-table
-            [Columns]="Columns"
-            [Rows]="Rows"
-            [Searchable]="false"
-            RowKey="OrderLineID"
-            [SelectedKey]="Selected?.OrderLineID ?? null"
-            EmptyTitle="Nothing to attest"
-            EmptyHint="No booked percentage-of-completion line is below 100%."
-            EmptyIcon="fa-solid fa-diagram-project"
-            (RowClicked)="Select($event)" />
+            @if (Selected; as row) {
+                <div class="mjo-split__side">
+                    <mjo-side-panel
+                        Icon="fa-solid fa-diagram-project"
+                        [Title]="row.OrderNumber + ' · line ' + row.LineNumber"
+                        [Chip]="percent(row.LastPercentComplete) + ' complete'"
+                        [ChipClass]="row.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline'"
+                        (Closed)="Close()">
+                        <dl class="mjo-side-panel__facts">
+                            <dt>Project</dt>
+                            <dd>{{ row.ProductName }}</dd>
+                            <dt>Customer</dt>
+                            <dd>{{ row.CustomerName }}</dd>
+                            <dt>Order</dt>
+                            <dd><button type="button" class="mjo-side-panel__link" (click)="OpenOrder(row)" title="Open the order">{{ row.OrderNumber }}</button></dd>
+                            <dt>Sold by</dt>
+                            <dd>{{ row.CompanyName || '—' }}</dd>
+                            <dt>Contract</dt>
+                            <dd>{{ money(row.LineAmount) }}</dd>
+                            <dt>Recognized</dt>
+                            <dd>{{ money(row.RecognizedToDate) }} · {{ money(row.LineAmount - row.RecognizedToDate) }} still deferred</dd>
+                            <dt>Last attested</dt>
+                            <dd>
+                                {{ row.LastMeasurementDate ? date(row.LastMeasurementDate) + ' at ' + percent(row.LastPercentComplete) : 'Never' }}
+                                @if (row.LastAttestedBy) {
+                                    · by {{ row.LastAttestedBy }}
+                                }
+                            </dd>
+                        </dl>
+
+                        <div class="mjo-pg__form">
+                            <label class="mjo-pg__field">
+                                <span class="small muted">Period</span>
+                                <input class="mj-input" type="date" [(ngModel)]="MeasurementDate" name="measurementDate" (ngModelChange)="Draft = null" aria-label="Measurement date">
+                            </label>
+                            <label class="mjo-pg__field">
+                                <span class="small muted">Complete to date (%)</span>
+                                <input class="mj-input is-num" type="number" min="0" max="100" step="0.01" [(ngModel)]="PercentInput" name="percent" (ngModelChange)="Draft = null" aria-label="Percent complete">
+                            </label>
+                        </div>
+                        @if (CanSupersede && row.LastMeasurementID) {
+                            <label class="mjo-pg__toggle small mjo-pg__supersede">
+                                <input type="checkbox" [checked]="Supersede" [disabled]="Busy" (change)="ToggleSupersede()" />
+                                Replace the last observation
+                            </label>
+                        }
+
+                        @if (Supersede && row.LastMeasurementDate) {
+                            <div class="mjo-pg__closed" role="status">
+                                <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+                                Replaces the {{ date(row.LastMeasurementDate) }} observation at {{ percent(row.LastPercentComplete) }}.
+                                Its recognition is reversed on its own date, or on the first open day if finance has closed that month, and the new catch-up books on the date you enter; nothing is edited. Keep its date to correct the percent, or choose any date after the observation before it.
+                            </div>
+                        }
+                        @if (Draft) {
+                            <div class="mjo-pg__preview" role="status">
+                                <span class="small muted">Preview</span>
+                                <strong>{{ Draft.Message }}</strong>
+                            </div>
+                        }
+                        @if (reversalNote(Draft, row); as reversalText) {
+                            <div class="mjo-pg__closed" role="status">
+                                <i class="fa-solid fa-calendar-day" aria-hidden="true"></i> {{ reversalText }}
+                            </div>
+                        }
+                        @if (Draft?.FutureDateWarning; as future) {
+                            <div class="mjo-pg__closed" role="status">
+                                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ future }}
+                            </div>
+                        }
+                        @if (Draft?.BackDatedWarning; as backDated) {
+                            <div class="mjo-pg__closed" role="status">
+                                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ backDated }}
+                            </div>
+                        }
+
+                        <div class="mjo-side-panel__actions">
+                            <button type="button" mjButton variant="primary" [disabled]="!CanSubmit || Busy" (click)="PostSelected()">
+                                <i class="fa-solid fa-file-signature" aria-hidden="true"></i> {{ Busy ? 'Working…' : 'Attest and post' }}
+                            </button>
+                            <button type="button" mjButton variant="outline" [disabled]="!CanSubmit || Busy" (click)="PreviewSelected()">
+                                <i class="fa-solid fa-eye" aria-hidden="true"></i> Preview
+                            </button>
+                        </div>
+                    </mjo-side-panel>
+                </div>
+            }
+        </div>
     `,
     styles: [
         `
             :host { display: block; height: 100%; overflow: auto; padding: var(--mj-space-6); }
             .mjo-pg__tiles { margin-bottom: var(--mj-space-4); }
-            .mjo-pg__note { margin-bottom: var(--mj-space-4); }
-            .mjo-pg__actions { align-items: flex-end; gap: var(--mj-space-3); margin-bottom: var(--mj-space-3); flex-wrap: wrap; }
-            .mjo-pg__field { display: flex; flex-direction: column; gap: 2px; }
-            .mjo-pg__field .mj-input { width: 160px; }
-            .mjo-pg__context { margin-bottom: var(--mj-space-4); }
+            .mjo-pg__tile { display: block; border-radius: var(--mj-radius-md); transition: box-shadow 140ms ease; }
+            .mjo-pg__tile.is-on { box-shadow: 0 0 0 2px color-mix(in srgb, var(--mj-brand-primary) 55%, transparent); }
+            .mjo-pg__note { display: block; margin-bottom: var(--mj-space-4); }
+            .mjo-pg__toggle { display: inline-flex; align-items: center; gap: var(--mj-space-2); cursor: pointer; }
+            .mjo-pg__supersede { margin-bottom: var(--mj-space-3); }
+            .mjo-pg__form { display: grid; grid-template-columns: 1fr 1fr; gap: var(--mj-space-3); margin-bottom: var(--mj-space-3); }
+            .mjo-pg__field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+            .mjo-pg__field .mj-input { width: 100%; box-sizing: border-box; }
+            .mjo-pg__preview {
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                margin-bottom: var(--mj-space-3);
+                padding: var(--mj-space-3);
+                background: var(--mj-bg-surface-sunken);
+                border-radius: var(--mj-radius-md);
+                font-size: 0.9rem;
+            }
             .mjo-pg__closed {
-                margin-bottom: var(--mj-space-4);
+                margin-bottom: var(--mj-space-3);
                 padding: var(--mj-space-3) var(--mj-space-4);
                 border-left: 3px solid var(--mj-status-warning);
                 background: var(--mj-status-warning-bg);
@@ -166,6 +298,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 font-size: 0.9rem;
             }
             @media (max-width: 760px) { :host { padding: var(--mj-space-4); } }
+            @media (prefers-reduced-motion: reduce) { .mjo-pg__tile { transition: none; } }
         `,
     ],
 })
@@ -175,9 +308,10 @@ export class MJOProgressPageComponent implements OnInit {
     private readonly confirm = inject(MJConfirmService);
 
     @Output() OrderOpened = new EventEmitter<{ ID: string }>();
+    /** The company choice changed: the section writes it to the tab's address. A null value removes the key. */
+    @Output() AddressChanged = new EventEmitter<Record<string, string | null>>();
 
     public readonly String = String;
-    public readonly FormatDate = FormatDate;
 
     public LoadError: string | null = null;
     public Notice: { Tone: 'success' | 'error' | 'warning'; Text: string } | null = null;
@@ -189,26 +323,92 @@ export class MJOProgressPageComponent implements OnInit {
     public Supersede = false;
     /** When set, lines already attested at 100% are listed too — only offered to users who can supersede. */
     public ShowComplete = false;
+    public Loading = false;
+    /** Every line the operation returned. */
+    public AllRows: ProgressWorklistRow[] = [];
+    /** `AllRows` under the company filter and the search. The tiles count these. */
+    public Scoped: ProgressWorklistRow[] = [];
+    /** `Scoped` under the quick filter, in the sorted order. What the table lists and the export writes. */
     public Rows: ProgressWorklistRow[] = [];
+    public Companies: WorklistCompanyOption[] = [];
+    /** The chosen companies that are offered: what the filter shows. */
+    public CompanyPicks: string[] = [];
+    /** The company choice as chosen, shared across Receivables. */
+    private companyChoice: string[] = [];
+    public Search = '';
+    /** The quick filter: only lines with no observation this month. */
+    public DueOnly = false;
+    /** Open lines not attested this month, and of those the ones never attested. Fields, rebuilt with the rows. */
+    public DueCount = 0;
+    public NeverCount = 0;
+    /** The totals row. A field: a getter would hand the table a new object on every pass. */
+    public Totals: Record<string, string> | null = null;
+    /** The column the list is sorted on; a null key is the order the operation returned. */
+    public Sort: WorklistSort = { Key: null, Descending: false };
+    /** The line open in the side panel. */
     public Selected: ProgressWorklistRow | null = null;
     public MeasurementDate = Today();
     public PercentInput: number | null = null;
     /** The last preview for the current inputs; cleared whenever they change. */
     public Draft: OrdersRecordProgressOutput | null = null;
+    private address: Record<string, string> = {};
+    private readonly companyKey = new AddressKey(COMPANY_ADDRESS_KEY);
+    /** Counts loads, so a slow answer to an earlier read cannot overwrite a later one. */
+    private loadSeq = 0;
+    private ready = false;
 
     public readonly Columns: MJOColumn<ProgressWorklistRow>[] = [
-        { Key: 'OrderNumber', Label: 'Order', Kind: 'mono', Width: '120px', Secondary: (r) => `line ${r.LineNumber}` },
-        { Key: 'ProductName', Label: 'Project' },
-        { Key: 'CustomerName', Label: 'Customer', HideBelow: 760 },
-        { Key: 'CompanyName', Label: 'Sold by', HideBelow: 1000 },
-        { Key: 'LineAmount', Label: 'Contract', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.LineAmount) },
-        { Key: 'LastMeasurementDate', Label: 'Last attested', Kind: 'date', Width: '130px', Format: (r) => (r.LastMeasurementDate ? FormatDate(r.LastMeasurementDate, { Short: true }) : 'never'), Secondary: (r) => (r.LastAttestedBy ? `by ${r.LastAttestedBy}` : null) },
-        { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline') },
-        { Key: 'RecognizedToDate', Label: 'Recognized', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
+        { Key: 'OrderNumber', Label: 'Order', Kind: 'link', LinkHint: 'Open the order', Width: '130px', Sortable: true, Secondary: (r) => `line ${r.LineNumber}` },
+        { Key: 'ProductName', Label: 'Project', Sortable: true },
+        { Key: 'CustomerName', Label: 'Customer', HideBelow: 760, Sortable: true },
+        { Key: 'CompanyName', Label: 'Sold by', HideBelow: 1000, Sortable: true },
+        { Key: 'LineAmount', Label: 'Contract', Kind: 'money', Width: '120px', Sortable: true, Format: (r) => FormatMoney(r.LineAmount) },
+        { Key: 'LastMeasurementDate', Label: 'Last attested', Kind: 'date', Width: '130px', Sortable: true, Format: (r) => (r.LastMeasurementDate ? this.date(r.LastMeasurementDate) : 'Never'), Secondary: (r) => (r.LastAttestedBy ? `by ${r.LastAttestedBy}` : null) },
+        { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '110px', Sortable: true, Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline') },
+        { Key: 'RecognizedToDate', Label: 'Recognized', Kind: 'money', Width: '130px', HideBelow: 560, Sortable: true, Format: (r) => FormatMoney(r.RecognizedToDate) },
     ];
 
+    private readonly exportFields: WorklistExportField<ProgressWorklistRow>[] = [
+        { Name: 'OrderNumber', Label: 'Order', Value: (r) => r.OrderNumber },
+        { Name: 'LineNumber', Label: 'Line', Type: 'number', Value: (r) => r.LineNumber },
+        { Name: 'ProductName', Label: 'Project', Value: (r) => r.ProductName },
+        { Name: 'CustomerName', Label: 'Customer', Value: (r) => r.CustomerName },
+        { Name: 'CompanyName', Label: 'Sold by', Value: (r) => r.CompanyName },
+        { Name: 'LineAmount', Label: 'Contract', Type: 'money', Value: (r) => r.LineAmount },
+        { Name: 'LastMeasurementDate', Label: 'Last attested', Type: 'date', Value: (r) => r.LastMeasurementDate },
+        { Name: 'LastAttestedBy', Label: 'Attested by', Value: (r) => r.LastAttestedBy },
+        { Name: 'PercentComplete', Label: 'Complete (%)', Type: 'number', Value: (r) => Math.round(r.LastPercentComplete * 10000) / 100 },
+        { Name: 'RecognizedToDate', Label: 'Recognized', Type: 'money', Value: (r) => r.RecognizedToDate },
+        { Name: 'StillDeferred', Label: 'Still deferred', Type: 'money', Value: (r) => Math.round((r.LineAmount - r.RecognizedToDate) * 100) / 100 },
+        { Name: 'ServicePeriodStart', Label: 'Service starts', Type: 'date', Value: (r) => r.ServicePeriodStart },
+        { Name: 'ServicePeriodEnd', Label: 'Service ends', Type: 'date', Value: (r) => r.ServicePeriodEnd },
+    ];
+
+    /** The lines listed, as an export file. A field, so the bar is handed the same function every pass. */
+    public readonly BuildExport = (format: 'excel' | 'csv'): MJOWorklistExport => ({
+        FileName: ExportFileName('progress-attestation', this.CompanyPicks, this.Companies, Today()),
+        ...BuildWorklistExport(this.exportFields, this.Rows, format),
+    });
+
     public async ngOnInit(): Promise<void> {
+        const saved = ReadWorklistState(globalThis.localStorage, PROGRESS_STATE_KEY);
+        if (saved) this.Sort = RestoreSort(saved.Sort, this.Columns);
+        this.adoptAddress();
         await this.load();
+        // An address that arrived while that first load was out was kept, not followed. Follow it now.
+        this.adoptAddress();
+        this.applyView();
+        this.ready = true;
+        this.cdr.detectChanges();
+    }
+
+    /** The tab's address, from the section: `company` is the company choice every Receivables page shares. */
+    public ApplyAddress(params: Record<string, string>): void {
+        this.address = params;
+        if (!this.ready) return;
+        this.adoptAddress();
+        this.applyView();
+        // Back, Forward and links arrive outside any event of this page's own, so nothing else repaints it.
         this.cdr.detectChanges();
     }
 
@@ -216,7 +416,12 @@ export class MJOProgressPageComponent implements OnInit {
 
     /** The lines still below 100% — what the tiles describe, whether or not completed lines are shown. */
     public get OpenRows(): ProgressWorklistRow[] {
-        return this.Rows.filter((r) => r.LastPercentComplete < 1);
+        return this.Scoped.filter((r) => r.LastPercentComplete < 1);
+    }
+
+    /** "3 of 12 lines shown", beside the filters. */
+    public get Summary(): string {
+        return this.LoadError || (this.Loading && !this.AllRows.length) ? '' : ShownSummary(this.Rows.length, this.AllRows.length, 'line');
     }
 
     public get TotalAmount(): number {
@@ -236,9 +441,45 @@ export class MJOProgressPageComponent implements OnInit {
         return !!this.Selected && !!this.MeasurementDate && this.PercentInput !== null && Number.isFinite(p) && p >= 0 && p <= 100;
     }
 
+    /* ── Filters ────────────────────────────────────────────────────────── */
+
+    public OnCompanies(picks: string[]): void {
+        this.companyChoice = picks;
+        WriteSharedCompanies(globalThis.localStorage, picks);
+        this.AddressChanged.emit(this.companyKey.Write(CompaniesToAddress(picks)));
+        this.applyView();
+    }
+
+    public OnSearch(text: string): void {
+        this.Search = text;
+        this.applyView();
+    }
+
+    public OnDueOnly(on: boolean): void {
+        this.DueOnly = on;
+        this.applyView();
+    }
+
+    public OnSort(key: string): void {
+        this.Sort = NextSort(this.Sort, key, this.Columns);
+        WriteWorklistState(globalThis.localStorage, PROGRESS_STATE_KEY, { Window: null, Sort: this.Sort });
+        this.applyView();
+    }
+
+    public async Refresh(): Promise<void> {
+        this.Notice = null;
+        await this.load();
+        this.cdr.detectChanges();
+    }
+
     /* ── Actions ────────────────────────────────────────────────────────── */
 
+    /** Clicking a line opens it beside the list with its last percent ready to change; clicking the open line closes it. */
     public Select(row: ProgressWorklistRow): void {
+        if (this.Selected?.OrderLineID === row.OrderLineID) {
+            this.Close();
+            return;
+        }
         this.Selected = row;
         this.PercentInput = Math.round(row.LastPercentComplete * 10000) / 100;
         this.Supersede = false;
@@ -246,11 +487,15 @@ export class MJOProgressPageComponent implements OnInit {
         this.Notice = null;
     }
 
-    public async ToggleShowComplete(): Promise<void> {
-        this.ShowComplete = !this.ShowComplete;
+    public Close(): void {
         this.Selected = null;
         this.Supersede = false;
         this.Draft = null;
+    }
+
+    public async ToggleShowComplete(): Promise<void> {
+        this.ShowComplete = !this.ShowComplete;
+        this.Close();
         await this.load();
         this.cdr.detectChanges();
     }
@@ -260,8 +505,8 @@ export class MJOProgressPageComponent implements OnInit {
         this.Draft = null;
     }
 
-    public OpenSelected(): void {
-        if (this.Selected) this.OrderOpened.emit({ ID: this.Selected.OrderHeaderID });
+    public OpenOrder(row: ProgressWorklistRow): void {
+        this.OrderOpened.emit({ ID: row.OrderHeaderID });
     }
 
     public async PreviewSelected(): Promise<void> {
@@ -275,20 +520,20 @@ export class MJOProgressPageComponent implements OnInit {
         if (!row) return;
         const draft = this.Draft ?? (await this.record(true));
         if (!draft) return;
-        const superseding = this.Supersede && row.LastMeasurementDate ? `, superseding the ${FormatDate(row.LastMeasurementDate, { Short: true })} observation` : '';
+        const superseding = this.Supersede && row.LastMeasurementDate ? `, replacing the ${this.date(row.LastMeasurementDate)} observation` : '';
         const warnings = [this.reversalNote(draft, row), draft.FutureDateWarning, draft.BackDatedWarning].filter((w): w is string => !!w);
         const proceed = await this.confirm.Confirm({
             title: `Attest ${row.OrderNumber} line ${row.LineNumber} at ${this.percent(Number(this.PercentInput) / 100)}${superseding}?`,
             message: draft.Message ?? '',
-            // THE WARNING RIDES THE CONFIRM, not just the strip above the table. It is advisory —
+            // THE WARNING RIDES THE CONFIRM, not just the panel beside the table. It is advisory —
             // an unusual date is not blocked — so the one place it has to be unmissable is the
             // moment before the entry is written, which is exactly where this dialog sits.
             detail:
-                `Signed by you, dated ${FormatDate(this.MeasurementDate, { Short: true })}. A posted observation cannot be changed; a correction is a new observation in a later period` +
-                (this.CanSupersede ? ', or a supersede.' : '.') +
+                `Signed by you, dated ${this.date(this.MeasurementDate)}. A posted observation cannot be changed; a correction is a new observation in a later period` +
+                (this.CanSupersede ? ', or a replacement of this one.' : '.') +
                 warnings.map((w) => `\n\n${w}`).join(''),
             type: 'warning',
-            confirmText: 'Attest & post',
+            confirmText: 'Attest and post',
             cancelText: 'Not yet',
         });
         if (!proceed) return;
@@ -298,9 +543,7 @@ export class MJOProgressPageComponent implements OnInit {
         this.Notice = after.length
             ? { Tone: 'warning', Text: `${output.Message ?? 'Posted.'} ${after.join(' ')}` }
             : { Tone: 'success', Text: output.Message ?? 'Posted.' };
-        this.Selected = null;
-        this.Supersede = false;
-        this.Draft = null;
+        this.Close();
         await this.load();
         this.cdr.detectChanges();
     }
@@ -313,10 +556,10 @@ export class MJOProgressPageComponent implements OnInit {
         if (!draft?.ReversalDate || !draft.ReversalAmount) return null;
         const replaced = row.LastMeasurementDate ? row.LastMeasurementDate.slice(0, 10) : null;
         const amount = this.money(Math.abs(draft.ReversalAmount));
-        const on = FormatDate(draft.ReversalDate, { Short: true });
+        const on = this.date(draft.ReversalDate);
         return !replaced || replaced === draft.ReversalDate
             ? `The ${amount} reversal is dated ${on}, the replaced observation's own date.`
-            : `The ${amount} reversal is dated ${on}: finance has closed the ${FormatDate(replaced, { Short: true })} observation's month, ` +
+            : `The ${amount} reversal is dated ${on}: finance has closed the ${this.date(replaced)} observation's month, ` +
                   `so the reversal books on the first open day.`;
     }
 
@@ -349,21 +592,77 @@ export class MJOProgressPageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
-        const result = await new OrdersGetProgressWorklistOperation().Execute({ IncludeComplete: this.ShowComplete });
-        const output = result.Output;
-        if (!result.Success || !output?.Success) {
-            // SAY SO. An empty worklist and a failed one look identical, and "nothing to attest" is
-            // the most reassuring sentence on the screen.
-            this.LoadError = output?.Message?.trim() || result.ErrorMessage?.trim() || 'The progress worklist could not be loaded.';
-            this.Rows = [];
-            this.cdr.detectChanges();
-            return;
-        }
-        this.LoadError = null;
-        this.Rows = output.Rows;
-        this.Truncated = output.Truncated;
-        this.CanSupersede = output.CanSupersede;
+        const seq = ++this.loadSeq;
+        this.Loading = true;
         this.cdr.detectChanges();
+        try {
+            const result = await new OrdersGetProgressWorklistOperation().Execute({ IncludeComplete: this.ShowComplete });
+            if (seq !== this.loadSeq) return;
+            const output = result.Output;
+            if (!result.Success || !output?.Success) {
+                // SAY SO. An empty worklist and a failed one look identical, and "nothing to attest" is
+                // the most reassuring sentence on the screen.
+                this.LoadError = output?.Message?.trim() || result.ErrorMessage?.trim() || 'The progress worklist could not be loaded.';
+                this.AllRows = [];
+                this.applyView();
+                this.cdr.detectChanges();
+                return;
+            }
+            this.LoadError = null;
+            this.AllRows = output.Rows;
+            this.Truncated = output.Truncated;
+            this.CanSupersede = output.CanSupersede;
+            this.applyView();
+            this.cdr.detectChanges();
+        } finally {
+            if (seq === this.loadSeq) this.Loading = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Take the company choice from the tab's address; see the Billing worklist for the rule. */
+    private adoptAddress(): void {
+        const picks = AdoptCompanyChoice(this.companyKey, this.address, globalThis.localStorage);
+        if (!SameChoice(picks, this.companyChoice)) this.companyChoice = picks;
+    }
+
+    /**
+     * Rebuild what is listed from what was loaded: company and search narrow the lines the tiles
+     * count; the quick filter and the sort then decide what the table shows. An open line the
+     * filters hide is closed with its draft, so nothing is attested against a row that is not on screen.
+     */
+    private applyView(): void {
+        const companies = ReconcileCompanies(this.AllRows, { ID: (r) => r.CompanyID, Name: (r) => r.CompanyName }, this.companyChoice);
+        this.Companies = companies.Options;
+        this.CompanyPicks = companies.Picks;
+        this.Scoped = FilterByCompanies(this.AllRows, this.CompanyPicks, (r) => r.CompanyID).filter((r) =>
+            MatchesText([r.ProductName, r.CustomerName, r.OrderNumber], this.Search),
+        );
+        const monthStart = `${Today().slice(0, 7)}-01`;
+        const open = this.Scoped.filter((r) => r.LastPercentComplete < 1);
+        this.DueCount = open.filter((r) => MatchesAttestationFilter(r, 'due', monthStart)).length;
+        this.NeverCount = open.filter((r) => MatchesAttestationFilter(r, 'never', monthStart)).length;
+        const shown = this.DueOnly ? this.Scoped.filter((r) => r.LastPercentComplete < 1 && MatchesAttestationFilter(r, 'due', monthStart)) : this.Scoped;
+        this.Rows = SortRows(shown, this.Columns, this.Sort);
+        this.Totals = {
+            OrderNumber: 'Total',
+            ProductName: `${this.Rows.length} line${this.Rows.length === 1 ? '' : 's'}`,
+            LineAmount: FormatMoney(this.Rows.reduce((s, r) => s + r.LineAmount, 0)),
+            RecognizedToDate: FormatMoney(this.Rows.reduce((s, r) => s + r.RecognizedToDate, 0)),
+        };
+        if (this.Selected) {
+            const key = this.Selected.OrderLineID;
+            const still = this.Rows.find((r) => r.OrderLineID === key) ?? null;
+            if (still) this.Selected = still;
+            else this.Close();
+        }
+    }
+
+    /* ── Display helpers ────────────────────────────────────────────────── */
+
+    /** Every date on the page reads MM/DD/YYYY, as on Customer A/R. */
+    protected date(value: string | null | undefined): string {
+        return value ? FormatDate(value, { Numeric: true }) : '—';
     }
 
     protected money(value: number, round = false): string {
