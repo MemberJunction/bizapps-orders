@@ -115,6 +115,7 @@ export * from './lib/data/entity-names';
 export * from './lib/data/orders-queries';
 
 /** Screens. */
+export * from './lib/pages/workspace-requests';
 export * from './lib/pages/orders/orders-list.page';
 export * from './lib/pages/orders/orders-dashboard.page';
 export * from './lib/pages/orders/fulfillment.page';
