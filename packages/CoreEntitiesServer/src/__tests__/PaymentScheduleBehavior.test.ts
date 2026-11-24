@@ -5,6 +5,7 @@ import {
     CompanySlices,
     DefaultScheduleWeights,
     ExplainShortfalls,
+    InstalmentsToIssueAtConfirm,
     RenewalDueDate,
     RenewalScheduleRows,
     ScheduleCoverage,
@@ -301,5 +302,34 @@ describe('RenewalDueDate (golive #477)', () => {
 
     it('refuses an order with no date rather than guessing', () => {
         expect(() => RenewalDueDate(null)).toThrow(/order date/);
+    });
+});
+
+describe('InstalmentsToIssueAtConfirm (D92, #963, golive #477)', () => {
+    const row = (n: number, due: string | Date, status = 'Scheduled') => ({ InstallmentNumber: n, DueDate: due, Status: status });
+
+    it('issues the Scheduled rows due on or before the cutoff, in instalment order', () => {
+        const rows = [row(3, '2026-03-01'), row(2, '2026-02-01'), row(1, '2026-01-01')];
+        expect(InstalmentsToIssueAtConfirm(rows, '2026-02-01').map((r) => r.InstallmentNumber)).toEqual([1, 2]);
+    });
+
+    it('leaves a row due after the cutoff Scheduled, so an instalment due months later waits (#963)', () => {
+        expect(InstalmentsToIssueAtConfirm([row(1, '2027-06-30')], '2026-12-14')).toEqual([]);
+    });
+
+    it("issues a renewal's row whatever its due date when the operation placed it confirmed (golive #477)", () => {
+        // Placed from the Renewals page 200 days out with a 30-day lead: due far past the cutoff.
+        const placed = InstalmentsToIssueAtConfirm([row(1, '2027-06-30')], '2026-12-14', true);
+        expect(placed.map((r) => r.InstallmentNumber)).toEqual([1]);
+    });
+
+    it('never issues a row that is not Scheduled, or one with no date, even then', () => {
+        const rows = [row(1, '2026-01-01', 'Invoiced'), row(2, '2026-01-01', 'Cancelled'), row(3, 'not a date')];
+        expect(InstalmentsToIssueAtConfirm(rows, '2026-12-31')).toEqual([]);
+        expect(InstalmentsToIssueAtConfirm(rows, '2026-12-31', true)).toEqual([]);
+    });
+
+    it('reads Date cells as well as strings', () => {
+        expect(InstalmentsToIssueAtConfirm([row(1, new Date('2026-01-01T00:00:00Z'))], '2026-01-01')).toHaveLength(1);
     });
 });

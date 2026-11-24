@@ -32,6 +32,14 @@
  * with a renewal card (`DefaultCustomerPaymentMethodID`) is the one exception to the due day: its row
  * is due on the term start, when `ChargeRenewals` charges the card (#289). Placing an order still
  * never calls a gateway.
+ * A renewal placed confirmed is INVOICED IN THAT CONFIRM, whatever its due date: the operation marks
+ * the order so its schedule rows are issued (`IssueRenewalScheduleAtConfirm`). The nightly pass only
+ * selects terms inside the lead window, so its rows were inside the cutoff already, with one
+ * exception: a renewal-card row, due on the term start, is one day past the cutoff on the first day
+ * its term enters the window, and is now issued that day as it is on every later day. The rule
+ * mostly decides the Renewals page, where a person can confirm a renewal months before the window
+ * opens: without it the lead-window cutoff of #963 would leave that order confirmed with its row
+ * Scheduled and no receivable, and nothing issues a Scheduled row later on its own.
  *
  * IDEMPOTENCY, which a scheduled job makes non-negotiable
  * Two independent guards, because this runs unattended and a double-spawn double-bills a customer:
@@ -78,6 +86,9 @@
  *     billed to the same organization is read.
  * A renewal placed CONFIRMED is not reviewed before it is invoiced, so it takes neither: its
  * bill-to person is the beneficiary alone and its terms are the ordinary walk's.
+ * A subscription with a renewal card is charged on the term start (#289). Its confirmed renewal's
+ * schedule row is due that day, and so is its draft's order, which has no row yet: either way
+ * `ChargeRenewals` finds the term start as the next due date.
  *
  * CONNECTS TO:
  *   BOOKING: OrderEntityServer.Save — the renewal order goes through the ordinary confirm path,
@@ -788,9 +799,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             }
 
             // DRAFT FIRST, THEN THE SCHEDULE, THEN CONFIRM (#305). The renewal is invoiced on the day
-            // this pass runs, not on its term start, so it carries a one-row schedule due today and
-            // D92 books it that way: no AR at confirm, and the instalment — due on or before the
-            // order date — is issued inside the same confirm, dated when it is issued. The row must
+            // this pass runs, not on its term start, so it carries a one-row schedule and D92 books
+            // it that way: no AR at confirm, and the instalment, due the day before the new term
+            // (golive #477), is issued inside the same confirm, dated when it is issued. The row must
             // tie to the lines' gross, and that gross exists only once pricing has written the lines,
             // which is what the draft save does. All of it sits in this transaction.
             order.Status = 'Draft';
@@ -812,8 +823,10 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 // A draft is reviewed by a person, so it arrives with its terms filled rather than left
                 // for them to type (golive #477): the walk's, with the prior order's as a rung. The due
                 // date is then stated as the day before the new term starts, so the confirm leaves it.
+                // A subscription with a renewal card is due on the term start instead, the day its card
+                // is charged (#289): a draft has no schedule row, so `ChargeRenewals` reads this date.
                 await order.resolveDueDate({ PriorPaymentTermsTypeID: carry.PaymentTermsTypeID });
-                order.DueDate = new Date(`${RenewalDueDate(order.OrderDate)}T00:00:00Z`);
+                order.DueDate = new Date(`${RenewalDueDate(order.OrderDate, !!first.DefaultCustomerPaymentMethodID)}T00:00:00Z`);
                 // The notes may have changed above too; a draft's second save is the ordinary draft save.
                 if (!(await order.Save())) {
                     throw new Error(
@@ -831,6 +844,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 const rowDueDate = RenewalDueDate(order.OrderDate, hasRenewalCard);
                 if (!hasRenewalCard) order.DueDate = new Date(`${rowDueDate}T00:00:00Z`);
                 await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
+                // That row is the renewal's invoice, issued in this confirm whatever its due date: from
+                // the page a term can be months outside the lead window confirm otherwise applies (#963).
+                order.IssueRenewalScheduleAtConfirm = true;
 
                 order.Status = 'Confirmed';
                 if (!(await order.Save())) {
