@@ -103,6 +103,8 @@ export { MJOSectionShellComponent } from './lib/sections/section-shell.component
 export * from './lib/panels';
 export * from './lib/panels/worklist-table.component';
 export * from './lib/panels/multi-select.component';
+export * from './lib/panels/worklist-bar.component';
+export * from './lib/panels/side-panel.component';
 export * from './lib/panels/stat-tile.component';
 export * from './lib/panels/summary-strip.component';
 export * from './lib/panels/day-bars.component';
