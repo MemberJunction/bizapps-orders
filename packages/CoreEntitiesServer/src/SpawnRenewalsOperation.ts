@@ -25,12 +25,21 @@
  *
  * The order is placed at LEAD TIME, not on the expiry date, which is how subscription billing
  * actually works: the invoice goes out before the period it covers. The order carries a one-row
- * payment schedule due on the pass's day, so under D92 the receivable is raised by that instalment's
- * invoice, dated when it is issued, not on the term start (#305). Revenue is not affected — the
- * invoice credits Deferred Revenue and the recognition entries are dated into the new term's own
- * window (D14). A subscription with a renewal card (`DefaultCustomerPaymentMethodID`) is the one
- * exception to the due day: its row is due on the term start, when `ChargeRenewals` charges the card
- * (#289). Placing an order still never calls a gateway.
+ * payment schedule, so under D92 the receivable is raised by that instalment's invoice, dated when it
+ * is issued, not on the term start (#305). The row, and the order, are due the day before the new
+ * term starts (`RenewalDueDate`, golive #477). Revenue is not affected — the invoice credits Deferred
+ * Revenue and the recognition entries are dated into the new term's own window (D14). A subscription
+ * with a renewal card (`DefaultCustomerPaymentMethodID`) is the one exception to the due day: its row
+ * is due on the term start, when `ChargeRenewals` charges the card (#289). Placing an order still
+ * never calls a gateway.
+ * A renewal placed confirmed is INVOICED IN THAT CONFIRM, whatever its due date: the operation marks
+ * the order so its schedule rows are issued (`IssueRenewalScheduleAtConfirm`). The nightly pass only
+ * selects terms inside the lead window, so its rows were inside the cutoff already, with one
+ * exception: a renewal-card row, due on the term start, is one day past the cutoff on the first day
+ * its term enters the window, and is now issued that day as it is on every later day. The rule
+ * mostly decides the Renewals page, where a person can confirm a renewal months before the window
+ * opens: without it the lead-window cutoff of #963 would leave that order confirmed with its row
+ * Scheduled and no receivable, and nothing issues a Scheduled row later on its own.
  *
  * IDEMPOTENCY, which a scheduled job makes non-negotiable
  * Two independent guards, because this runs unattended and a double-spawn double-bills a customer:
@@ -64,6 +73,22 @@
  * undiscounted price. The preview runs the same engine without saving. The discount is an
  * adjustment, not a change to the line's unit price, so `MarkRenewalPriced` still recognises the
  * price the pass wrote.
+ *
+ * WHEN A RENEWAL IS DUE, AND WHAT A DRAFT ARRIVES WITH (golive #477)
+ * Every renewal is due the day before the new term starts, the last day of the expiring term, so it
+ * is payable before the coverage it buys begins (`RenewalDueDate`). That holds for a draft, for an
+ * order confirmed from the page and for one the nightly pass places; the date is stated on the
+ * order, so the payment terms do not move it. The renewal-card exception is above.
+ * A DRAFT is handed to a person to review, so it also arrives with what they would otherwise type:
+ *   - payment terms: the customer's own, else the prior order's, else the company default;
+ *   - the bill-to person, when the subscription names no beneficiary (an organization holds it):
+ *     the person the order being renewed was billed to (`RenewalHeaderCarry`). Only a prior order
+ *     billed to the same organization is read.
+ * A renewal placed CONFIRMED is not reviewed before it is invoiced, so it takes neither: its
+ * bill-to person is the beneficiary alone and its terms are the ordinary walk's.
+ * A subscription with a renewal card is charged on the term start (#289). Its confirmed renewal's
+ * schedule row is due that day, and so is its draft's order, which has no row yet: either way
+ * `ChargeRenewals` finds the term start as the next due date.
  *
  * CONNECTS TO:
  *   BOOKING: OrderEntityServer.Save — the renewal order goes through the ordinary confirm path,
@@ -290,6 +315,34 @@ export function RenewalGroupKey(
 ): string {
     const part = (v: unknown): string => (v == null ? '' : String(v).toLowerCase());
     return [part(due.CompanyID), part(due.HolderOrganizationID), part(due.BeneficiaryPersonID), part(due.TermEndDate), placeAs, part(due.DefaultCustomerPaymentMethodID)].join('|');
+}
+
+/** What the order that bought an expiring term says on its header, as a renewal reads it. */
+export interface PriorOrderHeaderFacts {
+    BillToOrganizationID: string | null;
+    BillToPersonID: string | null;
+    PaymentTermsTypeID: string | null;
+}
+
+/**
+ * What a renewal order's header takes from the orders its members' expiring terms were bought on
+ * (golive #477), given in member order; null where a member's order could not be read.
+ *
+ * The subscription's own beneficiary stays the bill-to person when it has one. Otherwise the first
+ * prior order that names a person supplies it, and the first that names payment terms supplies
+ * those. A prior order billed to a different organization than the one this renewal bills is not
+ * read: its contact and its terms belong to that other customer.
+ */
+export function RenewalHeaderCarry(
+    first: Pick<RenewalSubjectRow, 'HolderOrganizationID' | 'BeneficiaryPersonID'>,
+    priors: ReadonlyArray<PriorOrderHeaderFacts | null>,
+): { BillToPersonID: string | null; PaymentTermsTypeID: string | null } {
+    const same = (a: unknown, b: unknown): boolean => String(a ?? '').toLowerCase() === String(b ?? '').toLowerCase();
+    const usable = priors.filter((p): p is PriorOrderHeaderFacts => !!p && same(p.BillToOrganizationID, first.HolderOrganizationID));
+    return {
+        BillToPersonID: first.BeneficiaryPersonID ?? usable.find((p) => p.BillToPersonID)?.BillToPersonID ?? null,
+        PaymentTermsTypeID: usable.find((p) => p.PaymentTermsTypeID)?.PaymentTermsTypeID ?? null,
+    };
 }
 
 interface DueRow extends RenewalSubjectRow {
@@ -668,6 +721,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         const first = members[0].due;
         const numbers = members.map((m) => m.due.SubscriptionNumber).join(', ');
         const dbProvider = provider as unknown as DatabaseProviderBase;
+        // Only a draft takes anything from the prior orders, so only a draft reads them.
+        const priorOrders = placeAs === 'Draft' ? await this.loadPriorOrderHeaders(provider, members.map((m) => m.due.OrderLineID)) : new Map<string, PriorOrderHeaderFacts>();
+        const carry = RenewalHeaderCarry(first, members.map((m) => priorOrders.get(String(m.due.OrderLineID).toLowerCase()) ?? null));
         await dbProvider.BeginTransaction();
         try {
             const order = await provider.GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, user);
@@ -686,7 +742,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             order.InstalmentInvoiceDay = invoiceDay < today ? invoiceDay : null;
             order.CompanyID = first.CompanyID;
             order.BillToOrganizationID = first.HolderOrganizationID;
-            order.BillToPersonID = first.BeneficiaryPersonID;
+            // The beneficiary. A draft, which a person reviews, falls back to the person the order being
+            // renewed was billed to (golive #477); an order confirmed unreviewed names nobody it was not told.
+            order.BillToPersonID = placeAs === 'Draft' ? carry.BillToPersonID : first.BeneficiaryPersonID;
             order.Notes = this.renewalNotes(members, null, placeAs, selectedByPerson);
 
             const codes = [...new Set(members.flatMap((m) => m.priced.PromotionCodes.map((c) => c.Code)))];
@@ -741,9 +799,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             }
 
             // DRAFT FIRST, THEN THE SCHEDULE, THEN CONFIRM (#305). The renewal is invoiced on the day
-            // this pass runs, not on its term start, so it carries a one-row schedule due today and
-            // D92 books it that way: no AR at confirm, and the instalment — due on or before the
-            // order date — is issued inside the same confirm, dated when it is issued. The row must
+            // this pass runs, not on its term start, so it carries a one-row schedule and D92 books
+            // it that way: no AR at confirm, and the instalment, due the day before the new term
+            // (golive #477), is issued inside the same confirm, dated when it is issued. The row must
             // tie to the lines' gross, and that gross exists only once pricing has written the lines,
             // which is what the draft save does. All of it sits in this transaction.
             order.Status = 'Draft';
@@ -762,20 +820,33 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             }
 
             if (placeAs === 'Draft') {
-                // The notes may have changed above; a draft's second save is the ordinary draft save.
-                if (promotions && !(await order.Save())) {
+                // A draft is reviewed by a person, so it arrives with its terms filled rather than left
+                // for them to type (golive #477): the walk's, with the prior order's as a rung. The due
+                // date is then stated as the day before the new term starts, so the confirm leaves it.
+                // A subscription with a renewal card is due on the term start instead, the day its card
+                // is charged (#289): a draft has no schedule row, so `ChargeRenewals` reads this date.
+                await order.resolveDueDate({ PriorPaymentTermsTypeID: carry.PaymentTermsTypeID });
+                order.DueDate = new Date(`${RenewalDueDate(order.OrderDate, !!first.DefaultCustomerPaymentMethodID)}T00:00:00Z`);
+                // The notes may have changed above too; a draft's second save is the ordinary draft save.
+                if (!(await order.Save())) {
                     throw new Error(
                         `Failed to save the renewal draft ${order.OrderNumber} of ${numbers}: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                     );
                 }
             } else {
-                // Due on the invoice day plus the customer's terms, capped at the order date (#305
-                // review). `resolveDueDate` is the confirm's own terms walk, run now so the row can use
-                // it; confirm then sees the date already set and leaves it. A subscription with a renewal
-                // card is due on the order date, the day `ChargeRenewals` first charges the card (#289).
+                // Due the day before the new term starts, on the order and on its one schedule row
+                // (golive #477). `resolveDueDate` is the confirm's own terms walk, run now so the order
+                // records its terms; the date is then stated, and confirm leaves a stated date. A
+                // subscription with a renewal card keeps the walk's date on the order, and its row is
+                // due on the order date, the day `ChargeRenewals` first charges the card (#289).
                 await order.resolveDueDate();
-                const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, !!first.DefaultCustomerPaymentMethodID);
+                const hasRenewalCard = !!first.DefaultCustomerPaymentMethodID;
+                const rowDueDate = RenewalDueDate(order.OrderDate, hasRenewalCard);
+                if (!hasRenewalCard) order.DueDate = new Date(`${rowDueDate}T00:00:00Z`);
                 await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
+                // That row is the renewal's invoice, issued in this confirm whatever its due date: from
+                // the page a term can be months outside the lead window confirm otherwise applies (#963).
+                order.IssueRenewalScheduleAtConfirm = true;
 
                 order.Status = 'Confirmed';
                 if (!(await order.Save())) {
@@ -798,6 +869,25 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             }
             throw err;
         }
+    }
+
+    /**
+     * The header of the order each source line belongs to, keyed by lower-cased line ID. Raw SQL for
+     * the same reason as the selection: one join, read once for the whole group.
+     */
+    private async loadPriorOrderHeaders(provider: IMetadataProvider, orderLineIDs: ReadonlyArray<string>): Promise<Map<string, PriorOrderHeaderFacts>> {
+        const out = new Map<string, PriorOrderHeaderFacts>();
+        const ids = RequireUUIDs(orderLineIDs.filter((id) => !!id), 'OrderLineID');
+        if (!ids.length) return out;
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const rows = (await db.ExecuteSQL(`
+            SELECT ol.ID AS OrderLineID, oh.BillToOrganizationID, oh.BillToPersonID, oh.PaymentTermsTypeID
+            FROM __mj_BizAppsOrders.OrderLine ol
+            JOIN __mj_BizAppsOrders.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+            WHERE ol.ID IN (${ids.map((id) => `'${id}'`).join(',')})
+        `)) as Array<PriorOrderHeaderFacts & { OrderLineID: string }>;
+        for (const row of Array.isArray(rows) ? rows : []) out.set(String(row.OrderLineID).toLowerCase(), row);
+        return out;
     }
 
     /** Write the renewal's one-row schedule, from the order's company, due on `dueDate`. */
