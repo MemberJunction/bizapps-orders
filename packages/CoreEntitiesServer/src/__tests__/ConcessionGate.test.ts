@@ -674,4 +674,79 @@ describe('the order judged as a whole on price (golive #499)', () => {
         expect(report.Problems).toEqual([]);
         expect(report.Notes[0]).toMatch(/^lines 2 and 3 are priced 3012.00 below their engine prices, made up for by line 1, priced 5012.00/);
     });
+
+    it("takes a premium line's held manual discount off what it makes up for", async () => {
+        // 5012 less a held 3500 is 1512 above list, short of the 2012 below it.
+        database([], [upsell, plan], [], [{ OrderLineID: UPSELL_ID, Amount: 3500 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems.some((p) => /line 2 is priced at 5988.00/.test(p))).toBe(true);
+    });
+
+    it('counts no premium for a named list pick', async () => {
+        mockStanding.mockImplementation((line?: { ProductID: string }) =>
+            Promise.resolve(
+                line?.ProductID === 'upsell'
+                    ? { EngineUnitPrice: 0, IsEnginePrice: false, IsNamedListPick: true }
+                    : { EngineUnitPrice: 8000, IsEnginePrice: false, IsNamedListPick: false },
+            ),
+        );
+        database([], [upsell, plan]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00/)]);
+    });
+
+    it('counts no premium for a line nothing resolves an engine price for', async () => {
+        mockStanding.mockImplementation((line?: { ProductID: string }) =>
+            Promise.resolve({ EngineUnitPrice: line?.ProductID === 'upsell' ? null : 8000, IsEnginePrice: false, IsNamedListPick: false }),
+        );
+        database([], [upsell, plan]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00/)]);
+    });
+
+    it('never nets a product given away, even when the premiums would cover it', async () => {
+        database([], [{ ...upsell, UnitPrice: 9000 }, { ...plan, UnitPrice: 0 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 0.00 .* with no approved Scope concession/)]);
+    });
+
+    it('does not net a line an approver refused a Price concession for', async () => {
+        const refused = { Status: 'Rejected', DeliveryForm: 'Price', ReasonCategory: 'Retention', ComputedValue: 2012, OrderLineID: PLAN_ID, AuthorizedBySalesAuthorityID: null, SalesRuleID: null };
+        database([refused], [upsell, plan]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00 .* with no approved Price concession/)]);
+        expect(report.Notes).toEqual([]);
+    });
+
+    it('tells the rep to withdraw a pending Price concession the netted line no longer needs', async () => {
+        const pending = { Status: 'Pending', DeliveryForm: 'Price', ReasonCategory: 'Retention', ComputedValue: 2012, OrderLineID: PLAN_ID, AuthorizedBySalesAuthorityID: null, SalesRuleID: null };
+        database([pending], [upsell, plan]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/awaiting approval/)]);
+        expect(report.Notes[0]).toMatch(/; the Price concession awaiting approval on line 2 is no longer needed, so withdraw it to confirm$/);
+    });
+
+    it('measures the share against the netted line at its stated price', async () => {
+        // 1200 of seats on the rep's own authority. The customer pays 11000: 10.9%, over a 10% limit.
+        // Counting line 2 at its engine price would make it 1200 on 13012, 9.2%, and let it through.
+        const AUTHORITY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3320';
+        const seats = { Status: 'Approved', DeliveryForm: 'Seats', ReasonCategory: 'Retention', ComputedValue: 1200, OrderLineID: PLAN_ID, AuthorizedBySalesAuthorityID: AUTHORITY_ID, SalesRuleID: null };
+        database([seats], [upsell, plan], [{ ID: AUTHORITY_ID, MaxConcessionPctOfContract: 0.1 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/10\.9% of its catalog total, at or above the 10\.0% limit \(1200\.00 on a catalog total of 11000\.00\)/)]);
+    });
 });
