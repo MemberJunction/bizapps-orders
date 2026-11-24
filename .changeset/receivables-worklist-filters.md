@@ -1,5 +1,5 @@
 ---
-"@mj-biz-apps/orders-ng": minor
+"@mj-biz-apps/orders-ng": patch
 ---
 
 The Receivables worklists (Billing worklist, Overdue worklist, Invoicing queue, Progress attestation) share one filter row: a Company filter listing the companies with rows on the page, a count of the rows listed, Refresh, and an export of the rows listed to Excel or CSV. The company choice is one choice across Receivables, Customer A/R included. It, each page's date filter and the Invoicing queue's open tab are kept in the tab's address and follow Back and Forward. The tiles are the quick filters, and every date reads MM/DD/YYYY. On Billing worklist, Invoicing queue and Progress attestation there is also a search; column headers sort, a third click returning the list to its own order; a row opens in a panel beside the list with its full detail and the act on it; order numbers are links; and the list shows placeholder rows while loading and keeps its headings and a totals row in view while it scrolls. A row a filter hides is closed or unticked, so no action runs against a row that is not on screen. The worklist table's rows are one tab stop with arrow keys between them, on the Renewals page too.
