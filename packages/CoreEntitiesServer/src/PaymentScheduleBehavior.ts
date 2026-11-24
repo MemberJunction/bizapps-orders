@@ -146,7 +146,9 @@ export function RenewalScheduleRows(
  * day however the renewal is placed (a draft, confirmed from the page, or by the nightly pass), and
  * the customer's payment terms do not move it; they are still recorded on the order.
  *
- * The day falls before the order date, which is what makes confirm issue the schedule row (D92).
+ * The date does not decide when the row is invoiced. Since #963 confirm issues a renewal's rows due
+ * inside the lead window, and a renewal the operation places confirmed has its one row issued in
+ * that confirm whatever the date (`InstalmentsToIssueAtConfirm`).
  *
  * A subscription with a RENEWAL CARD (`hasRenewalCard`, #289) is charged on the new term's first day,
  * so it is due on the order date itself: the past-due count, and the access cutoff with it, starts
@@ -159,6 +161,32 @@ export function RenewalDueDate(orderDate: DateCell, hasRenewalCard = false): str
     const due = AddDays(orderDay, -1);
     if (!due) throw new Error(`The renewal order date '${orderDay}' is not a date.`);
     return due;
+}
+
+/**
+ * The schedule rows a confirm invoices at once, in instalment order (D92).
+ *
+ * Ordinarily those are the Scheduled rows due on or before `cutoffDate`: the order's own day, or for
+ * a renewal the as-of day plus its lead days, so an instalment due months later waits (#963).
+ *
+ * `issueEveryRow` is for the schedule `Orders.SpawnRenewals` writes on a renewal it places confirmed
+ * (golive #477): one row per company, together the renewal's whole invoice, due the day before the
+ * new term starts. A person can place a renewal from the Renewals page months before its lead window opens,
+ * and nothing issues a Scheduled row later on its own, so a cutoff there would leave a confirmed
+ * renewal with no invoice and no receivable. Placing it confirmed is the instruction to invoice it.
+ */
+export function InstalmentsToIssueAtConfirm<T extends Pick<ScheduleTimingFacts, 'Status' | 'DueDate' | 'InstallmentNumber'>>(
+    rows: readonly T[],
+    cutoffDate: string,
+    issueEveryRow = false,
+): T[] {
+    return rows
+        .filter((r) => r.Status === 'Scheduled')
+        .filter((r) => {
+            const due = ToISODate(r.DueDate);
+            return due !== null && (issueEveryRow || due <= cutoffDate);
+        })
+        .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0));
 }
 
 /** A schedule row as the tie check reads it. */

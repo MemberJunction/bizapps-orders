@@ -67,7 +67,7 @@
  *   SR38  a declined card is retried on days 3, 7 and 11, each its own Failed intent and PaymentFailed
  *         event naming the attempt and the next day, and is not tried on any other day or after day 11
  *   SR39  an authentication demand on the off-session charge is recorded as a failed attempt
- *   SR40  a subscription without a renewal card keeps the invoice-day due date and is never charged
+ *   SR40  a subscription without a renewal card is due the day before the term start and is never charged
  *   SR41  the Action the scheduler dispatches previews from the STRING "true", then charges on "false"
  *   SR42  the charge schedule points at its Action, and ships disabled and set to preview
  *   SR43  a later settled-payment webhook for the charged intent books nothing more
@@ -214,6 +214,13 @@
  *          on an order of its own, the broken one alone is skipped with its own reason
  *   SR104  the worklist says a term with auto-renew off has Ended once its last day is past (WillEnd on the
  *          day itself), and that the same term with auto-renew on Lapsed
+ *   SR106  a renewal draft arrives with the prior order's bill-to person and terms, due the day before
+ *          the new term; a renewal placed confirmed is due the same day (golive #477)
+ *   SR107  a renewal a person places confirmed while its term is outside the lead window is still
+ *          invoiced in that confirm: its row is Invoiced for the whole order, not left Scheduled (golive #477)
+ *   SR108  a renewal-card renewal placed by the pass on the first day its term is inside the lead window is
+ *          invoiced, its row due on the term start; a draft for a renewal-card subscription is due on the
+ *          term start too (golive #477, #289)
  *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
@@ -4543,6 +4550,77 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(booked.DueDate, isoDate(other.Term.EndDate), 'and is due the day before its new term starts, as a draft is');
             }),
     },
+    {
+        Id: 'subscription-renewal.SR107',
+        Name: 'SR107: a renewal a person places confirmed outside the lead window is invoiced in that confirm, not left Scheduled (golive #477)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A 30-day lead, and a person confirming the renewal 200 days before the term ends: the row,
+                // due the day before the new term, is far past the cutoff confirm gives a renewal (#963).
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET RenewalLeadDays = 30 WHERE ID = '${SubscriptionID}'`);
+                const asOf = daysBefore(Term.EndDate, 200);
+                const dueDay = isoDate(Term.EndDate);
+                Assert(daysBefore(asOf, -30) < dueDay, 'precondition: the row is due after the as-of day plus the lead days');
+
+                // The nightly selection, on the same day, does not place it: the term is outside the window.
+                const nightly = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf });
+                AssertEqual(nightly.Placed, 0, `precondition: the pass leaves a term outside its lead window: ${nightly.Message}`);
+
+                const out = await spawnRenewals(ctx, { SubscriptionIDs: [SubscriptionID], PlaceAs: 'Confirmed', AsOfDate: asOf });
+                AssertEqual(out.Placed, 1, `expected one confirmed renewal: ${out.Message}; ${out.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                const orderID = out.Candidates[0].OrderID!;
+
+                const rows = await TxQuery<{ DueDate: string; Status: string; DocumentNumber: string | null; Amount: number }>(
+                    ctx,
+                    `SELECT CONVERT(varchar(10), DueDate, 23) AS DueDate, Status, DocumentNumber, Amount
+                     FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(rows.length, 1, 'the renewal carries its one schedule row');
+                AssertEqual(rows[0].DueDate, dueDay, 'due the day before the new term starts');
+                AssertEqual(rows[0].Status, 'Invoiced', 'and issued in the confirm although it is due outside the lead window');
+                Assert(!!rows[0].DocumentNumber, 'with an invoice number');
+                AssertEqual(Number(rows[0].Amount), 1200, 'for the whole renewal');
+
+                const header = await TxOne<{ Status: string; TotalGross: number; AmountInvoiced: number | null }>(
+                    ctx,
+                    `SELECT Status, TotalGross, (SELECT SUM(ps.Amount) FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps WHERE ps.OrderHeaderID = oh.ID AND ps.Status = 'Invoiced') AS AmountInvoiced
+                     FROM ${ORDERS_SCHEMA}.OrderHeader oh WHERE oh.ID = '${orderID}'`,
+                );
+                AssertEqual(header.Status, 'Confirmed', 'the order is confirmed');
+                AssertEqual(Number(header.AmountInvoiced), Number(header.TotalGross), 'and invoiced in full, so no part of a confirmed renewal waits for someone to issue it');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR108',
+        Name: 'SR108: a renewal-card renewal the pass places on the first day inside the lead window is invoiced, and a renewal-card draft is due on the term start (golive #477)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // The card row is due on the term start, one day past the as-of day plus the lead days on
+                // the first day the pass selects the term. It is issued in the confirm all the same.
+                const first = await renewWithCard(ctx, 'pm_card_visa', { leadDaysOnBoundary: 30 });
+                const row = await TxOne<{ DueDate: string; Status: string }>(
+                    ctx,
+                    `SELECT CONVERT(varchar(10), DueDate, 23) AS DueDate, Status FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${first.OrderID}'`,
+                );
+                AssertEqual(row.DueDate, first.TermStart, 'the card row is due on the term start, the day the card is charged');
+                AssertEqual(row.Status, 'Invoiced', 'and is issued in the confirm on the first day its term is inside the lead window');
+
+                // A draft has no schedule row, so the order itself says when the card is charged.
+                const draft = await renewWithCard(ctx, 'pm_card_visa', { organizationID: Fx().Customers.SecondOrganizationID, placeDraft: true });
+                const header = await TxOne<{ Status: string; DueDate: string | null; Rows: number }>(
+                    ctx,
+                    `SELECT Status, CONVERT(varchar(10), DueDate, 23) AS DueDate,
+                            (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule ps WHERE ps.OrderHeaderID = oh.ID) AS Rows
+                     FROM ${ORDERS_SCHEMA}.OrderHeader oh WHERE oh.ID = '${draft.OrderID}'`,
+                );
+                AssertEqual(header.Status, 'Draft', 'left as a draft');
+                AssertEqual(Number(header.Rows), 0, 'precondition: a draft carries no schedule row');
+                AssertEqual(header.DueDate, draft.TermStart, 'a renewal-card draft is due on the term start, not the day before it');
+            }),
+    },
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
@@ -4680,7 +4758,7 @@ async function stubStripeProvider(ctx: IntegrationCheckContext, active = true): 
 async function renewWithCard(
     ctx: IntegrationCheckContext,
     instrumentRef: string,
-    opts: { inactiveProvider?: boolean; organizationID?: string; billToPersonID?: string } = {},
+    opts: { inactiveProvider?: boolean; organizationID?: string; billToPersonID?: string; leadDaysOnBoundary?: number; placeDraft?: boolean } = {},
 ): Promise<{ SubscriptionID: string; OrderID: string; TermStart: string; SourceOrderID: string; ProviderID: string }> {
     const f = Fx();
     // A second subscription in one check needs a second holder: AnnualRolling is ExtendExisting, so the
@@ -4709,8 +4787,16 @@ async function renewWithCard(
     const walletID = wallet.ID;
     await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { DefaultCustomerPaymentMethodID: walletID });
 
-    const placed = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
-    AssertEqual(placed.Placed, 1, `the renewal is placed: ${placed.Message}`);
+    // By default the nightly selection 10 days out. `leadDaysOnBoundary` runs it on the first day the
+    // term is inside that lead window instead; `placeDraft` places it as a person does, as a draft.
+    if (opts.leadDaysOnBoundary != null) {
+        await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET RenewalLeadDays = ${Number(opts.leadDaysOnBoundary)} WHERE ID = '${SubscriptionID}'`);
+    }
+    const input = opts.placeDraft
+        ? { SubscriptionIDs: [SubscriptionID], PlaceAs: 'Draft' }
+        : { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, opts.leadDaysOnBoundary ?? 10) };
+    const placed = await spawnRenewals(ctx, input);
+    AssertEqual(placed.Placed, 1, `the renewal is placed: ${placed.Message}; ${placed.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
     return { SubscriptionID, OrderID: placed.Candidates[0].OrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)), SourceOrderID, ProviderID: providerID };
 }
 
