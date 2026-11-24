@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersInstalmentLineBillingEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesAuthorityMixTierEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersInstalmentLineBillingEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRefundRequestEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesAuthorityMixTierEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -15800,6 +15800,285 @@ export class mjBizAppsOrdersReferralProgramResolver extends ResolverBase {
         const provider = GetReadWriteProvider(providers);
         const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
         return this.DeleteRecord('MJ_BizApps_Orders: Referral Programs', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Refund Requests
+//****************************************************************************
+@ObjectType({ description: "A request to refund a captured payment, approved through Tasks by someone other than the requester before the requester may issue it. Needed only while the RefundApprovalThreshold setting is set." })
+export class mjBizAppsOrdersRefundRequest_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: "The captured payment to refund."}) 
+    @MaxLength(36)
+    PaymentHeaderID?: string;
+        
+    @Field(() => Float, {nullable: true, description: "The amount to refund. The refund issued against an approved request must be this amount."}) 
+    Amount?: number;
+        
+    @Field({nullable: true, description: "Why the refund is needed. Required."}) 
+    @MaxLength(1000)
+    Reason?: string;
+        
+    @Field({nullable: true, description: "Requested (awaiting approval), Approved (the requester may issue it), Rejected, Withdrawn (closed without being issued), or Issued (the refund was made)."}) 
+    @MaxLength(20)
+    Status?: string;
+        
+    @Field({nullable: true, description: "The user who requested the refund, and the only one who may issue it once approved."}) 
+    @MaxLength(36)
+    RequestedByUserID?: string;
+        
+    @Field({nullable: true, description: "When the refund was requested."}) 
+    RequestedAt?: Date;
+        
+    @Field({nullable: true, description: "The Tasks approval request for this refund."}) 
+    @MaxLength(36)
+    ApprovalTaskID?: string;
+        
+    @Field({nullable: true, description: "When the approval task was raised. Set together with ApprovalTaskID."}) 
+    ApprovalTaskRaisedAt?: Date;
+        
+    @Field({nullable: true, description: "The user whose decision on the approval task approved or rejected the request."}) 
+    @MaxLength(36)
+    DecidedByUserID?: string;
+        
+    @Field({nullable: true, description: "When the request was approved, rejected or withdrawn."}) 
+    DecidedAt?: Date;
+        
+    @Field({nullable: true, description: "The notes recorded with the decision, or why a request closed without being issued."}) 
+    @MaxLength(1000)
+    DecisionNotes?: string;
+        
+    @Field({nullable: true, description: "The refund payment issued against this request. Set when the request is Issued."}) 
+    @MaxLength(36)
+    RefundPaymentHeaderID?: string;
+        
+    @Field({nullable: true, description: "When the refund was issued."}) 
+    IssuedAt?: Date;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    PaymentHeader?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    RequestedByUser?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(255)
+    ApprovalTask?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    DecidedByUser?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(40)
+    RefundPaymentHeader?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Refund Requests
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersRefundRequestInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    PaymentHeaderID?: string;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field({ nullable: true })
+    Reason?: string;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    RequestedByUserID?: string;
+
+    @Field({ nullable: true })
+    RequestedAt?: Date;
+
+    @Field({ nullable: true })
+    ApprovalTaskID: string | null;
+
+    @Field({ nullable: true })
+    ApprovalTaskRaisedAt: Date | null;
+
+    @Field({ nullable: true })
+    DecidedByUserID: string | null;
+
+    @Field({ nullable: true })
+    DecidedAt: Date | null;
+
+    @Field({ nullable: true })
+    DecisionNotes: string | null;
+
+    @Field({ nullable: true })
+    RefundPaymentHeaderID: string | null;
+
+    @Field({ nullable: true })
+    IssuedAt: Date | null;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Refund Requests
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersRefundRequestInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    PaymentHeaderID?: string;
+
+    @Field(() => Float, { nullable: true })
+    Amount?: number;
+
+    @Field({ nullable: true })
+    Reason?: string;
+
+    @Field({ nullable: true })
+    Status?: string;
+
+    @Field({ nullable: true })
+    RequestedByUserID?: string;
+
+    @Field({ nullable: true })
+    RequestedAt?: Date;
+
+    @Field({ nullable: true })
+    ApprovalTaskID?: string | null;
+
+    @Field({ nullable: true })
+    ApprovalTaskRaisedAt?: Date | null;
+
+    @Field({ nullable: true })
+    DecidedByUserID?: string | null;
+
+    @Field({ nullable: true })
+    DecidedAt?: Date | null;
+
+    @Field({ nullable: true })
+    DecisionNotes?: string | null;
+
+    @Field({ nullable: true })
+    RefundPaymentHeaderID?: string | null;
+
+    @Field({ nullable: true })
+    IssuedAt?: Date | null;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Refund Requests
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersRefundRequestViewResult {
+    @Field(() => [mjBizAppsOrdersRefundRequest_])
+    Results: mjBizAppsOrdersRefundRequest_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersRefundRequest_)
+export class mjBizAppsOrdersRefundRequestResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersRefundRequestViewResult)
+    async RunmjBizAppsOrdersRefundRequestViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersRefundRequestViewResult)
+    async RunmjBizAppsOrdersRefundRequestViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersRefundRequestViewResult)
+    async RunmjBizAppsOrdersRefundRequestDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Refund Requests';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersRefundRequest_, { nullable: true })
+    async mjBizAppsOrdersRefundRequest(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersRefundRequest_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Refund Requests', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwRefundRequests')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Refund Requests', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Refund Requests', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersRefundRequest_)
+    async CreatemjBizAppsOrdersRefundRequest(
+        @Arg('input', () => CreatemjBizAppsOrdersRefundRequestInput) input: CreatemjBizAppsOrdersRefundRequestInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Refund Requests', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersRefundRequest_)
+    async UpdatemjBizAppsOrdersRefundRequest(
+        @Arg('input', () => UpdatemjBizAppsOrdersRefundRequestInput) input: UpdatemjBizAppsOrdersRefundRequestInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Refund Requests', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersRefundRequest_)
+    async DeletemjBizAppsOrdersRefundRequest(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Refund Requests', key, options, provider, userPayload, pubSub);
     }
     
 }

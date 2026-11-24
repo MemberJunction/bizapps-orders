@@ -114,6 +114,8 @@ export * from './accessOverride';
 export * from './coverage-overlap';
 // Reversing booked money (bc-aidp-next-golive#454) — cancel, refund, credit transfer and amount change are finance's.
 export * from './order-reversal';
+// Refund requests (bc-aidp-next-golive#355) — no one approves their own refund.
+export * from './refundRequest';
 export * from './permission-messages';
 // A payment's date and correcting it (bc-aidp-next-golive#448) — the authorization and the initial payment's day.
 export * from './payment-date';

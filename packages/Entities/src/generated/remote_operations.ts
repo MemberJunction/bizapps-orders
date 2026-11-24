@@ -2448,6 +2448,30 @@ export interface OrdersRecordProgressOutput {
 }
 
 /**
+ * Input for `Orders.RecordRefundRequestDecision`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RecordRefundRequestDecisionInput {
+    RefundRequestID: string;
+    /** A Tasks decision outcome code: `Approved`, `ApprovedWithConditions` or `Rejected`. */
+    Outcome: string;
+    Notes?: string;
+}
+
+/**
+ * Output of `Orders.RecordRefundRequestDecision` and `Orders.WithdrawRefundRequest`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RefundRequestDecisionOutput {
+    Success: boolean;
+    Message?: string;
+    /** The request's status after the call. */
+    Status?: string;
+}
+
+/**
  * Input for `Orders.RefundPayment`.
  *
  * A refund is a NEW payment, never an edit of the capture — the capture happened,
@@ -2665,6 +2689,34 @@ export interface RequestAccessOverrideOutput {
     Success: boolean;
     Message?: string;
     AccessOverrideID?: string;
+    ApprovalTaskID?: string;
+}
+
+/**
+ * Input for `Orders.RequestRefund`.
+ *
+ * A request to refund a captured payment. Nothing moves until it is approved through the task this
+ * raises, and then the requester issues it with `Orders.RefundPayment` for exactly this amount.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RequestRefundInput {
+    PaymentHeaderID: string;
+    /** The amount to refund. Greater than zero, no more than what remains refundable. */
+    Amount: number;
+    /** Why the refund is needed. Required. */
+    Reason: string;
+}
+
+/**
+ * Output of `Orders.RequestRefund`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface RequestRefundOutput {
+    Success: boolean;
+    Message?: string;
+    RefundRequestID?: string;
     ApprovalTaskID?: string;
 }
 
@@ -3010,6 +3062,16 @@ export interface SpawnRenewalsOutput {
     /** Renewal ORDERS placed; a candidate with an `OrderID` is a subscription renewed on one of them. */
     Placed: number;
     Skipped: number;
+}
+
+/**
+ * Input for `Orders.WithdrawRefundRequest`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface WithdrawRefundRequestInput {
+    RefundRequestID: string;
+    Notes?: string;
 }
 
 // ============================================================
@@ -3650,5 +3712,56 @@ export class OrdersSpawnRenewalsOperation extends BaseRemotableOperation<SpawnRe
     public readonly ExecutionMode = 'LongRunning' as const;
     public readonly RequiredScope = "orders:subscriptions:write";
     public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.RecordRefundRequestDecision — Record Refund Request Decision
+// ============================================================
+/**
+ * Record Refund Request Decision
+ * Approve or reject a requested refund. Only an assignee of the request's Tasks approval may decide, never the requester. Records the decision on the approval task and applies it to the request; no money moves.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RecordRefundRequestDecision'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRecordRefundRequestDecisionOperation extends BaseRemotableOperation<RecordRefundRequestDecisionInput, RefundRequestDecisionOutput> {
+    public readonly OperationKey = "Orders.RecordRefundRequestDecision";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:payments:refund";
+    public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_d83590c439daaf7d";
+}
+
+// ============================================================
+// Orders.RequestRefund — Request Refund
+// ============================================================
+/**
+ * Request Refund
+ * Request a refund of a captured payment, for an amount and a reason. Needs the finance reversal authorization and the RefundApprovalThreshold setting. Writes a Requested refund request and raises its Tasks approval, assigned to approvers other than the requester; once approved, the requester issues the refund with Orders.RefundPayment for exactly that amount.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.RequestRefund'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersRequestRefundOperation extends BaseRemotableOperation<RequestRefundInput, RequestRefundOutput> {
+    public readonly OperationKey = "Orders.RequestRefund";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:payments:refund";
+    public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_aded1e9ded285a54";
+}
+
+// ============================================================
+// Orders.WithdrawRefundRequest — Withdraw Refund Request
+// ============================================================
+/**
+ * Withdraw Refund Request
+ * The requester closes their own open refund request, Requested or Approved. A Requested one cancels its approval task.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.WithdrawRefundRequest'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersWithdrawRefundRequestOperation extends BaseRemotableOperation<WithdrawRefundRequestInput, RefundRequestDecisionOutput> {
+    public readonly OperationKey = "Orders.WithdrawRefundRequest";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:payments:refund";
+    public readonly RequiresSystemUser = false;
+    public readonly ContractFingerprint = "ro_fp_5804838160095c8b";
 }
 

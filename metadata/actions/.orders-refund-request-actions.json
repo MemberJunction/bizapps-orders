@@ -1,0 +1,41 @@
+[
+  {
+    "_comments": [
+      "THE REFUND REQUEST HOOK (bc-aidp-next-golive#355). The ORDERS_REFUND_APPROVAL task type in",
+      "metadata/task-types/ names it as its OnComplete, OnCancel and OnReject action, so a decision made in",
+      "the Tasks inbox reaches the refund request. The class behind it holds no request logic and is idempotent."
+    ],
+    "fields": {
+      "Name": "Apply Refund Request Decision",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Apply the outcome of a refund request's approval task to the request: an approval makes it Approved, so its requester may issue the refund; a rejection makes it Rejected; a task closed any other way withdraws it. Idempotent.",
+      "Type": "Custom",
+      "DriverClass": "Orders.ApplyRefundRequestDecision",
+      "IconClass": "fa-solid fa-stamp",
+      "UserPrompt": "Apply the decision on a refund request approval task.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "F8EC9F7F-BE8E-4DA5-A6D0-6EFD360C1F1D"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "TaskID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The approval task whose outcome to apply. Tasks passes it when the task closes."
+          },
+          "primaryKey": {
+            "ID": "177B2364-5734-41E8-9D81-624D0803C6C3"
+          }
+        }
+      ]
+    }
+  }
+]

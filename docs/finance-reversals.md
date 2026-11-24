@@ -59,9 +59,15 @@ reissue unless engineering runs it for you.
 ## Refund
 
 Refund from the payment (Refunds). Up to what remains refundable; the processing fee stays with the
-processor. When the `RefundApprovalThreshold` setting is set, refunds above it also need the
-receiving company's Approval CFO. A refund does not end access: cancel the subscription or return
-the lines for that.
+processor. A refund does not end access: cancel the subscription or return the lines for that.
+
+When the `RefundApprovalThreshold` setting is set, no one approves their own refund. Open the
+payment and use Refund Requests: request the amount with a reason. The approval goes to someone
+else: up to the threshold, the other holders of the `RefundApproverRole` role; above it, the
+receiving company's Approval CFO, or the `AccessOverrideFallbackApproverRole` holders when you are
+that CFO. They approve or reject on the payment or in the Tasks inbox. Once approved, you issue the
+refund from the same panel, for the approved amount; the approval itself moves no money. A payment
+has one open request at a time, and you can withdraw yours until it is issued.
 
 ## Moving a credit between orders
 

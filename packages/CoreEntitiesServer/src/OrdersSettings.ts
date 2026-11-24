@@ -125,19 +125,19 @@ export const ORDERS_SETTING = {
      */
     NoDealConfirmRoles: 'NoDealConfirmRoles',
     /**
-     * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
-     * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
-     * issue it. Counted per payment, not per order: what this refund brings the payment's refunds to,
-     * so an order settled by several payments can be refunded a payment at a time by a role holder for
-     * more than the threshold in all. Empty switches the check off, so anyone who may call the
-     * operation may refund, as before. A value that is not a number of 0 or more is read as 0, so
-     * every refund needs the company approver.
+     * Turns on refund approval (bc-aidp-next-golive#320 §3, #355). While set, a refund is requested,
+     * approved through Tasks by someone other than the requester, then issued by the requester for the
+     * approved amount. At or below it the other holders of `RefundApproverRole` approve; above it the
+     * receiving company's `ApprovalCFOUserID`, or the `AccessOverrideFallbackApproverRole` holders when
+     * that user is the requester. Counted per payment, not per order. Empty switches approval off, so a
+     * refund is issued directly, as before. A value that is not a number of 0 or more is read as 0, so
+     * every refund needs the company approver. See ./RefundAuthority.ts.
      */
     RefundApprovalThreshold: 'RefundApprovalThreshold',
     /**
-     * The NAME of the MJ role whose holders may issue a refund at or below `RefundApprovalThreshold`
-     * (bc-aidp-next-golive#320 §3). Unset, only the company approver may issue refunds while the
-     * threshold is set.
+     * The NAME of the MJ role whose holders approve a refund at or below `RefundApprovalThreshold`,
+     * never their own (bc-aidp-next-golive#355). Unset, the company approver approves every refund
+     * while the threshold is set.
      */
     RefundApproverRole: 'RefundApproverRole',
     /**
@@ -379,7 +379,7 @@ export class OrdersSettings {
         return value ? value : null;
     }
 
-    /** The role that approves an access override its company's CFO approver requested, or `null` when none is configured. */
+    /** The role that approves an access override, or a refund above the threshold, its company's CFO approver requested; `null` when none is configured. */
     public static get AccessOverrideFallbackApproverRole(): string | null {
         const value = this.raw(ORDERS_SETTING.AccessOverrideFallbackApproverRole)?.trim();
         return value ? value : null;
@@ -441,7 +441,8 @@ export class OrdersSettings {
     }
 
     /**
-     * The refund amount at or below which `RefundApproverRole` may refund, or `null` when the check is off.
+     * The refund amount at or below which `RefundApproverRole` holders approve a refund, or `null` when
+     * refund approval is off.
      *
      * @throws when the Orders application row is missing, rather than reading the check as off.
      */
@@ -449,7 +450,7 @@ export class OrdersSettings {
         return asAmountOrOff(this.rawAppScoped(ORDERS_SETTING.RefundApprovalThreshold));
     }
 
-    /** The role that may refund at or below the threshold, or `null` when none is configured. */
+    /** The role that approves refunds at or below the threshold, or `null` when none is configured. */
     public static get RefundApproverRole(): string | null {
         const value = this.raw(ORDERS_SETTING.RefundApproverRole)?.trim();
         return value ? value : null;

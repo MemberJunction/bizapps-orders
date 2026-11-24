@@ -64,7 +64,7 @@
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "AccessOverrideFallbackApproverRole",
       "Value": "",
-      "Comments": "The NAME of the MJ role whose active holders approve an access override (WaivePaymentHold or DeferCutoff) when the requester is the order company's ApprovalCFOUserID, who approves every other request (bizapps-orders#360). Every active holder except the requester is assigned the approval task. Empty refuses such a request, since nobody may approve their own override."
+      "Comments": "The NAME of the MJ role whose active holders approve a request the company's ApprovalCFOUserID would otherwise approve, when that user is the requester: an access override (WaivePaymentHold or DeferCutoff, bizapps-orders#360), or a refund above RefundApprovalThreshold (bc-aidp-next-golive#355). Every active holder except the requester is assigned the approval task. Empty refuses such a request, since nobody may approve their own."
     },
     "primaryKey": {
       "ID": "9DF2DE35-392B-47E2-AA91-9C948AF72DD3"
@@ -196,7 +196,7 @@
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "RefundApprovalThreshold",
       "Value": "",
-      "Comments": "The amount at or below which a refund may be issued by a holder of the RefundApproverRole role (bc-aidp-next-golive#320). Above it, only the receiving company's approver (ApprovalCFOUserID on its Accounting Company Profile) may issue the refund. The amount compared is what the payment's refunds come to with the new one, so a refund cannot be split to pass. It is counted per payment, not per order: an order settled by three 400 payments under a 500 threshold can be fully refunded, 1200, by a role holder taking one payment at a time. The company approver may always refund; a deactivated approver counts as none. A refund the payment gateway already made, booked by the system user, is exempt. Empty, the default, switches the check off. A value that is not a number of 0 or more is read as 0, so every refund needs the company approver."
+      "Comments": "Turns on refund approval and sets who approves (bc-aidp-next-golive#320, #355). While set, a refund is first requested on its payment (Orders.RequestRefund), approved through a Tasks approval by someone other than the requester, then issued by the requester for exactly the approved amount. At or below the threshold the approval goes to the other holders of RefundApproverRole; above it, or when no other holder exists, to the receiving company's approver (ApprovalCFOUserID on its Accounting Company Profile), or, when that approver is the requester, to the AccessOverrideFallbackApproverRole holders. The amount compared is what the payment's refunds come to with the new one, so a refund cannot be split to pass; it is counted per payment, not per order. A deactivated approver counts as none. A refund the payment gateway already made, booked by the system user, is exempt. Empty, the default, switches approval off, so a refund is issued directly. A value that is not a number of 0 or more is read as 0, so every refund needs the company approver."
     },
     "primaryKey": {
       "ID": "AC8E2930-5EEB-4490-986A-37E7C1B30FD8"
@@ -207,7 +207,7 @@
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "RefundApproverRole",
       "Value": "",
-      "Comments": "The NAME of the MJ role whose holders may issue a refund at or below RefundApprovalThreshold (bc-aidp-next-golive#320). Empty, only the receiving company's approver may refund while the threshold is set. A name that is not a role refuses every refund that needs it, with a message naming this setting."
+      "Comments": "The NAME of the MJ role whose holders approve a refund at or below RefundApprovalThreshold (bc-aidp-next-golive#320, #355), never their own. Empty, the company approver approves every refund while the threshold is set. A name that is not a role refuses every refund request that reads it, with a message naming this setting."
     },
     "primaryKey": {
       "ID": "495299D2-D154-4F0B-9C9B-A4A3D7CDE526"
