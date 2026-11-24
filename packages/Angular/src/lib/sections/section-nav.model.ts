@@ -71,7 +71,7 @@ export const PAYMENTS_SUB_PAGES: OrdersSubPage[] = [
 export const RECEIVABLES_SUB_PAGES: OrdersSubPage[] = [
     { Id: 'aging', Label: 'Customer A/R', Icon: 'fa-solid fa-user-tag', Description: 'Balances and aging by customer' },
     { Id: 'overdue', Label: 'Overdue worklist', Icon: 'fa-solid fa-hourglass-half', Description: 'Past-due balances to follow up' },
-    { Id: 'billing', Label: 'Billing worklist', Icon: 'fa-solid fa-file-invoice-dollar', Description: 'Installments to invoice in the next 30 days' },
+    { Id: 'billing', Label: 'Billing worklist', Icon: 'fa-solid fa-file-invoice-dollar', Description: 'Installments to invoice' },
     { Id: 'invoicing-queue', Label: 'Invoicing queue', Icon: 'fa-solid fa-paper-plane', Description: 'Invoices to send and payments to review' },
     { Id: 'progress', Label: 'Progress attestation', Icon: 'fa-solid fa-diagram-project', Description: 'Record percent complete on project work' },
 ];

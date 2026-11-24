@@ -99,7 +99,7 @@ added to `INVOICE_RAIL_TYPE_CODES` and the two Angular copies (`RAIL_TYPE_CODES`
 | The six operations | `packages/CoreEntitiesServer/src/*External*Operation.ts` |
 | Scheduler Actions, webhook route | [`send-external-invoices.action.ts`](../packages/Server/src/custom/send-external-invoices.action.ts), [`poll-external-payments.action.ts`](../packages/Server/src/custom/poll-external-payments.action.ts), [`BillComWebhookExtension.ts`](../packages/Server/src/BillComWebhookExtension.ts) |
 | Native email refusal (`EXTERNALLY_INVOICED`) | [`DeliveryBehavior.ts`](../packages/CoreEntitiesServer/src/DeliveryBehavior.ts), `DeliveryRecipientResolver.ts`, `packages/Server/src/custom/send-document.action.ts` |
-| Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Then sends via" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
+| Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Sent through" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
 
 Screens take their labels from `PaymentProvider.Name`. Unit tests sit in the `__tests__` folders beside
 this code. The `billcom-rail` integration bundle
@@ -147,7 +147,7 @@ announced again.
 - [`metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json)
   runs the send at `0 */30 13-23 * * 1-5` UTC (`MaxCount` 25) and the poll at `0 15 * * * *` UTC
   (`MaxCount` 100). Both ship `Disabled` with `Preview` true: enable a job, read one preview run, then
-  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state.
+  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state, with `MaxCount` 25 and, when a company is chosen in the page's Company filter, `CompanyIDs` set to that choice.
 - **The poll job is the switch for recording cash, whoever runs the poll.** `Orders.PollExternalPayments`
   reads the installed poll jobs before a run that would write, and gates each provider by the jobs
   governing it: the jobs whose `PaymentProviderID` names that provider, or, when none does, the jobs
@@ -172,7 +172,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
 | `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. `scripts/load-billcom-customer-map.mjs` loads these rows for customers already in BILL (dry run unless `--apply`). |
-| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
+| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. The Set aside dialog asks for the reason and, for several rows, a "dated before" day: a set-aside of several rows leaves out `Unmatched` rows not dated before that day, since those may be waiting for an invoice still to be loaded. `Held` and `Refused` rows are set aside whatever their date. The dialog names the rows it will set aside and the rows it leaves out before anything is written. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 
 `PaymentProvider.CompanyIntegrationID` points a provider row at its `MJ: Company Integrations` row. A
