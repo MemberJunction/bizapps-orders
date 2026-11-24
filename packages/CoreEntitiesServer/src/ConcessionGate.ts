@@ -33,6 +33,15 @@
  * Nor is a reversal — a line with a `ReversesOrderLineID` or a negative quantity. Its price is the
  * origin line's, which was settled when that line was sold, and pricing refuses a negative quantity.
  *
+ * The order is judged as a whole on price (golive #499). A contract is often split across lines: an
+ * upgrade written as the existing plan at what the customer already pays plus an upsell line for the
+ * increase prices one line below its engine price and another above it, while the order gives nothing
+ * away. So when the lines priced above their engine price make up at least as much as the uncovered
+ * lines priced below theirs take off, the below-engine price is not a concession. Only the price is
+ * netted: a `DiscountPct` or a held manual discount on the line is still counted, a line given away
+ * (Scope) is never netted, and a shortfall is
+ * reported line by line as before. The readiness check says which lines made up for which.
+ *
  *   3. on an order not yet confirmed, concessions that were approved on the requester's own
  *      authority when the order's concessions, as a share of its net total, now reach that
  *      authority's `MaxConcessionPctOfContract`. The share is measured when a concession is
@@ -217,6 +226,20 @@ export async function LinePriceConcessionFor(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<LinePriceConcession | null> {
+    return (await linePriceFigures(line, provider, user)).Concession;
+}
+
+/** A line's concession, if it carries one, and what it charges above its engine price. */
+interface LinePriceFigures {
+    Concession: LinePriceConcession | null;
+    /**
+     * What the line charges above its engine price once its own `DiscountPct` and held manual discounts
+     * are taken off; 0 when it charges no more, or when nothing resolves an engine price for it.
+     */
+    Premium: number;
+}
+
+async function linePriceFigures(line: LineConcessionFacts, provider: IMetadataProvider, user: UserInfo): Promise<LinePriceFigures> {
     const held = Money(Math.max(0, Number(line.HeldDiscount ?? 0)));
     const standing = await ResolveLinePriceStanding(line, provider, user);
     const engine = standing?.EngineUnitPrice ?? null;
@@ -236,20 +259,30 @@ export async function LinePriceConcessionFor(
             : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
     const discountValue = Money(Math.max(0, charged) * quantity * discountPct);
 
+    // What the line charges above its engine price, after its own discounts. A named list pick is a
+    // configured price, not a premium; a line the engine has yet to price charges the engine price.
+    const premium =
+        engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && line.PriceStated !== false
+            ? Money(Math.max(0, charged * quantity * (1 - discountPct) - held - engine * quantity))
+            : 0;
+
     const value = Money(priceValue + discountValue + held);
-    if (!(value > 0)) return null;
+    if (!(value > 0)) return { Concession: null, Premium: premium };
     // Measured against what the line would have cost before anything was given away: the engine
     // price when the stated price is the concession, the stated price when only a discount is.
     const base = (priceConcession ? engine : Math.max(0, charged)) * quantity;
     const chargedNothing = (priceConcession && charged <= 0) || (base > 0 && value + MONEY_TOLERANCE >= base);
     return {
-        Form: chargedNothing ? 'Scope' : 'Price',
-        EngineUnitPrice: engine,
-        Valuation: { Value: value, Percent: base > 0 ? value / base : null },
-        PriceValue: priceValue,
-        DiscountValue: discountValue,
-        DiscountPct: discountPct,
-        HeldDiscount: held,
+        Concession: {
+            Form: chargedNothing ? 'Scope' : 'Price',
+            EngineUnitPrice: engine,
+            Valuation: { Value: value, Percent: base > 0 ? value / base : null },
+            PriceValue: priceValue,
+            DiscountValue: discountValue,
+            DiscountPct: discountPct,
+            HeldDiscount: held,
+        },
+        Premium: premium,
     };
 }
 
@@ -300,7 +333,27 @@ export async function FindUnapprovedConcessions(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<string[]> {
+    return (await AssessConcessionGate(orderHeaderID, inMemoryLines, includeLinePrices, provider, user)).Problems;
+}
+
+/** What the gate refuses an order for, and what it let through that the rep should know about. */
+export interface ConcessionGateReport {
+    /** One clause per refusal, as {@link FindUnapprovedConcessions} words them. */
+    Problems: string[];
+    /** One clause per thing the gate let through on the order as a whole: lines priced above their engine price making up for lines below theirs (golive #499). */
+    Notes: string[];
+}
+
+/** {@link FindUnapprovedConcessions}, with the notes alongside the problems. Same parameters. */
+export async function AssessConcessionGate(
+    orderHeaderID: string | null,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    includeLinePrices: boolean,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ConcessionGateReport> {
     const problems: string[] = [];
+    const notes: string[] = [];
     const rows = orderHeaderID ? await loadConcessions(orderHeaderID, provider, user) : [];
 
     for (const row of rows.filter((r) => r.Status === 'Pending')) {
@@ -310,7 +363,7 @@ export async function FindUnapprovedConcessions(
         );
     }
 
-    if (!includeLinePrices) return problems;
+    if (!includeLinePrices) return { Problems: problems, Notes: notes };
 
     if (orderHeaderID) {
         const shareProblem = await shareNoLongerCovered(orderHeaderID, rows, inMemoryLines, provider, user);
@@ -319,7 +372,9 @@ export async function FindUnapprovedConcessions(
 
     const candidates = await candidateLines(orderHeaderID, inMemoryLines, provider, user);
     const reported = new Set<ConcessionLineFacts>();
-    for (const standing of await assessLinePrices(candidates.filter(hasStatedPriceOrDiscount), rows, provider, user)) {
+    const assessment = await assessLinePrices(candidates.filter(hasStatedPriceOrDiscount), rows, provider, user);
+    if (assessment.Offset) notes.push(DescribePriceOffset(assessment.Offset));
+    for (const standing of assessment.Standings) {
         const { Line: line, Concession: concession } = standing;
         // A concession is recorded against a saved line, so a line not yet saved cannot have one —
         // tell the rep how to get one rather than that none is recorded.
@@ -339,7 +394,32 @@ export async function FindUnapprovedConcessions(
     }
 
     problems.push(...(await saleApprovalProblems(orderHeaderID, candidates, rows, reported, provider, user)));
-    return problems;
+    return { Problems: problems, Notes: notes };
+}
+
+/**
+ * The note for an order whose lines priced above their engine price make up for the ones priced below
+ * theirs, e.g. "line 2 is priced 2012.00 below its engine price, made up for by line 1, priced 5012.00
+ * above its own, so the order as a whole gives nothing away by price".
+ */
+export function DescribePriceOffset(offset: PriceOffset): string {
+    const below = Money(offset.Offset.reduce((t, o) => t + o.PriceValue, 0));
+    const above = Money(offset.Premiums.reduce((t, p) => t + p.Premium, 0));
+    const belowLines = offset.Offset.map((o) => o.Line);
+    const aboveLines = offset.Premiums.map((p) => p.Line);
+    const one = belowLines.length === 1;
+    return (
+        `${lineList(belowLines)} ${one ? 'is' : 'are'} priced ${below.toFixed(2)} below ${one ? 'its engine price' : 'their engine prices'}, ` +
+        `made up for by ${lineList(aboveLines)}, priced ${above.toFixed(2)} above ${aboveLines.length === 1 ? 'its own' : 'their own'}, ` +
+        `so the order as a whole gives nothing away by price`
+    );
+}
+
+/** "line 2", "lines 1 and 3", "lines 1, 2 and 4". */
+function lineList(lines: readonly ConcessionLineFacts[]): string {
+    const numbers = lines.map((l) => String(l.LineNumber ?? '?'));
+    if (numbers.length === 1) return `line ${numbers[0]}`;
+    return `lines ${numbers.slice(0, -1).join(', ')} and ${numbers[numbers.length - 1]}`;
 }
 
 /**
@@ -738,7 +818,7 @@ export async function FindUncoveredLinePrices(
     const rows = await loadConcessions(orderHeaderID, provider, user);
     const uncovered: UncoveredLinePrice[] = [];
     const lines = (await candidateLines(orderHeaderID, inMemoryLines, provider, user)).filter(hasStatedPriceOrDiscount);
-    for (const standing of await assessLinePrices(lines, rows, provider, user)) {
+    for (const standing of (await assessLinePrices(lines, rows, provider, user)).Standings) {
         if (standing.Covered || !standing.Line.ID) continue;
         const shortfall = Money(standing.Concession.Valuation.Value - standing.ApprovedValue);
         if (!(shortfall > 0)) continue;
@@ -761,16 +841,36 @@ interface LinePriceStandingOnOrder {
     Covered: boolean;
 }
 
-/** Every line whose price or discount is a concession, judged against the order's concession rows. */
+/** Lines priced below their engine price that lines priced above theirs make up for (golive #499). */
+export interface PriceOffset {
+    /** Each line whose below-engine price is made up for, and what that price took off. */
+    Offset: { Line: ConcessionLineFacts; PriceValue: number }[];
+    /** Each line priced above its engine price, and by how much after its own discounts. */
+    Premiums: { Line: ConcessionLineFacts; Premium: number }[];
+}
+
+interface LinePriceAssessment {
+    Standings: LinePriceStandingOnOrder[];
+    /** Set when lines above their engine price made up for the uncovered lines below theirs. */
+    Offset: PriceOffset | null;
+}
+
+/**
+ * Every line whose price or discount is a concession, judged against the order's concession rows, with
+ * the order judged as a whole on price: see the header.
+ */
 async function assessLinePrices(
     lines: readonly ConcessionLineFacts[],
     rows: readonly ConcessionRow[],
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<LinePriceStandingOnOrder[]> {
+): Promise<LinePriceAssessment> {
     const standings: LinePriceStandingOnOrder[] = [];
+    const premiums: PriceOffset['Premiums'] = [];
     for (const line of lines) {
-        const concession = await LinePriceConcessionFor(line, provider, user);
+        const figures = await linePriceFigures(line, provider, user);
+        if (figures.Premium > 0) premiums.push({ Line: line, Premium: figures.Premium });
+        const concession = figures.Concession;
         if (!concession) continue;
         const approvedValue = rows
             .filter(
@@ -787,7 +887,50 @@ async function assessLinePrices(
             Covered: approvedValue + MONEY_TOLERANCE >= concession.Valuation.Value,
         });
     }
-    return standings;
+    return offsetBelowEnginePrices(standings, premiums);
+}
+
+/**
+ * Net the order's prices: when the premiums cover every uncovered below-engine price, those prices stop
+ * being concessions. What else the line gives away (`DiscountPct`, held discounts) stays. When they fall
+ * short, nothing is netted and every line is reported as before.
+ */
+function offsetBelowEnginePrices(
+    standings: readonly LinePriceStandingOnOrder[],
+    premiums: PriceOffset['Premiums'],
+): LinePriceAssessment {
+    // A Scope concession gives a product away; that is not a price another line can make up for.
+    const below = standings.filter((s) => !s.Covered && s.Concession.Form === 'Price' && s.Concession.PriceValue > 0);
+    const given = Money(below.reduce((t, s) => t + s.Concession.PriceValue, 0));
+    const madeUp = Money(premiums.reduce((t, p) => t + p.Premium, 0));
+    if (below.length === 0 || madeUp + MONEY_TOLERANCE < given) return { Standings: [...standings], Offset: null };
+
+    const netted: LinePriceStandingOnOrder[] = [];
+    for (const standing of standings) {
+        if (!below.includes(standing)) {
+            netted.push(standing);
+            continue;
+        }
+        const rest = withoutPricePart(standing.Concession);
+        if (rest) netted.push({ ...standing, Concession: rest, Covered: standing.ApprovedValue + MONEY_TOLERANCE >= rest.Valuation.Value });
+    }
+    return {
+        Standings: netted,
+        Offset: { Offset: below.map((s) => ({ Line: s.Line, PriceValue: s.Concession.PriceValue })), Premiums: premiums },
+    };
+}
+
+/** A line's concession without its below-engine price: its `DiscountPct` and held discounts. Null when that leaves nothing. */
+function withoutPricePart(concession: LinePriceConcession): LinePriceConcession | null {
+    const value = Money(concession.DiscountValue + concession.HeldDiscount);
+    if (!(value > 0)) return null;
+    const percent = concession.Valuation.Percent;
+    return {
+        ...concession,
+        Form: 'Price',
+        PriceValue: 0,
+        Valuation: { Value: value, Percent: percent != null && concession.Valuation.Value > 0 ? (percent * value) / concession.Valuation.Value : null },
+    };
 }
 
 interface ConcessionRow {

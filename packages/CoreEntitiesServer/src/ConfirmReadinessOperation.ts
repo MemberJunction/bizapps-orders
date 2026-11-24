@@ -12,7 +12,7 @@
  * READ-ONLY: it loads the order and runs the gate's check, which writes nothing.
  *
  * CONNECTS TO:
- *   CODE: OrderEntityServer.PreviewConcessionProblems, ConcessionGate.FindUnapprovedConcessions
+ *   CODE: OrderEntityServer.PreviewConcessionReadiness, ConcessionGate.AssessConcessionGate
  *   UI:   the order form's "Before this can be confirmed" list
  *
  * @module @mj-biz-apps/orders-core-entities-server
@@ -56,10 +56,11 @@ export class ConfirmReadinessOperation extends OrdersConfirmReadinessOperationBa
             throw new Error(`Order ${orderID} does not exist, so whether it can be confirmed cannot be checked.`);
         }
         // A booked or voided order is past the confirm gate; there is nothing to report.
-        if (!CanOfferConfirm(order.Status).Allowed) return { ConcessionProblems: [] };
+        if (!CanOfferConfirm(order.Status).Allowed) return { ConcessionProblems: [], ConcessionNotes: [] };
 
-        const clauses = await order.PreviewConcessionProblems();
-        return { ConcessionProblems: clauses.map(ConcessionProblemSentence).filter((s) => s.length > 0) };
+        const report = await order.PreviewConcessionReadiness();
+        const sentences = (clauses: string[]) => clauses.map(ConcessionProblemSentence).filter((s) => s.length > 0);
+        return { ConcessionProblems: sentences(report.Problems), ConcessionNotes: sentences(report.Notes) };
     }
 }
 

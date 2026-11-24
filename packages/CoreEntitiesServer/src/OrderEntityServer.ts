@@ -104,7 +104,7 @@ import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
-import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
+import { AssessConcessionGate, type ConcessionGateReport, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
 import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
@@ -1434,18 +1434,31 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * order is judged on the lines confirm would book. `Orders.ConfirmReadiness` answers with this.
      */
     public async PreviewConcessionProblems(): Promise<string[]> {
+        return (await this.PreviewConcessionReadiness()).Problems;
+    }
+
+    /**
+     * {@link PreviewConcessionProblems}, with the gate's notes alongside: what it let through on the order
+     * as a whole, such as lines priced above their engine price making up for one below (golive #499).
+     */
+    public async PreviewConcessionReadiness(): Promise<ConcessionGateReport> {
         if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
         // The same marks confirm reads: a draft the renewal pass left is judged on the pass's own
         // prices here too, or the form's Confirm stays disabled on an order the save would book.
         await this.loadPersistedRenewalMarks();
-        return this.concessionGateProblems();
+        return this.concessionGateReport();
     }
 
     /** The gate's problems, one clause each as `FindUnapprovedConcessions` words them. None without a context user. */
     private async concessionGateProblems(): Promise<string[]> {
+        return (await this.concessionGateReport()).Problems;
+    }
+
+    /** The gate's problems and notes for this order; the same question for the preview and for confirm. */
+    private async concessionGateReport(): Promise<ConcessionGateReport> {
         const user = this.ContextCurrentUser;
-        if (!user) return [];
-        return FindUnapprovedConcessions(
+        if (!user) return { Problems: [], Notes: [] };
+        return AssessConcessionGate(
             this.IsSaved ? this.ID : null,
             this.concessionLineFacts(),
             true,

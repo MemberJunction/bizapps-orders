@@ -15,15 +15,15 @@ interface StubOrder {
     Status: string;
     Load: ReturnType<typeof vi.fn>;
     Save: ReturnType<typeof vi.fn>;
-    PreviewConcessionProblems: ReturnType<typeof vi.fn>;
+    PreviewConcessionReadiness: ReturnType<typeof vi.fn>;
 }
 
-function stubOrder(status: string, clauses: string[], exists = true): StubOrder {
+function stubOrder(status: string, clauses: string[], exists = true, notes: string[] = []): StubOrder {
     return {
         Status: status,
         Load: vi.fn(async () => exists),
         Save: vi.fn(async () => true),
-        PreviewConcessionProblems: vi.fn(async () => clauses),
+        PreviewConcessionReadiness: vi.fn(async () => ({ Problems: clauses, Notes: notes })),
     };
 }
 
@@ -57,6 +57,13 @@ describe('Orders.ConfirmReadiness', () => {
         expect((await ask(order)).output.ConcessionProblems).toHaveLength(1);
     });
 
+    it('passes the gate notes on as sentences, apart from the problems (golive #499)', async () => {
+        const order = stubOrder('Draft', [], true, ['line 2 is priced 2012.00 below its engine price, made up for by line 1']);
+        const { output } = await ask(order);
+        expect(output.ConcessionProblems).toEqual([]);
+        expect(output.ConcessionNotes).toEqual(['Line 2 is priced 2012.00 below its engine price, made up for by line 1.']);
+    });
+
     it('returns no problems when the gate has none', async () => {
         expect((await ask(stubOrder('Draft', []))).output.ConcessionProblems).toEqual([]);
     });
@@ -65,7 +72,7 @@ describe('Orders.ConfirmReadiness', () => {
         const order = stubOrder(status, ['should not be asked']);
         const { output } = await ask(order);
         expect(output.ConcessionProblems).toEqual([]);
-        expect(order.PreviewConcessionProblems).not.toHaveBeenCalled();
+        expect(order.PreviewConcessionReadiness).not.toHaveBeenCalled();
     });
 
     it('writes nothing', async () => {
