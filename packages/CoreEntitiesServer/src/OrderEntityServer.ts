@@ -123,7 +123,8 @@ import {
     type OrderRollups,
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
-import { AddDays, ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { AddDays } from './PaymentTermsBehavior.js';
+import { ResolveOrderPaymentTerms, type OrderTermsFacts } from './OrderPaymentTerms.js';
 import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
 import { ExplainShortfalls, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { LowerInstalments } from './AmountChange.js';
@@ -140,8 +141,6 @@ import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymen
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
 import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ReadStatedTaxCharges, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
-const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
-const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 import {
     SubscriptionBehavior,
     ResolveSubscriptionTypeID,
@@ -1198,38 +1197,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * schedule row, which is due on the invoice day plus these same terms (#305).
      */
     public async resolveDueDate(): Promise<void> {
-        const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const user = this.ContextCurrentUser as UserInfo;
         const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;
         if (!orderDate) return;
 
         try {
-            await LoadOrdersEngine(provider, user);
-            const terms = new Map(
-                OrdersEngine.Instance.PaymentTermsTypes.map((t) => [
-                    String(t.ID).toLowerCase(),
-                    { PaymentTermsTypeID: String(t.ID), NetDays: t.NetDays ?? null },
-                ]),
+            const resolution = await ResolveOrderPaymentTerms(
+                this.termsFacts(),
+                this.ProviderToUse as unknown as IMetadataProvider,
+                this.ContextCurrentUser as UserInfo,
             );
-
-            const [customerTerms, companyDefault] = await Promise.all([
-                this.customerPaymentTerms(provider, user),
-                this.companyDefaultTerms(provider, user, terms),
-            ]);
-
-            const resolution = ResolveDueDate({
-                // `OldValue` is what is on disk. On the confirm save the caller may have set a date
-                // moments ago, so the CURRENT value is what "stated" means here.
-                StatedDueDate: this.DueDate ? new Date(this.DueDate).toISOString().slice(0, 10) : null,
-                StatedPaymentTermsTypeID: this.PaymentTermsTypeID ?? null,
-                OrderDate: orderDate,
-                CompanyID: this.CompanyID ?? null,
-                CustomerTerms: customerTerms,
-                CompanyDefault: companyDefault,
-                TermsByID: terms,
-            });
-
-            if (resolution.WasStated) return;
+            if (!resolution || resolution.WasStated) return;
             if (resolution.DueDate) this.DueDate = new Date(resolution.DueDate);
             if (resolution.PaymentTermsTypeID) {
                 this.PaymentTermsTypeID = resolution.PaymentTermsTypeID;
@@ -1244,85 +1221,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
     }
 
-    /** This buyer's negotiated terms, joined to their net days. */
-    private async customerPaymentTerms(provider: IMetadataProvider, user: UserInfo): Promise<CustomerTermsFacts[]> {
-        const orgID = this.BillToOrganizationID;
-        const personID = this.BillToPersonID;
-        if (!orgID && !personID) return [];
-
-        const clause = orgID
-            ? `OrganizationID = '${RequireUUID(orgID, 'BillToOrganizationID')}'`
-            : `PersonID = '${RequireUUID(personID as string, 'BillToPersonID')}'`;
-
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{
-            PaymentTermsTypeID: string;
-            CompanyID: string | null;
-            StartedAt: string | null;
-            EndedAt: string | null;
-            Status: string;
-        }>(
-            {
-                EntityName: CUSTOMER_PAYMENT_TERMS_ENTITY,
-                ExtraFilter: `${clause} AND Status = 'Active'`,
-                // ORDER IS PART OF THE CONTRACT, not a convenience. `BestCustomerTerms` picks the
-                // most recently started row, and without an ORDER BY the rows arrive in whatever
-                // order the engine chooses — so a bug that simply kept the FIRST row would give the
-                // right answer or the wrong one depending on the plan, and a test could pass twice
-                // and fail on the third run. Oldest first makes "keep the first" always wrong, which
-                // is what makes the guard against it meaningful.
-                OrderBy: 'StartedAt',
-                ResultType: 'simple',
-            },
-            user,
-        );
-        if (!result?.Success) return [];
-
-        const byID = new Map(OrdersEngine.Instance.PaymentTermsTypes.map((t) => [String(t.ID).toLowerCase(), t]));
-        return (result.Results ?? []).map((row) => ({
-            PaymentTermsTypeID: row.PaymentTermsTypeID,
-            NetDays: byID.get(String(row.PaymentTermsTypeID).toLowerCase())?.NetDays ?? null,
-            CompanyID: row.CompanyID ?? null,
-            StartedAt: row.StartedAt ? new Date(row.StartedAt).toISOString() : null,
-            EndedAt: row.EndedAt ? new Date(row.EndedAt).toISOString() : null,
-            Status: row.Status,
-        }));
-    }
-
-    /**
-     * The selling company's default terms — the last step of the due-date walk before "due on
-     * receipt" (D83).
-     *
-     * Reads `OrderCompanyPolicy`, NOT accounting's `AccountingCompanyProfile`.
-     *
-     * It used to read the latter, and accounting removed that column (their issue #22) on grounds
-     * this codebase agrees with: accounting records what was owed and when, but deciding WHEN AN
-     * ORDER IS DUE is a selling decision, so the default belongs to the app that makes it. Orders
-     * kept reading the removed column, so every order whose customer had no negotiated terms failed
-     * the walk with `Invalid column name 'DefaultPaymentTermsTypeID'` — six integration checks, and
-     * in production the entire company-default step.
-     *
-     * `OrderCompanyPolicy` is the right home and needed no new table: it is already the per-company
-     * orders policy row, IS-A `__mj.Company` so its ID *is* the company ID, and a company with no
-     * row simply takes the defaults — which here means falling through to due on receipt.
-     */
-    private async companyDefaultTerms(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        terms: Map<string, { PaymentTermsTypeID: string; NetDays: number | null }>,
-    ): Promise<{ PaymentTermsTypeID: string; NetDays: number | null } | null> {
-        if (!this.CompanyID) return null;
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ DefaultPaymentTermsTypeID: string | null }>(
-            {
-                EntityName: ORDER_COMPANY_POLICY_ENTITY,
-                ExtraFilter: `ID = '${RequireUUID(this.CompanyID, 'CompanyID')}'`,
-                ResultType: 'simple',
-            },
-            user,
-        );
-        const id = result?.Results?.[0]?.DefaultPaymentTermsTypeID;
-        return id ? (terms.get(String(id).toLowerCase()) ?? null) : null;
+    /** The fields the terms walk reads, as this order holds them now. */
+    private termsFacts(): OrderTermsFacts {
+        return {
+            // `OldValue` is what is on disk. On the confirm save the caller may have set a date
+            // moments ago, so the CURRENT values are what "stated" means here.
+            OrderDate: this.OrderDate ?? null,
+            CompanyID: this.CompanyID ?? null,
+            BillToOrganizationID: this.BillToOrganizationID ?? null,
+            BillToPersonID: this.BillToPersonID ?? null,
+            DueDate: this.DueDate ?? null,
+            PaymentTermsTypeID: this.PaymentTermsTypeID ?? null,
+        };
     }
 
     /**
@@ -1441,6 +1351,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             true,
             this.ProviderToUse as unknown as IMetadataProvider,
             user,
+            // The terms fields as held: with none stated, check 5 judges the terms `resolveDueDate`
+            // stamps later in this save (the customer's, then the selling company's default).
+            this.termsFacts(),
         );
     }
 
@@ -1600,6 +1513,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ProductPriceID: line.ProductPriceID,
             DiscountPct: line.DiscountPct,
             RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+            ServicePeriodStart: line.ServicePeriodStart ?? null,
             // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
             // A saved line whose product changed without a price edit is about to be re-priced (#907).
             PriceStated:

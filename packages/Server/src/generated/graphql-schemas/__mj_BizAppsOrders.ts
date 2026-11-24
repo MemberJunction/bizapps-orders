@@ -6012,7 +6012,7 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     SubscriptionTermID?: string;
         
-    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`}) 
+    @Field({nullable: true, description: "How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier), Timing (a new sale's payment timing departs from due on receipt at confirm: a delayed service start, an instalment due after the service starts, or payment terms other than due on receipt)."}) 
     @MaxLength(20)
     DeliveryForm?: string;
         
@@ -6124,6 +6124,10 @@ export class mjBizAppsOrdersOrderConcession_ {
         
     @Field({nullable: true, description: "When the concession was withdrawn. Set only when Status is Withdrawn."}) 
     WithdrawnAt?: Date;
+        
+    @Field({nullable: true, description: "For a Timing concession, the order's payment timing when the concession was recorded: the service start of each line that is not a renewal, the payment terms, and each live instalment's due date and amount. An approved Timing concession covers the order at confirm only while the order still has exactly these facts. NULL on every other form."}) 
+    @MaxLength(2000)
+    TimingFacts?: string;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -6272,6 +6276,9 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field({ nullable: true })
     WithdrawnAt: Date | null;
 
+    @Field({ nullable: true })
+    TimingFacts: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6386,6 +6393,9 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     WithdrawnAt?: Date | null;
+
+    @Field({ nullable: true })
+    TimingFacts?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -16418,7 +16428,7 @@ export class mjBizAppsOrdersSalesRule_ {
     @MaxLength(200)
     Name?: string;
         
-    @Field({nullable: true, description: `DiscountLimit | ConcessionLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority.`}) 
+    @Field({nullable: true, description: "DiscountLimit | ConcessionLimit | PaymentTiming | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority. PaymentTiming names the role that approves a new sale's payment timing when it departs from due on receipt at confirm (a Timing concession); with no active PaymentTiming rule that confirm check is off."}) 
     @MaxLength(40)
     RuleType?: string;
         

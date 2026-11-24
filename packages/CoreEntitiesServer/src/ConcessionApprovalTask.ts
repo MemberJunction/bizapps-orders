@@ -172,6 +172,9 @@ export function ConcessionSummary(facts: ConcessionSummaryFacts): string {
             const days = Number(facts.AddedDays ?? 0);
             return `payment terms ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days < 0 ? 'sooner' : 'later'}`;
         }
+        case 'Timing':
+            // Valued at nothing: it approves when the customer pays, not what they pay.
+            return 'payment timing exception';
         default:
             return `${facts.DeliveryForm} concession, ${amount}`;
     }

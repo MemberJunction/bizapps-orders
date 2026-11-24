@@ -84,6 +84,17 @@
   {
     "fields": {
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "DelayedStartToleranceDays",
+      "Value": "",
+      "Comments": "Days after the confirm date a new sale's service may start before the start counts as delayed and the order needs payment timing approval (bizapps-orders#1097): a Timing concession decided by the active PaymentTiming sales rule's role. A line that renews a subscription is not counted. Empty, or anything other than a whole number, does not check the start; instalments due after the service start and payment terms other than due on receipt are still checked while a PaymentTiming rule is active."
+    },
+    "primaryKey": {
+      "ID": "D8DB696E-257E-40C0-9275-7C2EA7571403"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "RenewalChargeRetryDays",
       "Value": "3,7,11",
       "Comments": "Comma-separated days after a renewal order's due day on which the daily renewal-charge job tries a declined renewal card again (#289). The due day is always the first attempt; with the default the card is tried on the due day and 3, 7 and 11 days after it. Attempts stop at the access cutoff (RenewalAccessCutoffDaysPastDue) whatever this lists. Empty means no retries. A value with any entry that is not a whole number of 1 or more falls back to 3,7,11."

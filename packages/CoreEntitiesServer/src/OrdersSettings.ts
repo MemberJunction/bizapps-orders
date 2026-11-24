@@ -77,6 +77,12 @@ export const ORDERS_SETTING = {
      */
     TermShiftReviewDays: 'TermShiftReviewDays',
     /**
+     * Days after the confirm date a new sale's service may start before the start counts as delayed and
+     * needs payment timing approval (bizapps-orders#1097). Unset or unreadable does not check the start;
+     * the other payment timing cases are still checked while a PaymentTiming rule is active.
+     */
+    DelayedStartToleranceDays: 'DelayedStartToleranceDays',
+    /**
      * Comma-separated days after a renewal's due day on which a declined renewal-card charge is tried
      * again (#289). The due day itself is always the first attempt. Attempts stop at the access
      * cutoff (`RenewalAccessCutoffDaysPastDue`) whatever this lists.
@@ -458,6 +464,11 @@ export class OrdersSettings {
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
     public static get TermShiftReviewDays(): number | null {
         return asDaysOrNull(this.raw(ORDERS_SETTING.TermShiftReviewDays));
+    }
+
+    /** Days after confirm a new sale's service may start before it counts as delayed, or `null` to not check the start. */
+    public static get DelayedStartToleranceDays(): number | null {
+        return asDaysOrNull(this.raw(ORDERS_SETTING.DelayedStartToleranceDays));
     }
 
     /** Whether Bill.com customer creation on send is enabled when no existing customer matches. */
