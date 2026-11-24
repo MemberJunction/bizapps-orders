@@ -3,8 +3,8 @@
  *
  * RECORDING ONE. The requester states what was given — the line, or the term and the days added — and
  * why. Everything else is derived here and whatever the caller sent is overwritten: the order it
- * belongs to, its value at the arrangement's own rate, the order's net total and the share of it that
- * the order's concessions now come to, the requester, and its status. Within the
+ * belongs to, its value at the arrangement's own rate, the order's net total, the share the order's
+ * concessions now come to of the order at its catalog prices (golive #494), the requester, and its status. Within the
  * requester's `SalesAuthority` it is Approved on save; outside it, it is Pending, stamped with the
  * active ConcessionLimit rule whose role decides it. A requester who holds that role approves their
  * own, and the record shows that it went through the rule rather than through their authority — unless
@@ -150,6 +150,7 @@ import {
     HeldManualDiscounts,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
+    OrderCatalogTotal,
     OrderConcessionTotal,
     OrderNetTotal,
     ProductsRequiringSaleApproval,
@@ -623,9 +624,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
 
         // Measured against the order as it stands, with every concession on it still Pending or Approved.
+        // The share is of the order at its catalog prices, before anything was given away (golive #494).
         const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
+        const catalog = await OrderCatalogTotal(this.OrderHeaderID, [], this.provider(), user);
         const others = await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user);
-        const share = ConcessionShare(others + valued.Value, net);
+        const share = ConcessionShare(others + valued.Value, catalog);
 
         this.RequestedByUserID = user.ID;
         this.ComputedValue = valued.Value;
@@ -1247,7 +1250,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
         // record should show the share the decision was made at.
         const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
-        const share = ConcessionShare(await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user), net);
+        const catalog = await OrderCatalogTotal(this.OrderHeaderID, [], this.provider(), user);
+        const share = ConcessionShare(await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user), catalog);
         this.OrderNetTotal = net;
         this.CumulativeShare = share === null ? null : Math.round(share * 1e4) / 1e4;
         this.decide(this.Status, user);
