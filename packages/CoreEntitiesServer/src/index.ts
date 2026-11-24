@@ -85,6 +85,7 @@ export {
     LoadConcessionAuthority,
     LoadShareLimitMixTiers,
     OrderConcessionTotal,
+    OrderCatalogTotal,
     OrderNetTotal,
     OrderProductTypeCount,
     type ConcessionLineFacts,

@@ -43,7 +43,7 @@
  * reported line by line as before. The readiness check says which lines made up for which.
  *
  *   3. on an order not yet confirmed, concessions that were approved on the requester's own
- *      authority when the order's concessions, as a share of its net total, now reach that
+ *      authority when the order's concessions, as a share of its catalog total, now reach that
  *      authority's `MaxConcessionPctOfContract`. The share is measured when a concession is
  *      recorded; a draft that loses lines afterwards raises it, and the approval on authority no
  *      longer covers what the order now gives away. An approver's decision on another concession
@@ -241,12 +241,7 @@ interface LinePriceFigures {
 
 async function linePriceFigures(line: LineConcessionFacts, provider: IMetadataProvider, user: UserInfo): Promise<LinePriceFigures> {
     const held = Money(Math.max(0, Number(line.HeldDiscount ?? 0)));
-    const standing = await ResolveLinePriceStanding(line, provider, user);
-    const engine = standing?.EngineUnitPrice ?? null;
-    const quantity = Math.abs(Number(line.Quantity ?? 0));
-    const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
-
-    const priceConcession = engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && charged < engine;
+    const { engine, quantity, charged, priceConcession, base, configuredPrice } = await linePricing(line, provider, user);
     const priceValue = priceConcession
         ? ConcessionValue({ Form: 'Price', ReferenceUnitPrice: engine, ChargedUnitPrice: charged, Quantity: quantity }).Value
         : 0;
@@ -262,15 +257,12 @@ async function linePriceFigures(line: LineConcessionFacts, provider: IMetadataPr
     // What the line charges above its engine price, after its own discounts. A named list pick is a
     // configured price, not a premium; a line the engine has yet to price charges the engine price.
     const premium =
-        engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && line.PriceStated !== false
+        engine != null && !configuredPrice && line.PriceStated !== false
             ? Money(Math.max(0, charged * quantity * (1 - discountPct) - held - engine * quantity))
             : 0;
 
     const value = Money(priceValue + discountValue + held);
     if (!(value > 0)) return { Concession: null, Premium: premium };
-    // Measured against what the line would have cost before anything was given away: the engine
-    // price when the stated price is the concession, the stated price when only a discount is.
-    const base = (priceConcession ? engine : Math.max(0, charged)) * quantity;
     const chargedNothing = (priceConcession && charged <= 0) || (base > 0 && value + MONEY_TOLERANCE >= base);
     return {
         Concession: {
@@ -284,6 +276,90 @@ async function linePriceFigures(line: LineConcessionFacts, provider: IMetadataPr
         },
         Premium: premium,
     };
+}
+
+/** A line's price as concessions are measured against it. */
+interface LinePricing {
+    /** Null when nothing resolves an engine price for the line. */
+    engine: number | null;
+    quantity: number;
+    /** The unit price the line is charged before its discount. */
+    charged: number;
+    /** True when the charged price is below the engine's and the engine's is the one the line should carry. */
+    priceConcession: boolean;
+    /**
+     * What the line would have cost before anything was given away: the engine price when the
+     * stated price is the concession, the stated price otherwise. Both before any discount.
+     */
+    base: number;
+    /** The engine's own price or a named list pick: a configured price, neither a concession nor a premium. */
+    configuredPrice: boolean;
+}
+
+async function linePricing(line: LineConcessionFacts, provider: IMetadataProvider, user: UserInfo): Promise<LinePricing> {
+    const standing = await ResolveLinePriceStanding(line, provider, user);
+    const engine = standing?.EngineUnitPrice ?? null;
+    const quantity = Math.abs(Number(line.Quantity ?? 0));
+    const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
+    const priceConcession = engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && charged < engine;
+    const base = (priceConcession ? engine! : Math.max(0, charged)) * quantity;
+    return { engine, quantity, charged, priceConcession, base, configuredPrice: !!standing?.IsEnginePrice || !!standing?.IsNamedListPick };
+}
+
+/**
+ * The order at the catalog prices chosen for it, before any concession: each line's quantity times its
+ * engine price where the stated price is below it, else times its stated price, with no discount taken
+ * off. A line with no engine price is counted at its stated price (#905). The order's concessions are
+ * measured as a share of this (golive #494): a 10% discount on every line is 10% of the order, the
+ * same base the per-line `MaxDiscountPct` uses. Measuring against the total after discounts counted
+ * that discount twice, once by raising what was given away and again by lowering the total.
+ *
+ * Left out, as in {@link OrderNetTotal}: reversal lines, and a bundle's components, since the bundle
+ * line carries the bundle's price and is valued like any other line.
+ *
+ * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
+ */
+export async function OrderCatalogTotal(
+    orderHeaderID: string,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
+    const lines: ConcessionLineFacts[] = inMemoryLines.filter((l) => !isComponentOrReversal(l));
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<ConcessionLineFacts>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+            Fields: [
+                'ID',
+                'LineNumber',
+                'ParentOrderLineID',
+                'ReversesOrderLineID',
+                'ProductID',
+                'OrderHeaderID',
+                'Quantity',
+                'UnitPrice',
+                'ProductPriceID',
+            ],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (res && !res.Success) throw new Error(`Could not read the order's lines to measure its concessions: ${res.ErrorMessage}`);
+    for (const row of res?.Results ?? []) {
+        if (held.has((row.ID ?? '').toLowerCase()) || isComponentOrReversal(row)) continue;
+        lines.push({ ...row, PriceStated: true });
+    }
+    let total = 0;
+    for (const line of lines) {
+        total += line.ProductID
+            ? (await linePricing(line, provider, user)).base
+            : Math.max(0, Number(line.UnitPrice ?? 0)) * Math.abs(Number(line.Quantity ?? 0));
+    }
+    return Money(total);
 }
 
 /**
@@ -598,7 +674,7 @@ export async function OrderConcessionTotal(
 
 /**
  * Check (3) in the header: the reason, if any, that approvals on the requesters' own authority no
- * longer cover the order's concessions as a share of its net total.
+ * longer cover the order's concessions as a share of its catalog total ({@link OrderCatalogTotal}).
  */
 async function shareNoLongerCovered(
     orderHeaderID: string,
@@ -610,8 +686,8 @@ async function shareNoLongerCovered(
     const onAuthority = rows.filter((r) => r.Status === 'Approved' && !r.SalesRuleID && !!r.AuthorizedBySalesAuthorityID);
     if (onAuthority.length === 0) return null;
 
-    const net = await OrderNetTotal(orderHeaderID, inMemoryLines, provider, user);
-    const share = ConcessionShare(concessionTotal(rows), net);
+    const catalog = await OrderCatalogTotal(orderHeaderID, inMemoryLines, provider, user);
+    const share = ConcessionShare(concessionTotal(rows), catalog);
 
     const limits = await loadShareLimits(
         [...new Set(onAuthority.map((r) => String(r.AuthorizedBySalesAuthorityID).toLowerCase()))],
@@ -624,7 +700,7 @@ async function shareNoLongerCovered(
     if (!breach) return null;
 
     return (
-        `${breach} (${concessionTotal(rows).toFixed(2)} on a net total of ${net.toFixed(2)}), and ` +
+        `${breach} (${concessionTotal(rows).toFixed(2)} on a catalog total of ${catalog.toFixed(2)}), and ` +
         `${onAuthority.length} concession(s) on it were approved on the requester's own authority when the order ` +
         `was measured differently. Withdraw them and record them again, so they are measured against the order ` +
         `as it is now and routed for approval`

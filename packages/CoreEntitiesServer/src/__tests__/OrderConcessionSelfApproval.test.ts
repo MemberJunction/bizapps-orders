@@ -22,6 +22,7 @@ const gate = vi.hoisted(() => ({
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
+    OrderCatalogTotal: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
 
@@ -93,6 +94,7 @@ function concession(opts: { user?: { ID: string }; saved?: boolean; status?: str
 
 beforeEach(() => {
     gate.OrderNetTotal.mockResolvedValue(10000);
+    gate.OrderCatalogTotal.mockResolvedValue(10000);
     gate.OrderConcessionTotal.mockResolvedValue(0);
     gate.LoadConcessionAuthority.mockResolvedValue({
         ID: 'auth-1',

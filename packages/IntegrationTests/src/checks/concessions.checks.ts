@@ -902,7 +902,8 @@ export const ConcessionChecks: NamedCheck[] = [
         await grantAuthority(ctx, { maxPct: 1, maxValue: 1000, maxShare: 0.05 });
         await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
 
-        // Price: 95 against 100 on two units is 10, which is 5.3% of a 190 order.
+        // Price: 95 against 100 on two units is 10, which is 5% of the order at its catalog price of 200
+        // (golive #494: measured against 190, after the discount, it read as 5.3%). At the 5% limit.
         const priced = await BuildOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, UnitPrice: 95 }],
@@ -910,7 +911,8 @@ export const ConcessionChecks: NamedCheck[] = [
         Assert(await priced.Order.Save(), `the draft did not save: ${priced.Order.LatestResult?.CompleteMessage}`);
         const p = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: priced.Lines[0].ID });
         Assert(p.Saved, `recording failed: ${p.Message}`);
-        AssertEqual(p.Entity.Status, "Pending", "5% off is 5.3% of this order's net total");
+        AssertEqual(p.Entity.Status, "Pending", "5% off is 5% of the order at its catalog prices, at the limit");
+        AssertEqual(Number(p.Entity.CumulativeShare), 0.05, "10 of the order's 200 at catalog prices");
 
         // Scope: one free unit worth 100 beside 100 paid units is 1% of a 10000 order.
         const scoped = await BuildOrder(ctx.User, {
@@ -993,7 +995,7 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "the approval on authority no longer covers the order");
-        Assert(/60\.0% of its net total.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+        Assert(/60\.0% of its catalog total.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
           `the refusal should explain the share, got: ${built.Order.LatestResult?.CompleteMessage}`);
 
         Assert(await c.Entity.Delete(), `withdrawing an approval on authority from a draft failed: ${c.Entity.LatestResult?.CompleteMessage}`);
@@ -1944,7 +1946,7 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "with one product type the approval on authority no longer covers the order");
-        Assert(/of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+        Assert(/of its catalog total, at or above the 5\.0% limit.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
           `the refusal should give the base limit, got: ${built.Order.LatestResult?.CompleteMessage}`);
 
         built.Order.Status = "Draft";

@@ -129,7 +129,7 @@ export function AcknowledgmentDescription(orderNumber: string, summary: string, 
         : 'by an approver under the ConcessionLimit rule';
     const share =
         concession.CumulativeShare != null
-            ? ` The order's concessions now come to ${Math.round(Number(concession.CumulativeShare) * 1e4) / 100}% of its net total.`
+            ? ` The order's concessions now come to ${Math.round(Number(concession.CumulativeShare) * 1e4) / 100}% of its catalog total.`
             : '';
     return (
         `A ${concession.DeliveryForm} concession on ${orderNumber} (${summary}) was approved ${route} ` +
