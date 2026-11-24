@@ -125,7 +125,7 @@ import {
 } from './OrderRollupBehavior.js';
 import { AddDays, ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
-import { ExplainShortfalls, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { ExplainShortfalls, InstalmentsToIssueAtConfirm, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { LowerInstalments } from './AmountChange.js';
 import { PlanReduction } from './AmountChangePlan.js';
 import { OrderStillToBill, ReturnScheduleReduction } from './ReversalScheduleReduction.js';
@@ -457,6 +457,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * run dates the instalment entry on the day the schedule row's due date was counted from.
      */
     public InstalmentInvoiceDay: string | null = null;
+
+    /**
+     * Set by `Orders.SpawnRenewals` on a renewal it places confirmed: this confirm issues the
+     * renewal's one schedule row whatever its due date (golive #477). Left false, a renewal issues
+     * only the rows due inside its lead window (#963). See `InstalmentsToIssueAtConfirm`.
+     */
+    public IssueRenewalScheduleAtConfirm = false;
 
     /**
      * Promotion and charge decisions made by `prepareLines` and consumed by `savePendingLines`.
@@ -1194,10 +1201,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * already moved in the ledger; refusing it because a lookup could not be read would be a far
      * worse outcome than an order that falls back to due-on-receipt and says so in the log.
      *
-     * Public so `Orders.SpawnRenewals` can settle the terms on its draft before writing the renewal's
-     * schedule row, which is due on the invoice day plus these same terms (#305).
+     * Public so `Orders.SpawnRenewals` can settle the terms on its order before it states the renewal's
+     * due date, the day before the new term starts (golive #477). A renewal DRAFT
+     * passes the terms of the order it renews (`PriorPaymentTermsTypeID`), which answer only when
+     * the customer has no terms of their own (golive #477).
      */
-    public async resolveDueDate(): Promise<void> {
+    public async resolveDueDate(options: { PriorPaymentTermsTypeID?: string | null } = {}): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;
@@ -1225,6 +1234,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 OrderDate: orderDate,
                 CompanyID: this.CompanyID ?? null,
                 CustomerTerms: customerTerms,
+                PriorOrderTerms: options.PriorPaymentTermsTypeID ? (terms.get(options.PriorPaymentTermsTypeID.toLowerCase()) ?? null) : null,
                 CompanyDefault: companyDefault,
                 TermsByID: terms,
             });
@@ -5677,7 +5687,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
-     * Bill every instalment already due on the order's effective date (D92).
+     * Bill the instalments this confirm invoices (D92): those already due on the order's effective
+     * date, or for a renewal inside its lead window (`instalmentIssueCutoffDate`), and every row of a
+     * renewal `Orders.SpawnRenewals` placed confirmed (`IssueRenewalScheduleAtConfirm`).
      *
      * ORDER MATTERS AND IS STABLE: rows are issued in `InstallmentNumber` order, so a company with
      * two instalments due on day one numbers them the way a person would and the slices are taken
@@ -5693,17 +5705,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const user = this.ContextCurrentUser as UserInfo;
         const cutoffDate = await this.instalmentIssueCutoffDate(provider, user);
 
-        const due = scheduleRows
-            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= cutoffDate)
-            .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0));
+        // Read once and cleared: the instruction belongs to this confirm, not to a later save of the object.
+        const issueEveryRow = this.IssueRenewalScheduleAtConfirm;
+        this.IssueRenewalScheduleAtConfirm = false;
+        const due = InstalmentsToIssueAtConfirm(scheduleRows, cutoffDate, issueEveryRow);
         if (!due.length) return;
 
         for (const row of due) {
             const outcome = await IssueInstalment(String(row.ID), provider, user, this.InstalmentInvoiceDay);
             if (!outcome.Success) {
                 throw new Error(
-                    `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +
-                        `due on or before ${cutoffDate}: ${outcome.Message}`,
+                    `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which this ` +
+                        `confirm invoices (due ${ToISODate(row.DueDate)}, cutoff ${cutoffDate}): ${outcome.Message}`,
                 );
             }
         }

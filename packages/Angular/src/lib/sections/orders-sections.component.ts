@@ -380,8 +380,6 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         on<{ ID?: string } | string>('PaymentOpened', (row) => this.openEntity(MJO_ENTITIES.PaymentHeader, row));
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openEntity(MJO_ENTITIES.Product, row));
         on<{ ID?: string } | string>('SubscriptionOpened', (row) => this.openEntity(MJO_ENTITIES.Subscription, row));
-        // New record = an empty key, same as the section's own primary actions.
-        on<void>('ProductCreateRequested', () => this.navigationService.OpenEntityRecord(MJO_ENTITIES.Product, new CompositeKey()));
 
         // The irreversible step. Straight to the engine — there is no dry run in front of it.
         on<OrderHeaderEntity>('ConfirmRequested', (draft) => void this.Confirm(draft));
