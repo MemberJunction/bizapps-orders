@@ -8,6 +8,7 @@ import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJONewProductDialogComponent } from './new-product-dialog.component';
+import { ToRecordOpenRequest, type RecordOpenRequest, type WorkspaceOpenEvent } from '../workspace-requests';
 import {
     IsBefore,
     Today,
@@ -284,7 +285,9 @@ export class MJOProductsPageComponent implements OnInit {
             @if (ChargeTypeEntityInfo) {
                 <mj-view-workspace
                     [Entity]="ChargeTypeEntityInfo"
-                    [AutoSaveView]="true">
+                    [AutoSaveView]="true"
+                    (OpenRecordRequested)="OnRecordOpened($event)"
+                    (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                 </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading charge types...</div>
@@ -489,6 +492,11 @@ export class MJOProductsPageComponent implements OnInit {
 export class MJOChargesTaxPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
+    /** A grid row double-click: the section opens that record's form. */
+    @Output() RecordOpenRequested = new EventEmitter<RecordOpenRequest>();
+
     public ChargeTypeEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersChargeTypeEntity[] = [];
 
@@ -513,6 +521,12 @@ export class MJOChargesTaxPageComponent implements OnInit {
         this.Nexus = nexus;
         this.Exemptions = exemptions;
         this.cdr.detectChanges();
+    }
+
+    /** Relay a row double-click to the section, which owns navigation. */
+    public OnRecordOpened(event: WorkspaceOpenEvent): void {
+        const request = ToRecordOpenRequest(event);
+        if (request) this.RecordOpenRequested.emit(request);
     }
 
     /**
