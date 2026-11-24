@@ -1,7 +1,7 @@
 {
   "name": "bizapps-orders",
   "private": true,
-  "version": "0.1.0",
+  "version": "6.3.0-edge.1",
   "license": "BUSL-1.1",
   "description": "BizApps Orders - unified order management (products, orders, payments, subscriptions) built on MemberJunction",
   "workspaces": [
@@ -66,9 +66,9 @@
     "@memberjunction/sqlserver-dataprovider": "^6.3.0-edge.1",
     "@memberjunction/templates": "^6.3.0-edge.1",
     "@memberjunction/testing-integration": "^6.3.0-edge.1",
-    "@mj-biz-apps/orders-core-entities-server": "^5.0.0",
-    "@mj-biz-apps/orders-integration-tests": "^5.0.0",
-    "@mj-biz-apps/orders-server": "^5.0.0",
+    "@mj-biz-apps/orders-core-entities-server": "^6.3.0-edge.1",
+    "@mj-biz-apps/orders-integration-tests": "^6.3.0-edge.1",
+    "@mj-biz-apps/orders-server": "^6.3.0-edge.1",
     "beasties": "0.3.5",
     "dotenv": "^17.2.3",
     "jsdom": "^26.1.0",
