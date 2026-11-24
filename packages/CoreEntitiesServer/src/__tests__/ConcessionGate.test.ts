@@ -606,13 +606,13 @@ describe('ApplyShareLimitMixTiers (golive #281)', () => {
 describe('the order judged as a whole on price (golive #499)', () => {
     const UPSELL_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
     const PLAN_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3312';
-    // An upgrade split across two lines: the upsell lists at 0, the existing plan at 8000.
+    // An upgrade split across two lines: the upsell lists at 3000, the existing plan at 8000.
     const upsell = { ...apiLine, ID: UPSELL_ID, LineNumber: 1, ProductID: 'upsell', Quantity: 1, UnitPrice: 5012 };
     const plan = { ...apiLine, ID: PLAN_ID, LineNumber: 2, ProductID: 'plan', Quantity: 1, UnitPrice: 5988 };
     const engineFor = (prices: Record<string, number>) => (line?: { ProductID: string }) =>
         Promise.resolve({ EngineUnitPrice: prices[line?.ProductID ?? ""], IsEnginePrice: false, IsNamedListPick: false });
 
-    beforeEach(() => mockStanding.mockImplementation(engineFor({ upsell: 0, plan: 8000 })));
+    beforeEach(() => mockStanding.mockImplementation(engineFor({ upsell: 3000, plan: 8000 })));
 
     it('lets a line below its engine price through when another line above its own makes up for it, and says so', async () => {
         database([], [upsell, plan]);
@@ -621,12 +621,12 @@ describe('the order judged as a whole on price (golive #499)', () => {
 
         expect(report.Problems).toEqual([]);
         expect(report.Notes).toEqual([
-            'line 2 is priced 2012.00 below its engine price, made up for by line 1, priced 5012.00 above its own, so the order as a whole gives nothing away by price',
+            'line 2 is priced 2012.00 below its engine price, made up for by line 1, priced 2012.00 above its own, so the order as a whole gives nothing away by price',
         ]);
     });
 
     it('reports the line as before when the lines above their engine price fall short', async () => {
-        database([], [{ ...upsell, UnitPrice: 2000 }, plan]);
+        database([], [{ ...upsell, UnitPrice: 4000 }, plan]);
 
         const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
 
@@ -643,7 +643,7 @@ describe('the order judged as a whole on price (golive #499)', () => {
     });
 
     it('takes a premium line\'s own discount off what it makes up for', async () => {
-        // 5012 less 70% is 1503.60 above list, short of the 2012.00 below it.
+        // 5012 less 70% is 1503.60, below its list of 3000, so it makes up for none of the 2012.00.
         database([], [{ ...upsell, DiscountPct: 0.7 }, plan]);
 
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
@@ -667,16 +667,16 @@ describe('the order judged as a whole on price (golive #499)', () => {
 
     it('names every line on each side', async () => {
         const third = { ...plan, ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3313', LineNumber: 3, UnitPrice: 7000 };
-        database([], [upsell, plan, third]);
+        database([], [{ ...upsell, UnitPrice: 6012 }, plan, third]);
 
         const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
 
         expect(report.Problems).toEqual([]);
-        expect(report.Notes[0]).toMatch(/^lines 2 and 3 are priced 3012.00 below their engine prices, made up for by line 1, priced 5012.00/);
+        expect(report.Notes[0]).toMatch(/^lines 2 and 3 are priced 3012.00 below their engine prices, made up for by line 1, priced 3012.00/);
     });
 
     it("takes a premium line's held manual discount off what it makes up for", async () => {
-        // 5012 less a held 3500 is 1512 above list, short of the 2012 below it.
+        // 5012 less a held 3500 is 1512, below its list of 3000, so it makes up for none of the 2012.
         database([], [upsell, plan], [], [{ OrderLineID: UPSELL_ID, Amount: 3500 }]);
 
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
@@ -688,7 +688,7 @@ describe('the order judged as a whole on price (golive #499)', () => {
         mockStanding.mockImplementation((line?: { ProductID: string }) =>
             Promise.resolve(
                 line?.ProductID === 'upsell'
-                    ? { EngineUnitPrice: 0, IsEnginePrice: false, IsNamedListPick: true }
+                    ? { EngineUnitPrice: 3000, IsEnginePrice: false, IsNamedListPick: true }
                     : { EngineUnitPrice: 8000, IsEnginePrice: false, IsNamedListPick: false },
             ),
         );
@@ -697,6 +697,18 @@ describe('the order judged as a whole on price (golive #499)', () => {
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
 
         expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00/)]);
+    });
+
+    it('counts no premium for a product sold at a negotiated price, which lists at 0', async () => {
+        // Its price is the sale, not a premium: the 7000 off line 2 is still given away.
+        mockStanding.mockImplementation(engineFor({ upsell: 0, plan: 8000 }));
+        database([], [{ ...upsell, UnitPrice: 20000 }, { ...plan, UnitPrice: 1000 }]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/line 2 is priced at 1000.00 against an engine price of 8000.00, a concession worth 7000.00/)]);
+        expect(report.Notes).toEqual([]);
+        expect(await FindUncoveredLinePrices(ORDER_ID, [], provider, user)).toHaveLength(1);
     });
 
     it('counts no premium for a line nothing resolves an engine price for', async () => {
@@ -711,7 +723,7 @@ describe('the order judged as a whole on price (golive #499)', () => {
     });
 
     it('never nets a product given away, even when the premiums would cover it', async () => {
-        database([], [{ ...upsell, UnitPrice: 9000 }, { ...plan, UnitPrice: 0 }]);
+        database([], [{ ...upsell, UnitPrice: 12000 }, { ...plan, UnitPrice: 0 }]);
 
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
 

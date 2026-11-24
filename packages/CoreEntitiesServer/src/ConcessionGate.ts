@@ -53,8 +53,9 @@
  * The order is judged as a whole on price (golive #499). A contract is often split across lines: an
  * upgrade written as the existing plan at what the customer already pays plus an upsell line for the
  * increase prices one line below its engine price and another above it, while the order gives nothing
- * away. So when the lines priced above their engine price make up at least as much as the uncovered
- * lines priced below theirs take off, the below-engine price is not a concession. Only the price is
+ * away. So when the lines priced above a positive engine price make up at least as much as the
+ * uncovered lines priced below theirs take off, the below-engine price is not a concession. A product
+ * sold at a negotiated price lists at 0, so its whole price is the sale and makes up for nothing. Only the price is
  * netted: a `DiscountPct` or a held manual discount on the line is still counted, a line given away
  * (Scope) is never netted, nor is a line an approver refused a concession for, and a shortfall is
  * reported line by line as before. The readiness check says which lines made up for which.
@@ -234,7 +235,7 @@ interface LinePriceFigures {
     Concession: LinePriceConcession | null;
     /**
      * What the line charges above its engine price once its own `DiscountPct` and held manual discounts
-     * are taken off; 0 when it charges no more, or when nothing resolves an engine price for it.
+     * are taken off; 0 when it charges no more, or when its engine price is missing or 0.
      */
     Premium: number;
 }
@@ -255,9 +256,11 @@ async function linePriceFigures(line: LineConcessionFacts, provider: IMetadataPr
     const discountValue = Money(Math.max(0, charged) * quantity * discountPct);
 
     // What the line charges above its engine price, after its own discounts. A named list pick is a
-    // configured price, not a premium; a line the engine has yet to price charges the engine price.
+    // configured price, not a premium; a line the engine has yet to price charges the engine price. A
+    // product sold at a negotiated price sits in the catalog at 0 on purpose: its price is the sale, not
+    // a premium above anything, so only a line with a positive engine price can make up for another.
     const premium =
-        engine != null && !configuredPrice && line.PriceStated !== false
+        engine != null && engine > 0 && !configuredPrice && line.PriceStated !== false
             ? Money(Math.max(0, charged * quantity * (1 - discountPct) - held - engine * quantity))
             : 0;
 
