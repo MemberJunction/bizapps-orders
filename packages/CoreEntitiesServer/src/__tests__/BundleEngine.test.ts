@@ -11,7 +11,10 @@ import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 const m = vi.hoisted(() => ({
     BundleItems: [] as Array<Record<string, unknown>>,
     Subscriptions: [] as Array<{ ID: string; ProductID: string }>,
+    /** Products naming their own subscription type. */
     SubscriptionProducts: new Set<string>(),
+    /** Products with no subscription type of their own, whose product type carries the default. */
+    InheritingProducts: new Set<string>(),
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => ({
@@ -24,18 +27,35 @@ vi.mock('@memberjunction/core', async (importOriginal) => ({
     },
 }));
 
-vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => ({
-    // The UUID guards live in orders-entities (sql-guards re-exports them), so they stay real.
-    ...(await importOriginal<typeof import('@mj-biz-apps/orders-entities')>()),
-    LoadOrdersEngine: async () => undefined,
-    OrdersEngine: {
-        Instance: {
-            BaseProductPrices: () => [],
-            ProductByID: (id: string) => ({ ID: id, SubscriptionTypeID: m.SubscriptionProducts.has(id) ? 'type' : null }),
-            ResolveSubscriptionTypeID: (id: string) => (m.SubscriptionProducts.has(id) ? 'type' : null),
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
+    // The UUID guards live in orders-entities (sql-guards re-exports them), so they stay real, and so
+    // does the inheritance rule: the engine stand-in resolves through the real shared function.
+    const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
+    const productByID = (id: string) => ({
+        ID: id,
+        SubscriptionTypeID: m.SubscriptionProducts.has(id) ? 'type' : null,
+        ProductTypeID: m.InheritingProducts.has(id) ? 'subscribing-type' : 'plain-type',
+    });
+    const productTypeByID = (id: string) => ({ ID: id, DefaultSubscriptionTypeID: id === 'subscribing-type' ? 'type' : null });
+    return {
+        ...actual,
+        LoadOrdersEngine: async () => undefined,
+        OrdersEngine: {
+            Instance: {
+                BaseProductPrices: () => [],
+                ProductByID: productByID,
+                ProductTypeByID: productTypeByID,
+                ResolveSubscriptionTypeID: (id: string) => {
+                    const product = productByID(id);
+                    return actual.ResolveSubscriptionTypeID(
+                        product.SubscriptionTypeID,
+                        productTypeByID(product.ProductTypeID).DefaultSubscriptionTypeID,
+                    );
+                },
+            },
         },
-    },
-}));
+    };
+});
 
 vi.mock('../OrderLineEntityServer.js', () => ({ MarkAsOrdersOwnWrite: () => undefined }));
 
@@ -88,7 +108,9 @@ beforeEach(() => {
         SortOrder: i,
     }));
     m.Subscriptions = [{ ID: SUB, ProductID: MEMBERSHIP }];
-    m.SubscriptionProducts = new Set([MEMBERSHIP, JOURNAL]);
+    // The journal names no subscription type itself; it inherits its product type's default.
+    m.SubscriptionProducts = new Set([MEMBERSHIP]);
+    m.InheritingProducts = new Set([JOURNAL]);
 });
 
 describe('a new component line', () => {
@@ -138,7 +160,7 @@ describe('an existing component line, on a later save', () => {
     }
     const savedChildFields = (id: string, saved: Record<string, unknown>) => ({
         ShipToPersonID: saved.ShipToPersonID ?? null,
-        ServicePeriodStart: m.SubscriptionProducts.has(id) ? (saved.ServicePeriodStart ?? null) : null,
+        ServicePeriodStart: m.SubscriptionProducts.has(id) || m.InheritingProducts.has(id) ? (saved.ServicePeriodStart ?? null) : null,
     });
 
     it('follows a changed bundle line where the component still holds the old value', async () => {
