@@ -63,6 +63,7 @@ import {
     type OrganizationRevenue,
 } from './organizationRevenue.js';
 import { ParseRevenueBand } from './revenueBands.js';
+import { OPTION_SOURCE, OptionCodesInApplicability } from '../product-options.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -98,6 +99,25 @@ export class RevenueBandRequiredError extends PriceResolutionError {
                 `record, so its band cannot be chosen automatically. Pick the band on the line: ${BandNames.join(', ')}.`,
         );
         this.name = 'RevenueBandRequiredError';
+    }
+}
+
+/**
+ * The product is priced by options picked on the line (Tier, Size) and the line is missing a pick a
+ * price rule tests. Not a catalog fault: the rep or buyer picks the option. Raised instead of
+ * pricing a guess.
+ */
+export class OptionRequiredError extends PriceResolutionError {
+    constructor(
+        ProductID: string,
+        public readonly OptionNames: string[],
+    ) {
+        super(
+            ProductID,
+            `This product is priced by the options picked on the line, and ${OptionNames.join(', ')} ` +
+                `${OptionNames.length === 1 ? 'has' : 'have'} no pick. Pick ${OptionNames.length === 1 ? 'it' : 'them'} on the line.`,
+        );
+        this.name = 'OptionRequiredError';
     }
 }
 
@@ -272,6 +292,7 @@ export class DefaultPriceResolver extends BasePriceResolver {
         const rows = this.filterApplicable(candidates, ctx);
         if (!rows.length) {
             this.refuseUndecidedBand(candidates, ctx);
+            this.refuseMissingOption(candidates, ctx);
             return null;
         }
 
@@ -450,6 +471,22 @@ export class DefaultPriceResolver extends BasePriceResolver {
                 `falls in none of this product's revenue bands: ${bands.map(priceLabel).join(', ')}. ` +
                 `Add a band covering it, or pick a price on the line.`,
         );
+    }
+
+    /**
+     * Nothing applied: when a rule tests an option the line has no pick for, name the option rather
+     * than reporting "no price". A line with every tested option picked falls through to the usual
+     * no-price refusal, which names the rules considered.
+     */
+    private refuseMissingOption(candidates: ProductPriceRow[], ctx: PriceResolutionContext): void {
+        const tested = new Map<string, string>();
+        for (const row of candidates) {
+            for (const code of OptionCodesInApplicability(row.Applicability)) tested.set(code.toLowerCase(), code);
+        }
+        if (!tested.size) return;
+        const picked = new Set(Object.keys(ctx.ApplicabilityContext?.[OPTION_SOURCE] ?? {}).map((k) => k.toLowerCase()));
+        const missing = [...tested.entries()].filter(([key]) => !picked.has(key)).map(([, code]) => code);
+        if (missing.length) throw new OptionRequiredError(ctx.ProductID, missing.map(OptionNameForCode));
     }
 
     private filterApplicable(rows: ProductPriceRow[], ctx: PriceResolutionContext): ProductPriceRow[] {
@@ -910,3 +947,10 @@ export function LoadDefaultPriceResolver(): void {
 }
 
 export { PRODUCT_ENTITY, PRODUCT_PRICE_ENTITY };
+
+/** An option's name for a refusal message, from the engine's catalog when loaded; the code otherwise. */
+function OptionNameForCode(code: string): string {
+    const key = code.trim().toLowerCase();
+    const option = OrdersEngine.Instance.ProductOptions?.find((o) => (o.Code ?? '').trim().toLowerCase() === key);
+    return option?.Name ?? code;
+}

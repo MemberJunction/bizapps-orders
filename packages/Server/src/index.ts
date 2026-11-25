@@ -41,6 +41,7 @@ import {
     LoadSubscriptionTermEntityServer,
     LoadSubscriptionEntityServer,
     LoadProductPriceEntityServer,
+    LoadProductOptionRules,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -187,6 +188,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadCheckCoverageOverlapOperation(); // 'Orders.CheckCoverageOverlap' — the band-overlap notice, from the rule confirm refuses with
     LoadConfirmReadinessOperation();     // 'Orders.ConfirmReadiness' — the order form's concession blockers, from the gate confirm refuses with
     LoadExplainProductGLAccountsOperation(); // 'Orders.ExplainProductGLAccounts' — a product's GL accounts per role, from the walk confirm books through (golive#439)
+    LoadProductOptionRules();            // product options: company boundary, widget key collisions, variant refusals (golive #399)
     LoadSubscriptionFamilyRules();       // a product's subscription family must be in the product's company
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction

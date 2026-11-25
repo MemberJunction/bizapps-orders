@@ -43,8 +43,13 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    CheckOptionPicks,
     DropStaleExtendedAmount,
     HostOrderLineEditVeto,
+    LineOptionPicks,
+    LoadOrdersEngine,
+    OptionPicksOnly,
+    OrdersEngineReady,
     IsBooked,
     LineGross,
     NetAfterDiscount,
@@ -154,6 +159,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         this.refuseParentNotFromExpansion(result);
         await this.refuseNewLineOnBookedOrder(result);
         await this.refuseMoneyEditOnBookedOrder(result);
+        await this.refuseBadOptionPicks(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
         return result;
@@ -471,6 +477,55 @@ export class OrderLineEntityServer extends OrderLineEntity {
      * transaction has already written. The stored status is the one trigger 51003 judges by, which is
      * why the confirming save itself (stored Draft, in-memory Confirmed) still counts as open.
      */
+    /**
+     * The line's option picks (Tier, Size; golive #399) must fit its product: every required option
+     * picked, one allowed and active value per option, no option the product does not offer, and
+     * each pick's GroupKey / OptionValue naming its option and value codes, since price rules and
+     * entitlement templates match on those. The browser runs the same check; this one counts.
+     *
+     * Checked when the line is new, its product changed or its picks changed, so a saved line is not
+     * refused for an option assigned to its product after it was sold. A pick added to a line of a
+     * booked order is refused: the pick decided the line's price and entitlements.
+     */
+    private async refuseBadOptionPicks(result: ValidationResult): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        // A provider that cannot load the catalog (a unit test's stub) has no options to check against.
+        if (!(await OrdersEngineReady(provider, this.ContextCurrentUser))) return;
+        const choices = this.Choices;
+        const picksTouched = choices?.IsLoaded === true && choices.Dirty;
+        const productTouched = this.GetFieldByName('ProductID')?.Dirty === true;
+        if (this.IsSaved && !productTouched && !picksTouched) return;
+
+        await LoadOrdersEngine(provider, this.ContextCurrentUser);
+        const effective = OrdersEngine.Instance.EffectiveOptions(this.ProductID);
+        const picks = await LineOptionPicks(this, this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+        if (!effective.length && !picks.length) return;
+
+        const problems = CheckOptionPicks(effective, picks);
+        const catalog = OrdersEngine.Instance.OptionCatalog;
+        for (const pick of OptionPicksOnly(picks)) {
+            const option = catalog.Options.find((o) => o.ID.toLowerCase() === String(pick.ProductOptionID).toLowerCase());
+            const value = catalog.Values.find((v) => v.ID.toLowerCase() === String(pick.ProductOptionValueID).toLowerCase());
+            if (!option || !value) continue;
+            if (pick.GroupKey !== option.Code || pick.OptionValue !== value.Code) {
+                problems.push(`The ${option.Name} pick must record the option code ${option.Code} and the value code ${value.Code}.`);
+            }
+        }
+
+        if (this.IsSaved && !this.BypassBookedCheck && picksTouched) {
+            const status = await this.storedOrderStatus();
+            if (status && IsBooked(status)) {
+                problems.push(`Option picks cannot be changed once the order is booked. Corrections to booked orders go through reversal orders.`);
+            }
+        }
+
+        if (!problems.length) return;
+        result.Success = false;
+        for (const problem of problems) {
+            result.Errors.push(new ValidationErrorInfo('Choices', problem, null, ValidationErrorType.Failure));
+        }
+    }
+
     private async storedOrderStatus(): Promise<string | null> {
         if (!this.OrderHeaderID) return null;
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);

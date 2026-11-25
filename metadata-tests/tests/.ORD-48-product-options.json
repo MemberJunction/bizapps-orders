@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-48 - Product Options",
+    "Description": "Product options (Tier, Size): buyer choices offered on one product and recorded on the order line, where the picks decide the price. Options are inherited from the product type through the category chain to the product, the most specific assignment of each option winning whole. The unit suite pins the walk, the pick checks and the matrix disjointness; this bundle proves the pieces meet against a live database (PO1-PO7).",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "PO1 an option assigned on the product type reaches the product with its required flag; a category assignment replaces it whole; a product-level exclusion removes it. PO2 two option price rules at one priority save (a matrix is not a tie), and a draft line picking Pro and Large is priced at the Pro / Large row. PO3 a line on a product that requires Tier and Size, carrying only a Tier pick, is refused and the refusal names Size. PO4 one entitlement code saves twice, conditioned on two tiers, and an unconditional copy of the same code is refused. PO5 a subscription bought with an Enterprise pick renews onto a line carrying the same pick, still linked to the Tier option. PO6 a variant value, a Variant-role assignment and a parent product are each refused as not supported yet. PO7 a line carrying two Tier picks is refused."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "product-options"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "F9E0153A-524E-4483-9050-7AC3AB7ED5F3"
+  }
+}

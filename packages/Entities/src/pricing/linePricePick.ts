@@ -105,6 +105,34 @@ export function IsProductReplacedWithoutPriceEdit(line: mjBizAppsOrdersOrderLine
     return line.IsSaved === true && anyFieldIsDirty(line, ['ProductID']) && !anyFieldIsDirty(line, ['UnitPrice']);
 }
 
+interface OptionChoiceRow {
+    ProductOptionID: string | null;
+    IsSaved: boolean;
+    Dirty: boolean;
+}
+
+/**
+ * True when a saved line's option picks (Tier, Size) were changed in this edit without a hand-typed
+ * price change. The stored price was decided by the old picks, so the line is priced again from the
+ * rules, as for a replaced product. This is what re-prices a draft renewal whose tier the rep moved:
+ * its stored renewal price was the prior term's, for the prior tier.
+ */
+export function IsOptionPickChangedWithoutPriceEdit(line: mjBizAppsOrdersOrderLineEntity): boolean {
+    if (line.IsSaved !== true || anyFieldIsDirty(line, ['UnitPrice'])) return false;
+    const choices = (line as unknown as { Choices?: { IsLoaded: boolean; Items: readonly OptionChoiceRow[]; Removed: readonly OptionChoiceRow[] } }).Choices;
+    if (!choices?.IsLoaded) return false;
+    const isOption = (c: OptionChoiceRow) => !!c.ProductOptionID;
+    return (
+        choices.Items.some((c) => isOption(c) && (!c.IsSaved || c.Dirty)) ||
+        choices.Removed.some((c) => isOption(c) && c.IsSaved)
+    );
+}
+
+/** The line must be priced again from the rules: its product or its option picks changed, its price did not. */
+export function IsRepricedByEdit(line: mjBizAppsOrdersOrderLineEntity): boolean {
+    return IsProductReplacedWithoutPriceEdit(line) || IsOptionPickChangedWithoutPriceEdit(line);
+}
+
 /**
  * The unit price a pricing pass must HOLD for this line, or null when the engine is to resolve one.
  *
@@ -121,7 +149,7 @@ export function IsProductReplacedWithoutPriceEdit(line: mjBizAppsOrdersOrderLine
  * Null is not zero. Zero would pin the line as deliberately free.
  */
 export function StatedLineUnitPrice(line: mjBizAppsOrdersOrderLineEntity): number | null {
-    if (IsProductReplacedWithoutPriceEdit(line)) return null;
+    if (IsRepricedByEdit(line)) return null;
     const unit = Number(line.UnitPrice ?? 0);
     if (!anyFieldIsDirty(line, ['UnitPrice']) && !(unit > 0) && !IsMarkedPriceStated(line)) return null;
     return unit;

@@ -50,12 +50,17 @@ import type {
     mjBizAppsOrdersPaymentTypeEntity,
     mjBizAppsOrdersProductCategoryEntity,
     mjBizAppsOrdersProductEntity,
+    mjBizAppsOrdersProductOptionAssignmentEntity,
+    mjBizAppsOrdersProductOptionAssignmentValueEntity,
+    mjBizAppsOrdersProductOptionEntity,
+    mjBizAppsOrdersProductOptionValueEntity,
     mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersProductTypeEntity,
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
 import { ResolveSubscriptionTypeID } from '../subscription-type';
+import { ResolveEffectiveOptions, type EffectiveProductOption, type ProductOptionCatalog } from '../product-options';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
@@ -100,6 +105,10 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
     private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
     private _eventProducts: mjBizAppsOrdersEventProductEntity[] = [];
+    private _productOptions: mjBizAppsOrdersProductOptionEntity[] = [];
+    private _productOptionValues: mjBizAppsOrdersProductOptionValueEntity[] = [];
+    private _productOptionAssignments: mjBizAppsOrdersProductOptionAssignmentEntity[] = [];
+    private _productOptionAssignmentValues: mjBizAppsOrdersProductOptionAssignmentValueEntity[] = [];
     /** The reload in flight, so concurrent misses share one query. See {@link EnsureProducts}. */
     private _productReload: Promise<void> | null = null;
 
@@ -583,6 +592,12 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
                 { Type: 'entity', PropertyName: '_productPrices', EntityName: 'MJ_BizApps_Orders: Product Prices' },
                 { Type: 'entity', PropertyName: '_productCategories', EntityName: 'MJ_BizApps_Orders: Product Categories' },
                 { Type: 'entity', PropertyName: '_eventProducts', EntityName: EVENT_PRODUCT_ENTITY },
+                // The option catalog (golive #399): small and stable, so the browser and the server
+                // resolve a product's options with no round trip.
+                { Type: 'entity', PropertyName: '_productOptions', EntityName: 'MJ_BizApps_Orders: Product Options' },
+                { Type: 'entity', PropertyName: '_productOptionValues', EntityName: 'MJ_BizApps_Orders: Product Option Values' },
+                { Type: 'entity', PropertyName: '_productOptionAssignments', EntityName: 'MJ_BizApps_Orders: Product Option Assignments' },
+                { Type: 'entity', PropertyName: '_productOptionAssignmentValues', EntityName: 'MJ_BizApps_Orders: Product Option Assignment Values' },
             ],
             provider as IMetadataProvider,
             forceRefresh,
@@ -619,6 +634,58 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public get ProductCategories(): mjBizAppsOrdersProductCategoryEntity[] {
         return this.GetConfigData<mjBizAppsOrdersProductCategoryEntity>('_productCategories');
+    }
+
+    public get ProductOptions(): mjBizAppsOrdersProductOptionEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductOptionEntity>('_productOptions');
+    }
+    public get ProductOptionValues(): mjBizAppsOrdersProductOptionValueEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductOptionValueEntity>('_productOptionValues');
+    }
+    public get ProductOptionAssignments(): mjBizAppsOrdersProductOptionAssignmentEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductOptionAssignmentEntity>('_productOptionAssignments');
+    }
+    public get ProductOptionAssignmentValues(): mjBizAppsOrdersProductOptionAssignmentValueEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductOptionAssignmentValueEntity>('_productOptionAssignmentValues');
+    }
+
+    /** The cached option catalog, in the shape the pure walk in `product-options.ts` reads. */
+    public get OptionCatalog(): ProductOptionCatalog {
+        return {
+            Options: this.ProductOptions ?? [],
+            Values: this.ProductOptionValues ?? [],
+            Assignments: this.ProductOptionAssignments ?? [],
+            AssignmentValues: this.ProductOptionAssignmentValues ?? [],
+        } as unknown as ProductOptionCatalog;
+    }
+
+    /**
+     * The options a product offers after inheritance: its type, then each category from the root down
+     * to its own, then the product; the most specific assignment of each option wins whole.
+     * Empty for an unknown product.
+     */
+    public EffectiveOptions(productID: string | null | undefined): EffectiveProductOption[] {
+        const product = this.ProductByID(productID ?? '');
+        if (!product) return [];
+        return ResolveEffectiveOptions(
+            {
+                ProductID: product.ID,
+                ProductTypeID: product.ProductTypeID,
+                CategoryChainNearestFirst: this.CategoryChain(product.ProductCategoryID),
+            },
+            this.OptionCatalog,
+        );
+    }
+
+    /**
+     * The options a category offers to the products below it (no product-level rows), for a price
+     * rule or an assignment hanging on the category. With `productTypeID`, type defaults count too.
+     */
+    public EffectiveOptionsForCategory(categoryID: string | null | undefined, productTypeID?: string | null): EffectiveProductOption[] {
+        return ResolveEffectiveOptions(
+            { ProductID: null, ProductTypeID: productTypeID ?? null, CategoryChainNearestFirst: this.CategoryChain(categoryID) },
+            this.OptionCatalog,
+        );
     }
 
     /** The event record each event product carries (IS-A child of Product, sharing its ID). */

@@ -68,8 +68,14 @@ import { mjBizAppsOrdersProductBundleItemFormComponent } from "./Entities/mjBizA
 import { mjBizAppsOrdersProductCategoryFormComponent } from "./Entities/mjBizAppsOrdersProductCategory/mjbizappsordersproductcategory.form.component";
 import { mjBizAppsOrdersProductEntitlementFormComponent } from "./Entities/mjBizAppsOrdersProductEntitlement/mjbizappsordersproductentitlement.form.component";
 import { mjBizAppsOrdersProductFormComponent } from "./Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component";
+import { mjBizAppsOrdersProductOptionAssignmentFormComponent } from "./Entities/mjBizAppsOrdersProductOptionAssignment/mjbizappsordersproductoptionassignment.form.component";
+import { mjBizAppsOrdersProductOptionAssignmentValueFormComponent } from "./Entities/mjBizAppsOrdersProductOptionAssignmentValue/mjbizappsordersproductoptionassignmentvalue.form.component";
+import { mjBizAppsOrdersProductOptionFormComponent } from "./Entities/mjBizAppsOrdersProductOption/mjbizappsordersproductoption.form.component";
+import { mjBizAppsOrdersProductOptionValueFormComponent } from "./Entities/mjBizAppsOrdersProductOptionValue/mjbizappsordersproductoptionvalue.form.component";
 import { mjBizAppsOrdersProductPriceFormComponent } from "./Entities/mjBizAppsOrdersProductPrice/mjbizappsordersproductprice.form.component";
+import { mjBizAppsOrdersProductSuccessorOptionValueFormComponent } from "./Entities/mjBizAppsOrdersProductSuccessorOptionValue/mjbizappsordersproductsuccessoroptionvalue.form.component";
 import { mjBizAppsOrdersProductTypeFormComponent } from "./Entities/mjBizAppsOrdersProductType/mjbizappsordersproducttype.form.component";
+import { mjBizAppsOrdersProductVariantValueFormComponent } from "./Entities/mjBizAppsOrdersProductVariantValue/mjbizappsordersproductvariantvalue.form.component";
 import { mjBizAppsOrdersPromotionCodeFormComponent } from "./Entities/mjBizAppsOrdersPromotionCode/mjbizappsorderspromotioncode.form.component";
 import { mjBizAppsOrdersPromotionFormComponent } from "./Entities/mjBizAppsOrdersPromotion/mjbizappsorderspromotion.form.component";
 import { mjBizAppsOrdersPromotionTargetFormComponent } from "./Entities/mjBizAppsOrdersPromotionTarget/mjbizappsorderspromotiontarget.form.component";
@@ -207,7 +213,8 @@ export class GeneratedForms_SubModule_5 { }
 declarations: [
     mjBizAppsOrdersCustomerPaymentMethodFormComponent,
     mjBizAppsOrdersOrderLineProgressMeasurementFormComponent,
-    mjBizAppsOrdersPaymentDetailFormComponent
+    mjBizAppsOrdersPaymentDetailFormComponent,
+    mjBizAppsOrdersProductOptionAssignmentFormComponent
 ],
 imports: [
     CommonModule,
@@ -225,6 +232,7 @@ export class GeneratedForms_SubModule_6 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersProductOptionAssignmentValueFormComponent,
     mjBizAppsOrdersPromotionTargetFormComponent,
     mjBizAppsOrdersStoredValueTransactionFormComponent
 ],
@@ -303,7 +311,8 @@ export class GeneratedForms_SubModule_11 { }
 @NgModule({
 declarations: [
     mjBizAppsOrdersOrderCompanyPolicyFormComponent,
-    mjBizAppsOrdersPriceListFormComponent
+    mjBizAppsOrdersPriceListFormComponent,
+    mjBizAppsOrdersProductVariantValueFormComponent
 ],
 imports: [
     CommonModule,
@@ -462,6 +471,7 @@ export class GeneratedForms_SubModule_21 { }
 
 @NgModule({
 declarations: [
+    mjBizAppsOrdersProductSuccessorOptionValueFormComponent,
     mjBizAppsOrdersProductTypeFormComponent,
     mjBizAppsOrdersRevenueRecognitionTypeFormComponent
 ],
@@ -598,7 +608,8 @@ export class GeneratedForms_SubModule_28 { }
 declarations: [
     mjBizAppsOrdersOrderChargeAllocationFormComponent,
     mjBizAppsOrdersOrderLinePriceComponentFormComponent,
-    mjBizAppsOrdersPaymentTypeFormComponent
+    mjBizAppsOrdersPaymentTypeFormComponent,
+    mjBizAppsOrdersProductOptionFormComponent
 ],
 imports: [
     CommonModule,
@@ -618,7 +629,8 @@ export class GeneratedForms_SubModule_29 { }
 declarations: [
     mjBizAppsOrdersOrderAdjustmentFormComponent,
     mjBizAppsOrdersPaymentWebhookDeliveryFormComponent,
-    mjBizAppsOrdersProductFormComponent
+    mjBizAppsOrdersProductFormComponent,
+    mjBizAppsOrdersProductOptionValueFormComponent
 ],
 imports: [
     CommonModule,

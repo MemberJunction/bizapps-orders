@@ -144,6 +144,7 @@ const ALL_BUNDLES = [
     'outbound-events',
     'billcom-rail',
     'service-period-lock',
+    'product-options',
     'volume',
 ];
 

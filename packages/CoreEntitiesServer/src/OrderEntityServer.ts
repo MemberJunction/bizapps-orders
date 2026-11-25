@@ -73,7 +73,7 @@ import {
     HostOrderLineEditVeto,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
-    IsProductReplacedWithoutPriceEdit,
+    IsRepricedByEdit,
     MarkLinePriceStated,
     InitialPaymentDay,
     ExplainInstalmentsBeforeMovedTerms,
@@ -1611,10 +1611,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             DiscountPct: line.DiscountPct,
             RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
             // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
-            // A saved line whose product changed without a price edit is about to be re-priced (#907).
+            // A saved line whose product or option picks changed without a price edit is about to be
+            // re-priced (#907).
             PriceStated:
                 !this.isUneditedRenewalPrice(line) &&
-                !IsProductReplacedWithoutPriceEdit(line) &&
+                !IsRepricedByEdit(line) &&
                 (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
             LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
         }));
