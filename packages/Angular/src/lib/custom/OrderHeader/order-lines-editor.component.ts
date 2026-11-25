@@ -85,6 +85,8 @@ import {
     ExtendOutcomeFor,
     FindInstalmentsBeforeMovedTerms,
     HoldingSubscriberFor,
+    ORDER_LINE_DESCRIPTION_MAX_LENGTH,
+    SetLineDescription,
     TodayAsDateValue,
     ToISODate,
     type ExtendChoiceText,
@@ -558,6 +560,31 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         const target = event.target;
         if (!(target instanceof HTMLTextAreaElement)) return;
         line.CoverageOverlapReason = target.value;
+    }
+
+    /** `OrderLine.Description` is 500 characters; the input stops there so nothing is cut on save. */
+    public readonly DescriptionMaxLength = ORDER_LINE_DESCRIPTION_MAX_LENGTH;
+
+    /**
+     * The line's own wording, which the invoice and the invoicing rail print after the product
+     * name. Written on every keystroke, so the order shows as unsaved while the user is still
+     * in the field; the box itself is left alone until they leave it, or a typed space would
+     * be taken back out from under the cursor.
+     */
+    public TypeDescription(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) return;
+        SetLineDescription(line, target.value);
+    }
+
+    /** On leaving the field: store the text and show it as stored (one line, trimmed). */
+    public SetDescription(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) return;
+        SetLineDescription(line, target.value);
+        target.value = line.Description ?? '';
     }
 
     private async refreshCoverage(): Promise<void> {
