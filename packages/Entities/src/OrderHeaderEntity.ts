@@ -701,10 +701,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const status = CanOfferConfirm(from);
         if (!status.Allowed) return status;
         if (!this.BillToPersonID && !this.BillToOrganizationID) {
-            return { Allowed: false, Reason: 'Need a bill-to party.' };
+            return { Allowed: false, Reason: 'A bill-to party is required.' };
         }
         if (this.Lines.Count === 0 && (!this.IsSaved || this.Lines.IsLoaded)) {
-            return { Allowed: false, Reason: 'Need a line.' };
+            return { Allowed: false, Reason: 'At least one line is required.' };
         }
         const undated = this.LinesMissingServicePeriod();
         if (undated.length > 0) {
@@ -712,7 +712,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             const which = numbers.length > 0 ? `Line ${numbers.join(', ')}` : 'A line';
             return {
                 Allowed: false,
-                Reason: `${which} needs a service period (start and end date) before this can be confirmed.`,
+                Reason: `${which} requires a service period (start and end date) before this can be confirmed.`,
             };
         }
         const unpriced = this.UnpricedLinesRefusal();
