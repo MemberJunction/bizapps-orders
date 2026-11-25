@@ -1,5 +1,22 @@
 # @mj-biz-apps/orders-entities
 
+## 5.53.0
+
+### Minor Changes
+
+- 301e0d3: Add the PostgreSQL counterpart of the single-write `spUpdate*` and trigger-guard migration. It changes nothing on PostgreSQL, where the `__mj_UpdatedAt` trigger already stamps the row in the same write; it keeps the two migration sets in step so the release can ship.
+- 6e3da0f: Optimize OrdersEngine with deferred browser startup and O(1) Map-indexed lookups:
+  - Defer browser startup via `@RegisterForStartup({ deferred: typeof window !== 'undefined' })` so client cold-start is not blocked on catalog loading.
+  - Add lazy O(1) Map indexes for all 11 catalog and lookup collections (PaymentTypes, PaymentProviderTypes, PaymentTermsTypes, ChargeTypes, ProductTypes, SubscriptionTypes, RevenueRecognitionTypes, Products, EventProducts, ProductPrices, ProductCategories).
+  - Invalidate indexes via `NotifyDataChange` invalidation generation checks, array reference comparison, and length tracking.
+  - Pre-sort base product prices and return defensive copies to prevent cache mutation.
+  - Deduplicate prices in `ProductPricesFor` and optimize `CategoryChain` to O(depth) ancestor traversal.
+  - Ensure lazy per-collection error propagation for permission-constrained datasets.
+
+### Patch Changes
+
+- 5935635: The share-of-order concession limit (`MaxConcessionPctOfContract`) measures an order's concessions against the order at its catalog prices, before any discount, instead of against its total after discounts. A 10% discount on every line now reads as 10%, not 11.1%, so a rep with 10% authority can approve it. Recording a concession, deciding it and the confirm gate all use the new `OrderCatalogTotal`; `OrderConcession.OrderNetTotal` still stores the net total (golive #494).
+
 ## 5.52.0
 
 ## 5.51.0
@@ -1003,8 +1020,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                              "FK_EntityFieldValue_EntityField"
+                                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                                "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
