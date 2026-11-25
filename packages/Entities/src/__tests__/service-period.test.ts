@@ -183,3 +183,11 @@ describe('OrderLineEntity refuses a service period that ends before it starts', 
         expect(check(day, null).Success).toBe(true);
     });
 });
+
+describe('what ConfirmEligibility says is required', () => {
+    it('names the service period as required, by line', () => {
+        const verdict = order([line(1, 'p-upfront'), line(2, 'p-deliverable')]).ConfirmEligibility();
+        expect(verdict.Allowed).toBe(false);
+        expect(verdict.Reason).toMatch(/^Line 2 requires a service period \(start and end date\) before this can be confirmed\.$/);
+    });
+});
