@@ -320,6 +320,45 @@
     line-height: 1.35;
 }
 
+.mjo-ol-card__desc {
+    margin-top: 6px;
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-primary);
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.mjo-ol-desc {
+    display: block;
+    margin-top: 8px;
+}
+.mjo-ol-desc span {
+    display: block;
+    margin-bottom: 4px;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+.mjo-ol-desc__hint {
+    display: block;
+    margin-top: 4px;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+    line-height: 1.35;
+}
+.mjo-ol-desc textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 32px;
+    padding: 6px 8px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+}
+
 .mjo-ol-picker {
     position: relative;
     z-index: 20;
