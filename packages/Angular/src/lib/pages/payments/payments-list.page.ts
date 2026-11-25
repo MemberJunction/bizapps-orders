@@ -25,7 +25,8 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
                     <mj-view-workspace
                         [Entity]="PaymentEntityInfo"
                         [AutoSaveView]="true"
-                        (OpenRecordRequested)="OnRecordOpened($event)">
+                        (OpenRecordRequested)="OnRecordOpened($event)"
+                        (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                     </mj-view-workspace>
                 } @else {
                     <div class="small muted" style="padding: 24px;">Loading payment metadata...</div>
@@ -79,6 +80,8 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
 export class MJOPaymentsListPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
     @Output() PaymentOpened = new EventEmitter<mjBizAppsOrdersPaymentHeaderEntity>();
 
     public PaymentEntityInfo: EntityInfo | null = null;
