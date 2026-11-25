@@ -146,9 +146,9 @@
                 <span>Before this can be confirmed</span>
                 @if (ConfirmBlockedReason) {
                     @if (NeedsBillTo) {
-                        <button type="button" (click)="JumpToBill()">Need a bill-to party</button>
+                        <button type="button" (click)="JumpToBill()">Bill-to party required</button>
                     } @else if (NeedsPaymentReference) {
-                        <button type="button" (click)="JumpToPayment()">Need a check / ACH reference</button>
+                        <button type="button" (click)="JumpToPayment()">Check or ACH reference required</button>
                     } @else {
                         <span class="mjo-oh-todo__hint">{{ ConfirmBlockedReason }}</span>
                     }

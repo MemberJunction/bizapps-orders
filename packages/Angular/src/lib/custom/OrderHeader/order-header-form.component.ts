@@ -246,7 +246,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             Disabled: (record) => {
                 if (this.Confirming) return 'Booking order…';
                 const ord = record as OrderHeaderEntity;
-                if (this.NeedsPaymentReference) return 'Need a check / ACH reference before confirming.';
+                if (this.NeedsPaymentReference) return 'A check or ACH reference is required before confirming.';
                 const verdict = ord?.ConfirmEligibility?.();
                 if (verdict && !verdict.Allowed) return verdict.Reason ?? 'Cannot confirm this order.';
                 const concessions = this.ConcessionBlockers;
@@ -354,7 +354,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public get ConfirmBlockedReason(): string | null {
         if (!this.record || this.record.IsBookedOrder) return null;
-        if (this.NeedsPaymentReference) return 'Need a check / ACH reference.';
+        if (this.NeedsPaymentReference) return 'A check or ACH reference is required.';
         const verdict = this.record.ConfirmEligibility();
         return verdict.Allowed ? null : (verdict.Reason ?? 'Cannot confirm this order.');
     }
