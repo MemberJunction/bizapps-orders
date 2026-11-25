@@ -61,6 +61,7 @@ import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { CompositeKey, Metadata } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
+import type { RecordOpenRequest } from '../pages/workspace-requests';
 import { GetCatalogOptions, GetPaymentTypes, type MJOProductOption } from '../data/orders-queries';
 
 /**
@@ -380,8 +381,14 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         on<{ ID?: string } | string>('PaymentOpened', (row) => this.openEntity(MJO_ENTITIES.PaymentHeader, row));
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openEntity(MJO_ENTITIES.Product, row));
         on<{ ID?: string } | string>('SubscriptionOpened', (row) => this.openEntity(MJO_ENTITIES.Subscription, row));
-        // New record = an empty key, same as the section's own primary actions.
-        on<void>('ProductCreateRequested', () => this.navigationService.OpenEntityRecord(MJO_ENTITIES.Product, new CompositeKey()));
+
+        // Grids of any other entity open and create by NAME. The grid's New button only announces
+        // the request; nothing creates a record unless the host routes it, and an unrouted request
+        // fails with no error. Routing by entity name means a new grid needs no handler here.
+        on<RecordOpenRequest>('RecordOpenRequested', (request) =>
+            this.navigationService.OpenEntityRecord(request.EntityName, request.Key),
+        );
+        on<string>('RecordCreateRequested', (entityName) => this.navigationService.OpenNewEntityRecord(entityName));
 
         // The irreversible step. Straight to the engine — there is no dry run in front of it.
         on<OrderHeaderEntity>('ConfirmRequested', (draft) => void this.Confirm(draft));

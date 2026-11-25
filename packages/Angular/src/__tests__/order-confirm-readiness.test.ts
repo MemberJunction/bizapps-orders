@@ -54,8 +54,8 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('ConfirmBlockerList', () => {
     it('lists the browser reason first, then each concession problem', () => {
-        expect(ConfirmBlockerList('Need a bill-to party.', [PROBLEM, 'A second.'])).toEqual([
-            'Need a bill-to party.',
+        expect(ConfirmBlockerList('A bill-to party is required.', [PROBLEM, 'A second.'])).toEqual([
+            'A bill-to party is required.',
             PROBLEM,
             'A second.',
         ]);
@@ -82,8 +82,8 @@ describe('the confirm banner and button', () => {
     });
 
     it('keeps the browser reason alongside the concession problems', () => {
-        const instance = form(record({ ConfirmEligibility: () => ({ Allowed: false, Reason: 'Need a line.' }) }), [PROBLEM]);
-        expect(ConfirmBlockerList(instance.ConfirmBlockedReason, instance.ConcessionBlockers)).toEqual(['Need a line.', PROBLEM]);
+        const instance = form(record({ ConfirmEligibility: () => ({ Allowed: false, Reason: 'At least one line is required.' }) }), [PROBLEM]);
+        expect(ConfirmBlockerList(instance.ConfirmBlockedReason, instance.ConcessionBlockers)).toEqual(['At least one line is required.', PROBLEM]);
     });
 
     it.each(['Confirmed', 'Voided'])('lists no concession problems on a %s order', (status) => {

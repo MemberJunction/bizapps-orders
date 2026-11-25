@@ -1,5 +1,15 @@
 # @mj-biz-apps/orders-entities
 
+## 5.54.0
+
+### Minor Changes
+
+- 7bb746d: Enable SaveReturnMode: 'datestamps_only' on OutboundEvents, OutboundDeliveries, PaymentWebhookDeliveries, and SubscriptionEvents entities and add longitudinal benchmark logging in OB13.
+
+### Patch Changes
+
+- 49f81db: The Order form now says what is required in place of "Need a…": a bill-to party, at least one line, a service period and a check or ACH reference before an order can be confirmed, and a dimension value before it can be saved. The reasons `OrderHeaderEntity.ConfirmEligibility()` returns for a missing bill-to party, a missing line and a missing service period changed with them.
+
 ## 5.53.0
 
 ### Minor Changes
@@ -1020,8 +1030,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                                "FK_EntityFieldValue_EntityField"
+                                                                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

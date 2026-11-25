@@ -1,5 +1,16 @@
 # @mj-biz-apps/orders-ng
 
+## 5.54.0
+
+### Patch Changes
+
+- e639391: Catalog: the New button opens a New product dialog instead of a blank form. Step 1 saves the product as Draft with a base price (default 0) in one save; step 2 shows the GL accounts it inherits, lets the user link any that are missing, and activates it after the same readiness check the product header runs. The readiness check moved into a shared `CheckProductReadiness`.
+- 49f81db: The Order form now says what is required in place of "Need a…": a bill-to party, at least one line, a service period and a check or ACH reference before an order can be confirmed, and a dimension value before it can be saved. The reasons `OrderHeaderEntity.ConfirmEligibility()` returns for a missing bill-to party, a missing line and a missing service period changed with them.
+- 054e377: New and row double-click now work on every grid. The Pricing, Promotions and Charges & tax tabs open a blank form on New and open the record on double-click; New on the orders, payments and subscriptions grids opens a blank form for that entity, and on the fulfillment queue it starts an order. Double-clicking a fulfillment-queue line opens its order rather than an empty one.
+- Updated dependencies [49f81db]
+- Updated dependencies [7bb746d]
+  - @mj-biz-apps/orders-entities@5.54.0
+
 ## 5.53.0
 
 ### Patch Changes
@@ -1245,8 +1256,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                                "FK_EntityFieldValue_EntityField"
+                                                                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
