@@ -1,5 +1,17 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.53.0
+
+### Patch Changes
+
+- 5935635: The share-of-order concession limit (`MaxConcessionPctOfContract`) measures an order's concessions against the order at its catalog prices, before any discount, instead of against its total after discounts. A 10% discount on every line now reads as 10%, not 11.1%, so a rep with 10% authority can approve it. Recording a concession, deciding it and the confirm gate all use the new `OrderCatalogTotal`; `OrderConcession.OrderNetTotal` still stores the net total (golive #494).
+- 5fb6170: Receivables screens: the billing worklist lists only confirmed orders' instalments and disables Issue invoice otherwise (golive #469); Account credits re-reads its credits when shown again or when a selected row is missing from them (golive #475); the external payment poll holds a payment that would pay more than an order or instalment still owes, instead of capturing it twice (golive #148).
+- 71b84b9: Every renewal order is due the day before its new term starts, the last day of the expiring term (golive #477). That holds for a draft placed from the Renewals page, for a renewal placed confirmed from the page and for one the nightly pass places, on the order and on a confirmed renewal's schedule row; the payment terms are recorded but no longer move the date. A subscription with a renewal card is still due on the term start, when the card is charged: on its confirmed renewal's schedule row, and on its draft's order. A renewal draft also arrives with payment terms and a bill-to person. The terms are the customer's own, else the terms of the order being renewed, else the selling company's default. The bill-to person is the subscription's beneficiary, else the person the order being renewed was billed to. Where the prior order names no person or terms, none are invented. A renewal placed confirmed is invoiced in that confirm whatever its due date, so one a person confirms from the Renewals page months before its lead window opens is not left confirmed with no invoice.
+- Updated dependencies [5935635]
+- Updated dependencies [301e0d3]
+- Updated dependencies [6e3da0f]
+  - @mj-biz-apps/orders-entities@5.53.0
+
 ## 5.52.0
 
 ### Patch Changes
@@ -1417,8 +1429,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                              "FK_EntityFieldValue_EntityField"
+                                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                                "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
