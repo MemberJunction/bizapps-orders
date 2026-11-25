@@ -200,7 +200,16 @@
             "TourID": "@parent:ID",
             "FromStepID": "4C65C09A-0B6F-4E59-A935-723AB10CF696",
             "ToStepID": "B70E4850-1669-4C75-A5B1-5BB23883F80C",
-            "Condition": "Choice:one-time-invoice",
+            "Condition": {
+              "logic": "and",
+              "filters": [
+                {
+                  "field": "lastChoiceKey",
+                  "operator": "eq",
+                  "value": "one-time-invoice"
+                }
+              ]
+            },
             "Label": "Standard Fulfillment & Invoicing",
             "Priority": 100,
             "Sequence": 1,
@@ -215,7 +224,16 @@
             "TourID": "@parent:ID",
             "FromStepID": "4C65C09A-0B6F-4E59-A935-723AB10CF696",
             "ToStepID": "102B6B92-09C6-436F-942D-F0BD7970AEEE",
-            "Condition": "Choice:instalments-recurring",
+            "Condition": {
+              "logic": "and",
+              "filters": [
+                {
+                  "field": "lastChoiceKey",
+                  "operator": "eq",
+                  "value": "instalments-recurring"
+                }
+              ]
+            },
             "Label": "Instalment Schedules & Subscriptions",
             "Priority": 90,
             "Sequence": 2,
