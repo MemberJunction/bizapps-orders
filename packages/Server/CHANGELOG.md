@@ -1,5 +1,18 @@
 # @mj-biz-apps/orders-server
 
+## 5.53.0
+
+### Patch Changes
+
+- Updated dependencies [5935635]
+- Updated dependencies [301e0d3]
+- Updated dependencies [5fb6170]
+- Updated dependencies [71b84b9]
+- Updated dependencies [6e3da0f]
+  - @mj-biz-apps/orders-core-entities-server@5.53.0
+  - @mj-biz-apps/orders-entities@5.53.0
+  - @mj-biz-apps/orders-actions@5.53.0
+
 ## 5.52.0
 
 ### Patch Changes
@@ -1223,8 +1236,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                              "FK_EntityFieldValue_EntityField"
+                                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                                "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

@@ -18,6 +18,7 @@ import { GroupInstalmentsByOrder, MJOAgingBarComponent } from '../../panels/agin
 import { FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJOMultiSelectComponent } from '../../panels/multi-select.component';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
+import { AddressKey, AdoptCompanyChoice, COMPANY_ADDRESS_KEY, CompaniesToAddress, SameChoice, WriteSharedCompanies } from './worklist-view.model';
 import {
     GetInvoiceServiceByCompany,
     GetOpenInstalmentDetails,
@@ -1207,6 +1208,11 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
     private loadSequence = 0;
     /** The customer the tab's address names, held until the first read lands. */
     private linkedCustomer: string | null = null;
+    /** The tab's address as the section last gave it. */
+    private address: Record<string, string> = {};
+    private readonly companyKey = new AddressKey(COMPANY_ADDRESS_KEY);
+    /** The company choice as chosen, shared across Receivables. `CompanyPicks` is the part of it this page offers. */
+    private companyChoice: string[] = [];
     /** The linked customer we have already said is not in this view, so it is said once. */
     private missingLinkTold: string | null = null;
     /** Company id (lower case) to the service that sends its invoices, for the wording of the issue dialog. */
@@ -1225,12 +1231,12 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
     public async ngOnInit(): Promise<void> {
         const saved = ReadPageState(globalThis.localStorage);
         if (saved) {
-            this.CompanyPicks = saved.Companies;
             this.SortKey = saved.SortKey;
             this.SortDescending = saved.SortDescending;
         }
         // Started before the first await, so a page destroyed mid-load still has its timer cleared.
         this.ticker = globalThis.setInterval(() => this.tick(), 60000);
+        this.adoptCompanyChoice();
         await this.load();
         if (this.destroyed) return;
         this.followAddress();
@@ -1248,8 +1254,28 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
      * `customer` names the customer to open; without it the book is shown.
      */
     public ApplyAddress(params: Record<string, string>): void {
+        this.address = params;
         this.linkedCustomer = params['customer']?.toLowerCase() || null;
-        if (this.Loaded) this.followAddress();
+        if (!this.Loaded) return;
+        // Following the address must not write it: a write made here is dropped by the shell while the
+        // section has already recorded it, and the two then disagree about which customer is open.
+        if (this.adoptCompanyChoice()) this.rebuild(false);
+        this.followAddress();
+        // Back, Forward and links arrive outside any event of this page's own, so nothing else repaints it.
+        if (!this.destroyed) this.cdr.detectChanges();
+    }
+
+    /**
+     * Take the company choice every Receivables page shares (`AdoptCompanyChoice`): what the tab's
+     * address states, else, where it has never named a company, the saved choice.
+     *
+     * @returns Whether the choice changed.
+     */
+    private adoptCompanyChoice(): boolean {
+        const picks = AdoptCompanyChoice(this.companyKey, this.address, globalThis.localStorage);
+        if (SameChoice(picks, this.companyChoice)) return false;
+        this.companyChoice = picks;
+        return true;
     }
 
     /* ── Keys. Bound on the page's own elements, so a cached page that is not on screen hears nothing. ── */
@@ -1440,8 +1466,9 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
     /* ── Narrowing and ordering ────────────────────────────────────────── */
 
     public OnCompanies(ids: string[]): void {
-        this.CompanyPicks = ids;
-        this.saveView();
+        this.companyChoice = ids;
+        WriteSharedCompanies(globalThis.localStorage, ids);
+        this.AddressChanged.emit(this.companyKey.Write(CompaniesToAddress(ids)));
         this.rebuild();
     }
 
@@ -1658,21 +1685,18 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
     }
 
     /** Re-derive the customers from the orders the company filter leaves. */
-    private rebuild(): void {
+    private rebuild(record = true): void {
         this.Companies = CompanyOptions(this.orders);
-        // A saved pick for a company with nothing open any more is dropped, and the saved view with it.
-        const pruned = PruneCompanyPicks(this.CompanyPicks, this.Companies);
-        if (this.Loaded && pruned.length !== this.CompanyPicks.length) {
-            this.CompanyPicks = pruned;
-            this.saveView();
-        }
+        // The choice is shared across Receivables, so a company with nothing open here is left out of
+        // this page's filter without being dropped from the choice: it may have work on another page.
+        this.CompanyPicks = this.Loaded ? PruneCompanyPicks(this.companyChoice, this.Companies) : this.companyChoice;
         this.customers = BuildCustomers(FilterByCompany(this.orders, this.CompanyPicks), this.instalments, this.today);
         this.AllCount = this.customers.length;
         if (this.SelectedKey) {
             const still = this.customers.find((c) => c.Key === this.SelectedKey);
             // The same customer with fresh figures keeps their payments and subscriptions on screen.
             if (still) this.Detail = still;
-            else this.Close();
+            else this.Close(record);
         }
         this.applyItems();
         this.applyView();

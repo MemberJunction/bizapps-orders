@@ -348,7 +348,7 @@ describe('FindUnapprovedConcessions — share of the order', () => {
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
 
         expect(problems).toEqual([
-            expect.stringMatching(/7\.5% of its net total, at or above the 5\.0% limit \(600\.00 on a net total of 8000\.00\).*Withdraw them and record them again/),
+            expect.stringMatching(/7\.5% of its catalog total, at or above the 5\.0% limit \(600\.00 on a catalog total of 8000\.00\).*Withdraw them and record them again/),
         ]);
     });
 
@@ -383,7 +383,7 @@ describe('FindUnapprovedConcessions — share of the order', () => {
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
 
         expect(problems).toEqual([
-            expect.stringMatching(/42\.5% of its net total, at or above the 20\.0% limit \(8500\.00 on a net total of 20000\.00\).*Withdraw them and record them again/),
+            expect.stringMatching(/42\.5% of its catalog total, at or above the 20\.0% limit \(8500\.00 on a catalog total of 20000\.00\).*Withdraw them and record them again/),
         ]);
     });
 
@@ -393,6 +393,47 @@ describe('FindUnapprovedConcessions — share of the order', () => {
 
         expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
         expect(mockRunView.mock.calls.some((c) => (c[0] as { EntityName: string }).EntityName.endsWith('Sales Authorities'))).toBe(false);
+    });
+
+    /**
+     * golive #494: the share is of the order at its catalog prices. Divided by the total after the
+     * discount, a 10% discount read as 11.1% and broke a 10.01% limit.
+     */
+    describe('measured against the catalog total', () => {
+        const tenPointZeroOne = [{ ID: AUTHORITY_ID, MaxConcessionPctOfContract: 0.1001 }];
+        const priceOnAuthority = (value: number) => ({ ...onAuthority, DeliveryForm: 'Price', ComputedValue: value });
+
+        it('counts a 10% discount as 10% of the order', async () => {
+            mockStanding.mockResolvedValue({ EngineUnitPrice: 1000, IsEnginePrice: true, IsNamedListPick: false });
+            database([priceOnAuthority(1000)], [{ ...apiLine, UnitPrice: 1000, Quantity: 10, DiscountPct: 0.1, LineTotalNet: 9000 }], tenPointZeroOne);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        });
+
+        it('counts a price below the catalog price against the catalog price', async () => {
+            // 90 against a catalog price of 100 on ten units: 100 given away, 10% of 1,000.
+            mockStanding.mockResolvedValue({ EngineUnitPrice: 100, IsEnginePrice: false, IsNamedListPick: false });
+            database([priceOnAuthority(100)], [{ ...apiLine, UnitPrice: 90, Quantity: 10, LineTotalNet: 900 }], tenPointZeroOne);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        });
+
+        it('still holds a share above the limit, naming the catalog total', async () => {
+            mockStanding.mockResolvedValue({ EngineUnitPrice: 1000, IsEnginePrice: true, IsNamedListPick: false });
+            database([priceOnAuthority(1200)], [{ ...apiLine, UnitPrice: 1000, Quantity: 10, DiscountPct: 0.12, LineTotalNet: 8800 }], tenPointZeroOne);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+                expect.stringMatching(/12\.0% of its catalog total, at or above the 10\.0% limit \(1200\.00 on a catalog total of 10000\.00\)/),
+            ]);
+        });
+
+        it("leaves a bundle's components out and values the bundle line at its own price", async () => {
+            mockStanding.mockResolvedValue({ EngineUnitPrice: 1000, IsEnginePrice: true, IsNamedListPick: false });
+            const component = { ...apiLine, ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3313', ParentOrderLineID: LINE_ID, UnitPrice: 500, Quantity: 2, LineTotalNet: 1000 };
+            database([priceOnAuthority(100)], [{ ...apiLine, UnitPrice: 1000, Quantity: 1, DiscountPct: 0.1, LineTotalNet: 0 }, component], tenPointZeroOne);
+
+            expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        });
     });
 
     it('does not measure a confirmed order', async () => {
@@ -424,7 +465,7 @@ describe('FindUnapprovedConcessions — share of the order', () => {
 
             const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
 
-            expect(problems).toEqual([expect.stringMatching(/7\.5% of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/)]);
+            expect(problems).toEqual([expect.stringMatching(/7\.5% of its catalog total, at or above the 5\.0% limit.*Withdraw them and record them again/)]);
         });
 
         it('does not count a bundle component as a product type', async () => {
@@ -440,7 +481,7 @@ describe('FindUnapprovedConcessions — share of the order', () => {
             database([onAuthority], [lineA, lineB], fivePercent, [], [], products);
 
             expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
-                expect.stringMatching(/7\.5% of its net total, at or above the 5\.0% limit/),
+                expect.stringMatching(/7\.5% of its catalog total, at or above the 5\.0% limit/),
             ]);
         });
     });

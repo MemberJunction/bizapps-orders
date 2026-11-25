@@ -5,6 +5,7 @@ import {
     CompanySlices,
     DefaultScheduleWeights,
     ExplainShortfalls,
+    InstalmentsToIssueAtConfirm,
     RenewalDueDate,
     RenewalScheduleRows,
     ScheduleCoverage,
@@ -283,31 +284,52 @@ describe('CompanySlices (golive #311)', () => {
     });
 });
 
-describe('RenewalDueDate (#305 review)', () => {
-    // The reviewer's example: a Jan 1 term, renewal placed Oct 3, Net 30 (the order is due Jan 31).
-    it('is the invoice day plus the terms the order resolved', () => {
-        expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-31')).toBe('2026-11-02');
-    });
-
-    it('never falls after the order date, so confirm still issues it', () => {
-        expect(RenewalDueDate('2026-12-20', '2027-01-01', '2027-01-31')).toBe('2027-01-01');
-    });
-
-    it('is the invoice day itself when the order is due on receipt', () => {
-        expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-01')).toBe('2026-10-03');
+describe('RenewalDueDate (golive #477)', () => {
+    it('is the day before the new term starts, the last day of the expiring term', () => {
+        expect(RenewalDueDate('2026-12-01')).toBe('2026-11-30');
+        expect(RenewalDueDate('2027-01-01')).toBe('2026-12-31');
+        expect(RenewalDueDate('2028-03-01')).toBe('2028-02-29');
     });
 
     it('is the order date (the term start) when the subscription has a renewal card (#289)', () => {
         // The card is charged on the term start, so the past-due count starts there too.
-        expect(RenewalDueDate('2026-10-03', '2027-01-01', '2027-01-31', true)).toBe('2027-01-01');
-        expect(RenewalDueDate('2026-10-03', '2027-01-01', null, true)).toBe('2027-01-01');
+        expect(RenewalDueDate('2027-01-01', true)).toBe('2027-01-01');
     });
 
     it('reads Date cells as well as strings', () => {
-        expect(RenewalDueDate('2026-10-03', new Date('2027-01-01T00:00:00Z'), new Date('2027-01-16T00:00:00Z'))).toBe('2026-10-18');
+        expect(RenewalDueDate(new Date('2027-01-01T00:00:00Z'))).toBe('2026-12-31');
     });
 
-    it('refuses an order with no resolved due date rather than guessing', () => {
-        expect(() => RenewalDueDate('2026-10-03', '2027-01-01', null)).toThrow(/resolved due date/);
+    it('refuses an order with no date rather than guessing', () => {
+        expect(() => RenewalDueDate(null)).toThrow(/order date/);
+    });
+});
+
+describe('InstalmentsToIssueAtConfirm (D92, #963, golive #477)', () => {
+    const row = (n: number, due: string | Date, status = 'Scheduled') => ({ InstallmentNumber: n, DueDate: due, Status: status });
+
+    it('issues the Scheduled rows due on or before the cutoff, in instalment order', () => {
+        const rows = [row(3, '2026-03-01'), row(2, '2026-02-01'), row(1, '2026-01-01')];
+        expect(InstalmentsToIssueAtConfirm(rows, '2026-02-01').map((r) => r.InstallmentNumber)).toEqual([1, 2]);
+    });
+
+    it('leaves a row due after the cutoff Scheduled, so an instalment due months later waits (#963)', () => {
+        expect(InstalmentsToIssueAtConfirm([row(1, '2027-06-30')], '2026-12-14')).toEqual([]);
+    });
+
+    it("issues a renewal's row whatever its due date when the operation placed it confirmed (golive #477)", () => {
+        // Placed from the Renewals page 200 days out with a 30-day lead: due far past the cutoff.
+        const placed = InstalmentsToIssueAtConfirm([row(1, '2027-06-30')], '2026-12-14', true);
+        expect(placed.map((r) => r.InstallmentNumber)).toEqual([1]);
+    });
+
+    it('never issues a row that is not Scheduled, or one with no date, even then', () => {
+        const rows = [row(1, '2026-01-01', 'Invoiced'), row(2, '2026-01-01', 'Cancelled'), row(3, 'not a date')];
+        expect(InstalmentsToIssueAtConfirm(rows, '2026-12-31')).toEqual([]);
+        expect(InstalmentsToIssueAtConfirm(rows, '2026-12-31', true)).toEqual([]);
+    });
+
+    it('reads Date cells as well as strings', () => {
+        expect(InstalmentsToIssueAtConfirm([row(1, new Date('2026-01-01T00:00:00Z'))], '2026-01-01')).toHaveLength(1);
     });
 });

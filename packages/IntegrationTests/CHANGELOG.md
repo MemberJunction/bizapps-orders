@@ -1,5 +1,18 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.53.0
+
+### Patch Changes
+
+- Updated dependencies [5935635]
+- Updated dependencies [301e0d3]
+- Updated dependencies [5fb6170]
+- Updated dependencies [71b84b9]
+- Updated dependencies [6e3da0f]
+  - @mj-biz-apps/orders-core-entities-server@5.53.0
+  - @mj-biz-apps/orders-entities@5.53.0
+  - @mj-biz-apps/orders-server@5.53.0
+
 ## 5.52.0
 
 ### Patch Changes

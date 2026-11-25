@@ -20,6 +20,7 @@ const gate = vi.hoisted(() => ({
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
+    OrderCatalogTotal: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
 
@@ -103,6 +104,7 @@ afterEach(() => {
 describe('recording a concession under tiers', () => {
     it('routes it to the tier the gate chooses, Pending for that tier\'s role', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(100);
         const senior = tier({ ID: 'rule-director', Name: 'Director', ApprovalRequiredRoleID: 'role-director', ConcessionTier: 1, MinConcessionValue: 1000 });
@@ -123,6 +125,7 @@ describe('recording a concession under tiers', () => {
 
     it('keeps a single untiered rule working as before: a holder of its role approves their own', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(100);
         gate.FindConcessionTier.mockResolvedValue({ Rule: tier(), Conflict: null });
@@ -137,6 +140,7 @@ describe('recording a concession under tiers', () => {
 
     it('approves within authority on save when the tier does not require sign-off', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(1000);
         gate.FindConcessionTier.mockResolvedValue({ Rule: tier(), Conflict: null });
@@ -150,6 +154,7 @@ describe('recording a concession under tiers', () => {
 
     it('saves Pending within authority when the tier requires sign-off, and records the authority', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(1000);
         gate.FindConcessionTier.mockResolvedValue({ Rule: tier({ RequiresDecisionWithinAuthority: true }), Conflict: null });
@@ -165,6 +170,7 @@ describe('recording a concession under tiers', () => {
 
     it('does not let a requester who holds a sign-off tier\'s role approve their own outside authority', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(100);
         gate.FindConcessionTier.mockResolvedValue({ Rule: tier({ RequiresDecisionWithinAuthority: true }), Conflict: null });
@@ -179,6 +185,7 @@ describe('recording a concession under tiers', () => {
 
     it('refuses sign-off when the requester is the only holder of the tier\'s role', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(1000);
         gate.FindConcessionTier.mockResolvedValue({ Rule: tier({ RequiresDecisionWithinAuthority: true }), Conflict: null });
@@ -190,6 +197,7 @@ describe('recording a concession under tiers', () => {
 
     it('refuses when two met tiers share a rank', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(100);
         gate.FindConcessionTier.mockResolvedValue({ Rule: null, Conflict: 'share tier 0' });
@@ -200,6 +208,7 @@ describe('recording a concession under tiers', () => {
 
     it('refuses outside authority when no tier is met', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         withAuthority(100);
         gate.FindConcessionTier.mockResolvedValue({ Rule: null, Conflict: null });
@@ -228,6 +237,7 @@ describe('deciding a concession under tiers', () => {
 
     it('lets another holder of a sign-off tier\'s role decide it', async () => {
         gate.OrderNetTotal.mockResolvedValue(10000);
+        gate.OrderCatalogTotal.mockResolvedValue(10000);
         gate.OrderConcessionTotal.mockResolvedValue(500);
         const { row, values } = seatsConcession({ user: APPROVER, saved: true, status: 'Approved', salesRuleID: 'rule-manager' });
         row.approvingRule = async () => ({ Name: 'Manager', ApprovalRequiredRoleID: 'role-manager', RequiresDecisionWithinAuthority: true });
