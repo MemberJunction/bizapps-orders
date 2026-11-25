@@ -19,6 +19,10 @@
  *   SERVER: packages/CoreEntitiesServer/src/OutboundEvents.ts, EntitlementGrantEntityServer.ts,
  *           OrderEntityServer.recordOrderConfirmedEvent, PaymentGatedAccess.EnforcePaymentGatedAccess
  */
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import {
   Assert,
   AssertEqual,
@@ -52,7 +56,14 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
-import { ENTITLEMENT_GRANT_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
+import {
+  ENTITLEMENT_GRANT_ENTITY,
+  ORDER_HEADER_ENTITY,
+  OUTBOUND_DELIVERY_ENTITY,
+  OUTBOUND_EVENT_ENTITY,
+  PAYMENT_WEBHOOK_DELIVERY_ENTITY,
+  SUBSCRIPTION_EVENT_ENTITY,
+} from "../entity-names.js";
 import { addDays, gatesFor, payOrder, renew, withGrantTiming } from "./entitlements.checks.js";
 import { bookTerm, grantAuthority, recordExtension } from "./term-extension.checks.js";
 
@@ -437,7 +448,6 @@ export const OutboundEventsChecks: NamedCheck[] = [
         });
       }),
   },
-
   {
     Id: "outbound-events.OB9",
     Name: "OB9: moving a grant's dates records one event naming the fields and the old dates; a save that moves nothing records none",
@@ -632,6 +642,47 @@ export const OutboundEventsChecks: NamedCheck[] = [
         } finally {
           OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, undefined);
         }
+      }),
+  },
+  {
+    Id: "outbound-events.OB13",
+    Name: "OB13: Orders append-heavy event/webhook entities SaveReturnMode datestamps_only verification and benchmark log",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const expectedEntities = [
+          OUTBOUND_EVENT_ENTITY,
+          OUTBOUND_DELIVERY_ENTITY,
+          PAYMENT_WEBHOOK_DELIVERY_ENTITY,
+          SUBSCRIPTION_EVENT_ENTITY,
+        ];
+        for (const name of expectedEntities) {
+          const info = ctx.Provider.EntityByName(name);
+          Assert(!!info, `${name} entity metadata present`);
+          AssertEqual(
+            info!.SaveReturnMode,
+            "datestamps_only",
+            `${name} SaveReturnMode is datestamps_only`,
+          );
+        }
+
+        resetProbe();
+        const t0 = performance.now();
+        const orderID = await buyWidget(ctx);
+        Assert(!!orderID, "OB13 order confirmed");
+        const elapsedMs = Number((performance.now() - t0).toFixed(2));
+
+        const logDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../benchmark-logs");
+        fs.mkdirSync(logDir, { recursive: true });
+        const entry = {
+          Timestamp: new Date().toISOString(),
+          Package: "@mj-biz-apps/orders-integration-tests",
+          Check: "outbound-events.OB13",
+          DatestampsOnlyEntities: expectedEntities,
+          ConfirmOrderWithOutboundEventsMs: elapsedMs,
+        };
+        fs.writeFileSync(path.join(logDir, "latest.json"), JSON.stringify(entry, null, 2), "utf8");
+        fs.appendFileSync(path.join(logDir, "history.jsonl"), JSON.stringify(entry) + "\n", "utf8");
       }),
   },
 ];
