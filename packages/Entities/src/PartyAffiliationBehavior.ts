@@ -37,6 +37,8 @@ export async function ResolveActiveEmployerOrganization(
     user?: UserInfo,
 ): Promise<string | null> {
     if (!personID || !provider) return null;
+    // Checked before the try below: its catch reads any failure as "no employer", which would hide a bad id.
+    const person = RequireUUID(personID, 'personID');
 
     const rv = new RunView(provider);
     const date = ToISODate(asOf);
@@ -47,7 +49,7 @@ export async function ResolveActiveEmployerOrganization(
             {
                 EntityName: 'MJ_BizApps_Common: Relationships',
                 ExtraFilter:
-                    `FromPersonID='${RequireUUID(personID, 'personID')}' AND ToOrganizationID IS NOT NULL ` +
+                    `FromPersonID='${person}' AND ToOrganizationID IS NOT NULL ` +
                     `AND Status='Active' ` +
                     `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
                     `AND (EndDate IS NULL OR EndDate >= '${date}') ` +

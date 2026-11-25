@@ -24,6 +24,7 @@
  *   DOC:  plans/archive/pricing-charges-and-promotions.md §4
  */
 import { randomUUID } from "crypto";
+import { EscapeSQLString } from "@memberjunction/global";
 import {
   Assert,
   AssertEqual,
@@ -55,7 +56,7 @@ import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 import type { mjBizAppsOrdersOrderLineEntity } from "@mj-biz-apps/orders-entities";
 
-const q = (x: unknown) => (x == null ? "NULL" : typeof x === "string" ? `'${String(x).replace(/'/g, "''")}'` : String(x));
+const q = (x: unknown) => (x == null ? "NULL" : typeof x === "string" ? `'${EscapeSQLString(x)}'` : String(x));
 
 async function typeID(ctx: IntegrationCheckContext, code: string): Promise<string> {
   const row = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.PromotionType WHERE Code='${code}'`);

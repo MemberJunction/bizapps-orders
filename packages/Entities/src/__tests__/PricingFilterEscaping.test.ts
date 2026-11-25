@@ -3,11 +3,9 @@
  *
  * Charge and promotion codes come from the caller, and the pricing engines compose them into
  * `ExtraFilter` SQL on both tiers. `RunCharges` is driven against a stubbed RunView to check the
- * filter text it sends; a source-level guard keeps hand-rolled quote doubling out of the package.
+ * filter text it sends. `SqlEscapingSource.test.ts` keeps hand-rolled quote doubling out of the repo.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 const filters: string[] = [];
@@ -48,19 +46,5 @@ describe('orders-entities UUID guards', () => {
         expect(RequireUUID(GOOD, 'ProductID')).toBe(GOOD);
         expect(() => RequireUUID(`${GOOD}' OR '1'='1`, 'ProductID')).toThrow(InvalidOperationInputError);
         expect(() => RequireUUIDs([GOOD, 'nope'], 'PriceListID')).toThrow(/PriceListID/);
-    });
-});
-
-describe('orders-entities source', () => {
-    it('has no hand-rolled quote doubling', () => {
-        // The whole package, not just pricing/: filters are composed elsewhere too
-        // (PartyAffiliationBehavior, linePriceContext). Tests are excluded — this file
-        // names the pattern it scans for.
-        const dir = join(import.meta.dirname, '..');
-        const offenders = readdirSync(dir, { recursive: true })
-            .map(String)
-            .filter((f) => f.endsWith('.ts') && !f.includes('__tests__'))
-            .filter((f) => readFileSync(join(dir, f), 'utf8').includes(`.replace(/'/g`));
-        expect(offenders).toEqual([]);
     });
 });

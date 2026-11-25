@@ -231,7 +231,7 @@
 import { BaseAction } from '@memberjunction/actions';
 import type { RunActionParams } from '@memberjunction/actions-base';
 import { BaseEntity, BaseRemotableOperation, CompositeKey, Metadata } from '@memberjunction/core';
-import { MJGlobal } from '@memberjunction/global';
+import { EscapeSQLString, MJGlobal } from '@memberjunction/global';
 import {
     Assert,
     AssertEqual,
@@ -4127,7 +4127,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 );
                 run.OrderIDs.push(...credits.map((r) => r.ID));
                 for (const n of numbers.filter(Boolean)) {
-                    const like = `N'%${n.replace(/'/g, "''")} (%'`;
+                    const like = `N'%${EscapeSQLString(n)} (%'`;
                     await TxQuery(ctx, `DELETE FROM __mj_BizAppsTasks.TaskLink WHERE TaskID IN (SELECT ID FROM __mj_BizAppsTasks.Task WHERE Name LIKE ${like})`).catch(() => undefined);
                     await TxQuery(ctx, `DELETE FROM __mj_BizAppsTasks.TaskAssignment WHERE TaskID IN (SELECT ID FROM __mj_BizAppsTasks.Task WHERE Name LIKE ${like})`).catch(() => undefined);
                     await TxQuery(ctx, `DELETE FROM __mj_BizAppsTasks.Task WHERE Name LIKE ${like}`).catch(() => undefined);
@@ -5407,7 +5407,7 @@ async function grantEnd(ctx: IntegrationCheckContext, termID: string): Promise<D
 /** How many alert Tasks carry exactly this name. */
 async function namedTasks(ctx: IntegrationCheckContext, name: string): Promise<number> {
     Assert(ctx.Provider.Entities.some((e) => e.Name === TASK_ENTITY), 'precondition: bizapps-tasks is installed, so alerts are Tasks');
-    const rows = await TxQuery<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM __mj_BizAppsTasks.Task WHERE Name = N'${name.replace(/'/g, "''")}'`);
+    const rows = await TxQuery<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM __mj_BizAppsTasks.Task WHERE Name = N'${EscapeSQLString(name)}'`);
     return Number(rows[0]?.N ?? 0);
 }
 
