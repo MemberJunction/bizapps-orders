@@ -224,6 +224,34 @@
             }
 
             <!--
+                LINE DESCRIPTION: free text for this line, for a product whose name does not say
+                what was sold (a generic services product, a named person on a staffing line).
+                The invoice and the invoicing rail print it after the product name. Editable while
+                the order is; shown as text afterwards, and only when there is something to show.
+            -->
+            @if (EditMode) {
+                <label class="mjo-ol-desc">
+                    <span>Description</span>
+                    <textarea
+                        rows="1"
+                        [attr.maxlength]="DescriptionMaxLength"
+                        [attr.aria-label]="'Description for ' + (ProductFor(line)?.Name ?? 'line')"
+                        [attr.aria-describedby]="'mjo-ol-desc-hint-' + line.ID"
+                        [value]="line.Description ?? ''"
+                        (input)="TypeDescription(line, $event)"
+                        (change)="SetDescription(line, $event)"
+                        data-testid="order-line-description"></textarea>
+                    <!-- A visible hint, not a placeholder: a placeholder clips in a one-row box and
+                         is gone as soon as the user types. -->
+                    <small class="mjo-ol-desc__hint" [id]="'mjo-ol-desc-hint-' + line.ID">
+                        Optional. Displays on the invoice after the product name and before the service period.
+                    </small>
+                </label>
+            } @else if (line.Description) {
+                <div class="mjo-ol-card__desc" data-testid="order-line-description-text">{{ line.Description }}</div>
+            }
+
+            <!--
                 TERM START — subscription lines, and bundle lines whose bundle contains a subscription
                 (D-TERMSTART, u623.1).
                 The order date says when the sale was booked; this says when coverage begins, and an
