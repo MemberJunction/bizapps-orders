@@ -1,0 +1,40 @@
+-- =============================================================================
+-- PostgreSQL counterpart of V202611201235__v5.51.x__Single_Write_spUpdate_And_Trigger_Guard.sql
+-- =============================================================================
+-- Nothing to change on PostgreSQL. This file only keeps the two migration sets
+-- in step.
+--
+-- WHAT THE T-SQL FILE DOES
+--
+-- It holds CodeGen output only, for 71 tables: it regenerates each spUpdate*
+-- procedure so the UPDATE sets [__mj_UpdatedAt] itself, wraps each table's
+-- trgUpdate* trigger in IF NOT UPDATE([__mj_UpdatedAt]), and re-grants EXECUTE.
+-- On SQL Server trgUpdate* is an AFTER UPDATE trigger that runs a second UPDATE
+-- on the row to stamp __mj_UpdatedAt, so every BaseEntity.Save() wrote the row
+-- twice. With the change, a save writes once and the trigger stamps only
+-- UPDATEs that leave __mj_UpdatedAt out. No spUpdate* loses a parameter or a
+-- SET column compared with its previous definition; each gains only
+-- __mj_UpdatedAt.
+--
+-- WHY POSTGRESQL NEEDS NONE OF IT
+--
+-- 1. This folder carries no CodeGen CRUD functions and no __mj_UpdatedAt
+--    triggers for these tables. The converter cannot translate T-SQL procedures
+--    or triggers, and there is no PostgreSQL baseline to run MJ CodeGen against,
+--    so the earlier files leave them out (their headers say so). A PostgreSQL
+--    host runs `mj codegen` after installing, which generates them natively.
+-- 2. MJ's PostgreSQL CodeGen emits the __mj_UpdatedAt trigger as a BEFORE UPDATE
+--    row trigger, trg_update_<table>, that assigns NEW."__mj_UpdatedAt" in place
+--    and returns NEW (PostgreSQLCodeGenProvider.generateTimestampTrigger, on MJ
+--    6.2 and later). There is no second UPDATE, so every UPDATE, through
+--    spUpdate* or direct SQL, is already one write, with or without
+--    __mj_UpdatedAt in its SET list. Setting the column inside spUpdate* would
+--    change nothing, since the BEFORE trigger overwrites the value.
+--
+-- MJ core's PostgreSQL counterpart of its own single-write migration is empty
+-- for the same reason.
+--
+-- Runs once, in order, after V202611190410.
+-- =============================================================================
+
+SET search_path TO __mj_bizappsorders, public;
