@@ -5,9 +5,9 @@
 #   lines: backport or edge-only   PR into next   a PR adding a migration is labelled for every open
 #                                                 line, or its migrations are edge-only.
 #   lines: on next first           PR into lts/*  every commit is a cherry-pick of a commit on next.
-#   lines: migrations              PR into lts/*  open line: next's migrations in next's order, no
-#                                                 edge-only ones. LTS line: no migration or metadata
-#                                                 change, no minor bump.
+#   lines: migrations              PR into lts/*  open line: next's migrations, none added older than
+#                                                 the line's newest, no edge-only ones. LTS line: no
+#                                                 migration or metadata change, no minor bump.
 #   lines: mj pin                  PR into lts/*  MJ dependencies, the lockfile and mj-app.json stay
 #                                  and main       inside the line's MJ minor.
 #

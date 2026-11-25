@@ -61,7 +61,7 @@ jobs:
           pull_description: |-
             Backport of #${pull_number} to `${target_branch}`, opened automatically by the `backport ${target_branch}` label.
 
-            Every commit carries `(cherry picked from commit …)`, which `lines: on next first` checks against `next`. If you resolve a conflict with a commit of your own, add the `backport-adjusted` label. Line rules: an open line takes next's migrations in next's order; an LTS line takes code fixes and patch changesets only.
+            Every commit carries `(cherry picked from commit …)`, which `lines: on next first` checks against `next`. If you resolve a conflict with a commit of your own, add the `backport-adjusted` label. Line rules: an open line takes next's migrations, none older than the line's newest; an LTS line takes code fixes and patch changesets only.
 
       # The action reports failures as a PR comment but exits 0; without this a failed backport
       # leaves a green run, and a fix everyone believes is on the line never arrives.
