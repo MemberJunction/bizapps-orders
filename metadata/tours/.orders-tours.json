@@ -1,0 +1,595 @@
+[
+  {
+    "fields": {
+      "Name": "Order-to-Cash Lifecycle, Adjustments & Concessions",
+      "TourKey": "orders.order-to-cash",
+      "Description": "Walk through order headers, fulfillment lines, price overrides vs discounts and concessions, instalment schedules, and balanced accounting journal handoffs.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Orders",
+      "RunInAuthenticatedHosts": true,
+      "Status": "Draft",
+      "EstimatedMinutes": 4,
+      "Priority": 100,
+      "DefaultGuideMode": "Visual",
+      "AllowAgentActions": false,
+      "Goal": {
+        "Type": "Navigation",
+        "AppName": "Orders",
+        "Description": "User understands order headers, fulfillment lines, adjustments/concessions vs instalment schedules, and downstream journal generation."
+      },
+      "StartLocation": {
+        "Application": "Orders",
+        "NavItem": "OrdersSectionResource"
+      }
+    },
+    "primaryKey": {
+      "ID": "D2A7772B-FBD5-47F0-800F-CA1C2F4EC72F"
+    },
+    "relatedEntities": {
+      "MJ: Tour Steps": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "orders-o2c-welcome",
+            "Sequence": 1,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Order-to-Cash in BizApps Orders",
+            "Body": "In BizApps Orders, a confirmed order is the transactional substrate and receivable. Let's walk from order intake and line pricing through fulfillment, schedules, and accounting handoff.",
+            "Configuration": {
+              "Variant": "welcome",
+              "PrimaryButtonText": "Explore Orders",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "44B4AC81-E10D-4D3C-B5F1-F8670C832DD3"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "orders-header-lines",
+            "Sequence": 2,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Order Headers, Parties & Fulfillment Lines",
+            "Body": "Open **Orders** (`OrdersSectionResource`) to move between the Dashboard, All orders, Fulfillment queue, and Returns. On an order form, the header hero tracks **Order Type**, **Selling Company**, **Ship-to / Bill-to** parties, and live Total, Paid, and Balance figures.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "orders.header.summary"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "8C6BBE43-BB56-49FA-B678-1C3D9224D059"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "orders-o2c-branch",
+            "Sequence": 3,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Choice",
+            "Title": "Choose Your Order Billing Path",
+            "Body": "Orders supports both immediate fulfillment billing and multi-period schedules. Pick the path you want to inspect first.",
+            "Configuration": {
+              "Question": "Which order-to-cash workflow would you like to explore?",
+              "Options": [
+                {
+                  "Key": "one-time-invoice",
+                  "Label": "Standard Fulfillment & Invoicing",
+                  "Description": "Line pricing, discounts, concessions, and immediate invoice generation."
+                },
+                {
+                  "Key": "instalments-recurring",
+                  "Label": "Instalment Schedules & Subscriptions",
+                  "Description": "Multi-period billing schedules, proration, and entitlement grants."
+                }
+              ]
+            },
+            "Placement": "Center",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "4C65C09A-0B6F-4E59-A935-723AB10CF696"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "orders-branch-fulfillment",
+            "Sequence": 4,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Fulfillment: Adjustments, Concessions & Invoices",
+            "Body": "In the **Order Lines** editor, separate price overrides from line **Discounts** (which book to Sales Discounts), apply **Order Adjustments** or **Concessions**, inspect GL dimensions per line, and confirm the order to lock financial fields and emit invoices.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "orders.lines.editor"
+            },
+            "Placement": "Top",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "B70E4850-1669-4C75-A5B1-5BB23883F80C"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "orders-branch-schedules",
+            "Sequence": 5,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Schedules: Instalment Billings & Entitlements",
+            "Body": "Switch to **Subscriptions** (`SubscriptionsSectionResource`) or open a booked order's schedule panels to track **Subscription Terms**, proration, **Entitlement Grants**, renewal worklists, and multi-period deferred revenue recognition.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "NavItem",
+              "DriverClass": "SubscriptionsSectionResource"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "102B6B92-09C6-436F-942D-F0BD7970AEEE"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "orders-o2c-summary",
+            "Sequence": 6,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Next: Accounting Journal Batches",
+            "Body": "Every confirmed order, adjustment, concession, and payment posts balanced debit/credit entries to **BizApps Accounting**. Continue into Accounting journal batches or explore Payments & Receivables next.",
+            "Configuration": {
+              "Variant": "summary",
+              "PrimaryButtonText": "Finish",
+              "NextTourKey": "accounting.journal-batches",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "14030BF2-2CA5-4CDC-A018-427BF6160C78"
+          }
+        }
+      ],
+      "MJ: Tour Step Paths": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "FromStepID": "4C65C09A-0B6F-4E59-A935-723AB10CF696",
+            "ToStepID": "B70E4850-1669-4C75-A5B1-5BB23883F80C",
+            "Condition": {
+              "logic": "and",
+              "filters": [
+                {
+                  "field": "lastChoiceKey",
+                  "operator": "eq",
+                  "value": "one-time-invoice"
+                }
+              ]
+            },
+            "Label": "Standard Fulfillment & Invoicing",
+            "Priority": 100,
+            "Sequence": 1,
+            "IsDefault": false
+          },
+          "primaryKey": {
+            "ID": "9654927B-4E79-4D8A-8731-BF2434218ECD"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "FromStepID": "4C65C09A-0B6F-4E59-A935-723AB10CF696",
+            "ToStepID": "102B6B92-09C6-436F-942D-F0BD7970AEEE",
+            "Condition": {
+              "logic": "and",
+              "filters": [
+                {
+                  "field": "lastChoiceKey",
+                  "operator": "eq",
+                  "value": "instalments-recurring"
+                }
+              ]
+            },
+            "Label": "Instalment Schedules & Subscriptions",
+            "Priority": 90,
+            "Sequence": 2,
+            "IsDefault": false
+          },
+          "primaryKey": {
+            "ID": "577F656F-6781-4662-95FE-F046AEEB0B16"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "FromStepID": "4C65C09A-0B6F-4E59-A935-723AB10CF696",
+            "ToStepID": "B70E4850-1669-4C75-A5B1-5BB23883F80C",
+            "Condition": null,
+            "Label": "Default Path",
+            "Priority": 0,
+            "Sequence": 3,
+            "IsDefault": true
+          },
+          "primaryKey": {
+            "ID": "08D0A287-DC0F-4A91-BAE6-5698763E9B06"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "FromStepID": "B70E4850-1669-4C75-A5B1-5BB23883F80C",
+            "ToStepID": "14030BF2-2CA5-4CDC-A018-427BF6160C78",
+            "Condition": null,
+            "Label": "To Summary",
+            "Priority": 10,
+            "Sequence": 1,
+            "IsDefault": true
+          },
+          "primaryKey": {
+            "ID": "BA66D193-3344-458F-B4FF-2F7DA2BDE5F2"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "FromStepID": "102B6B92-09C6-436F-942D-F0BD7970AEEE",
+            "ToStepID": "14030BF2-2CA5-4CDC-A018-427BF6160C78",
+            "Condition": null,
+            "Label": "To Summary",
+            "Priority": 10,
+            "Sequence": 1,
+            "IsDefault": true
+          },
+          "primaryKey": {
+            "ID": "3BED19A3-8663-4888-94F7-BD6AB621D534"
+          }
+        }
+      ],
+      "MJ: Tour Prerequisites": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "PrerequisiteType": "Tour",
+            "RequiredTourID": "@lookup:MJ: Tours.TourKey=core.welcome",
+            "Strength": "Recommended",
+            "Sequence": 1
+          },
+          "primaryKey": {
+            "ID": "F8A63D4B-F426-402C-B461-2453ABE13401"
+          }
+        }
+      ],
+      "MJ: Tour Triggers": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "TriggerType": "FirstVisit",
+            "Configuration": {
+              "Application": "Orders"
+            },
+            "Delivery": "Offer",
+            "CooldownDays": 30,
+            "Priority": 100,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "31D48D8D-05A1-4791-91FC-78B09EB8BC8D"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Payments, Settlements & Receivables Aging",
+      "TourKey": "orders.payments-receivables",
+      "Description": "Record payments, settle open order balances, issue refunds and account credits, and work overdue and billing queues in Receivables.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Orders",
+      "RunInAuthenticatedHosts": true,
+      "Status": "Draft",
+      "EstimatedMinutes": 3,
+      "Priority": 90,
+      "DefaultGuideMode": "Visual",
+      "AllowAgentActions": false,
+      "Goal": {
+        "Type": "Navigation",
+        "AppName": "Orders",
+        "Description": "User learns payment capture, refunds/credits, payment journal rollups, and receivables aging worklists."
+      },
+      "StartLocation": {
+        "Application": "Orders",
+        "NavItem": "PaymentsSectionResource"
+      }
+    },
+    "primaryKey": {
+      "ID": "A6BA2ED6-3348-4C87-8B85-9CCB7ADF9D6F"
+    },
+    "relatedEntities": {
+      "MJ: Tour Steps": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "payments-welcome",
+            "Sequence": 1,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Payments, Settlements & Customer A/R",
+            "Body": "Follow cash from intake through settlement: capture payments, allocate lines against open orders, issue refunds or account credits, and monitor aging balances.",
+            "Configuration": {
+              "Variant": "welcome",
+              "PrimaryButtonText": "Explore Payments & A/R",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "DAEAFCCC-A57B-439F-BF7D-63151D8BBE4D"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "payments-header-journals",
+            "Sequence": 2,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Capture Payments, Refunds & Account Credits",
+            "Body": "Use **Payments** (`PaymentsSectionResource`) to review cash received, open **Refunds** or **Account credits**, and inspect Gross, Fee, Net, and rolled-up **Payment Journals** directly on any payment header.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "orders.payment.header"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "2E31C660-9F4F-4B44-8702-AD5D514AD683"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "receivables-worklists",
+            "Sequence": 3,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Receivables Aging, Billing & Invoicing Queues",
+            "Body": "Open **Receivables** (`ReceivablesSectionResource`) for **Customer A/R** aging, the **Overdue worklist**, **Billing worklist** instalments, **Invoicing queue** external invoices, and **Progress attestation**.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "NavItem",
+              "DriverClass": "ReceivablesSectionResource"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "E5E31A64-CB58-45F1-955D-BD19BABC901C"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "payments-summary",
+            "Sequence": 4,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Next: Product Catalog & Checkout",
+            "Body": "Next, explore how **Catalog** products, price lists, promotions, and the self-service **Checkout Widget** power every order.",
+            "Configuration": {
+              "Variant": "summary",
+              "PrimaryButtonText": "Finish",
+              "NextTourKey": "orders.catalog-checkout",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "4A897719-1D1E-4D9E-865C-FFCD665023EA"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Product Catalog, Price Books & Checkout Widgets",
+      "TourKey": "orders.catalog-checkout",
+      "Description": "Configure sellable products, price lists, promotions, tax and charge rules, and embeddable checkout widgets.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Orders",
+      "RunInAuthenticatedHosts": true,
+      "Status": "Draft",
+      "EstimatedMinutes": 3,
+      "Priority": 80,
+      "DefaultGuideMode": "Visual",
+      "AllowAgentActions": false,
+      "Goal": {
+        "Type": "Navigation",
+        "AppName": "Orders",
+        "Description": "User understands product catalog configuration, price lists/promotions, and the checkout widget."
+      },
+      "StartLocation": {
+        "Application": "Orders",
+        "NavItem": "CatalogSectionResource"
+      }
+    },
+    "primaryKey": {
+      "ID": "23CF334E-D509-4038-95C9-FFA210092742"
+    },
+    "relatedEntities": {
+      "MJ: Tour Steps": [
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "catalog-welcome",
+            "Sequence": 1,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Configure Products, Pricing & Checkout",
+            "Body": "Every order line inherits revenue recognition, fulfillment, taxability, and pricing rules from your **Catalog** setup — and self-service **Checkout Widgets** expose those products directly to buyers.",
+            "Configuration": {
+              "Variant": "welcome",
+              "PrimaryButtonText": "Explore Catalog",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "98C35BA5-C01F-4336-8CEE-C374F97B74B6"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "catalog-pricing-rules",
+            "Sequence": 2,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Products, Price Lists & Tax Rules",
+            "Body": "In **Catalog** (`CatalogSectionResource`), manage **Products & categories**, **Pricing** (volume & graduated price tiers), **Promotions**, and **Charges & tax**. Draft products stay hidden from deal and order pickers until activated.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "NavItem",
+              "DriverClass": "CatalogSectionResource"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "FB4855EA-5798-4835-859E-EE7FE5BDCA50"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "catalog-checkout-widget",
+            "Sequence": 3,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Spotlight",
+            "Title": "Self-Service Checkout & Order Capture",
+            "Body": "The **Checkout Widget** renders product pricing, quantity controls, repeating multi-unit item details, and verified member discounts, submitting directly into Orders.",
+            "Configuration": {
+              "ShowProgress": true
+            },
+            "Anchor": {
+              "Strategy": "Registered",
+              "Key": "orders.checkout.widget"
+            },
+            "Placement": "Bottom",
+            "Mode": "Guide",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "5ABD4639-28E2-4191-9589-8BA7CCC7898D"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@parent:ID",
+            "StepKey": "catalog-summary",
+            "Sequence": 4,
+            "StepTypeID": "@lookup:MJ: Tour Step Types.Name=Modal",
+            "Title": "Orders Catalog & Checkout Complete",
+            "Body": "You're ready to configure sellable products, enforce pricing rules, and trace every checkout or back-office order through fulfillment, receivables, and accounting.",
+            "Configuration": {
+              "Variant": "summary",
+              "PrimaryButtonText": "Finish",
+              "ShowProgress": true
+            },
+            "Placement": "Center",
+            "Mode": "Show",
+            "Completion": {
+              "Type": "NextButton"
+            },
+            "OnMissing": "Center",
+            "IsOptional": false
+          },
+          "primaryKey": {
+            "ID": "47FB63EE-D78F-498D-89A2-D06753C5AF39"
+          }
+        }
+      ]
+    }
+  }
+]

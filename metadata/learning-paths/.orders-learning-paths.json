@@ -1,0 +1,66 @@
+[
+  {
+    "fields": {
+      "Name": "Orders & Receivables Mastery",
+      "PathKey": "orders.essentials",
+      "Description": "Complete walkthrough of BizApps Orders from order intake, line pricing, and fulfillment through payments, receivables aging, product catalog, and checkout.",
+      "ApplicationID": "@lookup:MJ: Applications.Name=Orders",
+      "Status": "Active",
+      "Configuration": {
+        "AllowSkipOptional": true,
+        "ShowNextConcreteStep": true
+      }
+    },
+    "primaryKey": {
+      "ID": "43A3B6BD-B592-4FE0-9936-7D0E29321225"
+    },
+    "relatedEntities": {
+      "MJ: Tour Learning Path Tour Links": [
+        {
+          "fields": {
+            "TourID": "@lookup:MJ: Tours.TourKey=core.welcome",
+            "Sequence": 1,
+            "IsRequired": false,
+            "TourLearningPathID": "@parent:ID"
+          },
+          "primaryKey": {
+            "ID": "D1DC70B0-C66E-4471-B5A5-29137CA06042"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@lookup:MJ: Tours.TourKey=orders.order-to-cash",
+            "Sequence": 2,
+            "IsRequired": true,
+            "TourLearningPathID": "@parent:ID"
+          },
+          "primaryKey": {
+            "ID": "45A85F8B-CE1D-4BFF-B2CA-8A01D108392E"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@lookup:MJ: Tours.TourKey=orders.payments-receivables",
+            "Sequence": 3,
+            "IsRequired": true,
+            "TourLearningPathID": "@parent:ID"
+          },
+          "primaryKey": {
+            "ID": "6AEFB717-1742-47DC-B4E8-70A1B1B3FE9E"
+          }
+        },
+        {
+          "fields": {
+            "TourID": "@lookup:MJ: Tours.TourKey=orders.catalog-checkout",
+            "Sequence": 4,
+            "IsRequired": true,
+            "TourLearningPathID": "@parent:ID"
+          },
+          "primaryKey": {
+            "ID": "6DD34D07-3212-497F-9421-6D5D28A5C4F8"
+          }
+        }
+      ]
+    }
+  }
+]
