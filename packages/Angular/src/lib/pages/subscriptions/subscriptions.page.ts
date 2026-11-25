@@ -93,7 +93,8 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                             [Entity]="SubscriptionEntityInfo"
                             [AutoSaveView]="true"
                             (RecordSelected)="OnRecordSelected($event)"
-                            (OpenRecordRequested)="OnRecordOpened($event)">
+                            (OpenRecordRequested)="OnRecordOpened($event)"
+                            (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                         </mj-view-workspace>
                     } @else {
                         <div class="small muted" style="padding: 24px;">Loading subscriptions...</div>
@@ -294,6 +295,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     public SelectedID: string | null = null;
     public Preset = 'active';
     /** Asks the section to open a subscription's form, where Cancel lives (#932). */
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
     @Output() SubscriptionOpened = new EventEmitter<{ ID: string }>();
 
     public async ngOnInit(): Promise<void> {
