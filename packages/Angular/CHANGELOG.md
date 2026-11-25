@@ -1,5 +1,19 @@
 # @mj-biz-apps/orders-ng
 
+## 5.53.0
+
+### Patch Changes
+
+- 5fb6170: Receivables screens: the billing worklist lists only confirmed orders' instalments and disables Issue invoice otherwise (golive #469); Account credits re-reads its credits when shown again or when a selected row is missing from them (golive #475); the external payment poll holds a payment that would pay more than an order or instalment still owes, instead of capturing it twice (golive #148).
+- c5d34c9: The Receivables worklists (Billing worklist, Overdue worklist, Invoicing queue, Progress attestation) share one filter row: a Company filter listing the companies with rows on the page, a count of the rows listed, Refresh, and an export of the rows listed to Excel or CSV. The company choice is one choice across Receivables, Customer A/R included. It, each page's date filter and the Invoicing queue's open tab are kept in the tab's address and follow Back and Forward. The tiles are the quick filters, and every date reads MM/DD/YYYY. On Billing worklist, Invoicing queue and Progress attestation there is also a search; column headers sort, a third click returning the list to its own order; a row opens in a panel beside the list with its full detail and the act on it; order numbers are links; and the list shows placeholder rows while loading and keeps its headings and a totals row in view while it scrolls. A row a filter hides is closed or unticked, so no action runs against a row that is not on screen. The worklist table's rows are one tab stop with arrow keys between them, on the Renewals page too.
+
+  Billing worklist: the 30-day window is now a choice (7, 30, 60 or 90 days, 12 months, all dates, or custom dates), and several installments can be ticked and issued together, each on its own so one refusal does not stop the rest. Overdue worklist: the page now counts as overdue only invoiced amounts past their due date, each installment aged from its own date, as Customer A/R does (golive #481); `Orders.GetOverdueWorklist` and `IsOverdue` are unchanged, and the order grid stays the generic grid. An order whose only late installments were never invoiced is not counted; a tile counts those and leads to the Billing worklist. The aging bar's bands and an age filter narrow the tiles, the grid and the export together; under a band the Past due tile is the band's own amount, and the export carries each band's amount per order. Credit available counts each customer once. Invoicing queue: "Send all waiting" sends for the chosen companies only, states the 25-per-run limit, and says when what is listed differs from what is sent; setting payments aside asks for its reason and its date guard in a dialog that names what will be set aside and what is left out before anything is written; payment exceptions show the customer, the provider and its company. Progress attestation: the period, percent, preview and warnings are in the line's side panel, with a quick filter for lines not attested this month.
+
+- Updated dependencies [5935635]
+- Updated dependencies [301e0d3]
+- Updated dependencies [6e3da0f]
+  - @mj-biz-apps/orders-entities@5.53.0
+
 ## 5.52.0
 
 ### Minor Changes
@@ -1231,8 +1245,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                              "FK_EntityFieldValue_EntityField"
+                                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                                "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

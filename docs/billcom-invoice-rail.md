@@ -99,7 +99,7 @@ added to `INVOICE_RAIL_TYPE_CODES` and the two Angular copies (`RAIL_TYPE_CODES`
 | The six operations | `packages/CoreEntitiesServer/src/*External*Operation.ts` |
 | Scheduler Actions, webhook route | [`send-external-invoices.action.ts`](../packages/Server/src/custom/send-external-invoices.action.ts), [`poll-external-payments.action.ts`](../packages/Server/src/custom/poll-external-payments.action.ts), [`BillComWebhookExtension.ts`](../packages/Server/src/BillComWebhookExtension.ts) |
 | Native email refusal (`EXTERNALLY_INVOICED`) | [`DeliveryBehavior.ts`](../packages/CoreEntitiesServer/src/DeliveryBehavior.ts), `DeliveryRecipientResolver.ts`, `packages/Server/src/custom/send-document.action.ts` |
-| Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Then sends via" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
+| Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Sent through" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
 
 Screens take their labels from `PaymentProvider.Name`. Unit tests sit in the `__tests__` folders beside
 this code. The `billcom-rail` integration bundle
@@ -129,6 +129,10 @@ also rebuilds every open `Unmatched` payment from its stored BILL record, and ca
 have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
+payment that would apply more to an order or instalment than Orders still shows open is `Held`, not
+captured, with a reason saying it is already paid here (golive #148): it is usually the same receipt
+also recorded by hand in Orders. It is re-decided every pass, so voiding the duplicate in Orders lets
+the next pass capture it; **Set aside** keeps the one recorded in Orders. A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
 corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
 Each payment that pass moved into one of those states (or from one to another) gets one
@@ -143,7 +147,7 @@ announced again.
 - [`metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json)
   runs the send at `0 */30 13-23 * * 1-5` UTC (`MaxCount` 25) and the poll at `0 15 * * * *` UTC
   (`MaxCount` 100). Both ship `Disabled` with `Preview` true: enable a job, read one preview run, then
-  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state.
+  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state, with `MaxCount` 25 and, when a company is chosen in the page's Company filter, `CompanyIDs` set to that choice.
 - **The poll job is the switch for recording cash, whoever runs the poll.** `Orders.PollExternalPayments`
   reads the installed poll jobs before a run that would write, and gates each provider by the jobs
   governing it: the jobs whose `PaymentProviderID` names that provider, or, when none does, the jobs
@@ -168,7 +172,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
 | `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. `scripts/load-billcom-customer-map.mjs` loads these rows for customers already in BILL (dry run unless `--apply`). |
-| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
+| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. The Set aside dialog asks for the reason and, for several rows, a "dated before" day: a set-aside of several rows leaves out `Unmatched` rows not dated before that day, since those may be waiting for an invoice still to be loaded. `Held` and `Refused` rows are set aside whatever their date. The dialog names the rows it will set aside and the rows it leaves out before anything is written. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 
 `PaymentProvider.CompanyIntegrationID` points a provider row at its `MJ: Company Integrations` row. A
@@ -208,8 +212,10 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
 - **Payments left for a person:** a currency other than the company's functional one (`Refused`), an
   invoice Orders did not send (`Unmatched`), an invoice sent before 5.27.0 by a product company other
   than the order's (`Refused` by `Orders.CapturePayment`; #333), and a void or re-application after capture.
-- **Double entry is a process rule** (design §12 Q4): a BILL payment also recorded by hand in Orders is
-  booked twice, since `Orders.CapturePayment` accepts over-payment.
+- **Double entry is caught only by balance** (design §12 Q4; golive #148): a BILL payment also recorded
+  by hand in Orders is held when the order or instalment has nothing left open for it. A partial hand-recorded
+  payment that leaves enough open for the BILL one is not caught, and Orders never marks the BILL
+  invoice paid. A held payment raises no `Payment Needs Review` notice.
 - **Smaller gaps.** Retries are decided from error text (`BILLCOM_TRANSIENT`), not the HTTP status.
   After a capture covering several invoices, BILL's status and due amount can be stored on the wrong
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The

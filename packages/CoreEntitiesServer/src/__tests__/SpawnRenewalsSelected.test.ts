@@ -19,7 +19,7 @@ vi.mock('../OrdersSettings.js', () => ({
     },
 }));
 
-import { RenewalGroupKey, SelectedRenewalRefusal, SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
+import { RenewalGroupKey, RenewalHeaderCarry, SelectedRenewalRefusal, SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
 
 const USER = { ID: 'user-1' } as unknown as UserInfo;
 const ID_A = '11111111-1111-1111-1111-111111111111';
@@ -185,5 +185,34 @@ describe('RenewalGroupKey: which subscriptions renew on one order', () => {
         expect(RenewalGroupKey({ ...base, CompanyID: 'other-co' }, 'Confirmed')).not.toBe(k);
         expect(RenewalGroupKey({ ...base, DefaultCustomerPaymentMethodID: 'card' }, 'Confirmed')).not.toBe(k);
         expect(RenewalGroupKey(base, 'Draft')).not.toBe(k);
+    });
+});
+
+describe('RenewalHeaderCarry: what a renewal takes from the order it renews (golive #477)', () => {
+    const held = { HolderOrganizationID: 'org-1', BeneficiaryPersonID: null };
+    const prior = (over: Record<string, string | null> = {}) => ({ BillToOrganizationID: 'ORG-1', BillToPersonID: null, PaymentTermsTypeID: null, ...over });
+
+    it('takes the bill-to person and the terms of the prior order when an organization holds the subscription', () => {
+        expect(RenewalHeaderCarry(held, [prior({ BillToPersonID: 'ap-clerk', PaymentTermsTypeID: 'net-30' })])).toEqual({ BillToPersonID: 'ap-clerk', PaymentTermsTypeID: 'net-30' });
+    });
+
+    it("keeps the subscription's own beneficiary over the prior order's person", () => {
+        const own = { HolderOrganizationID: 'org-1', BeneficiaryPersonID: 'member' };
+        expect(RenewalHeaderCarry(own, [prior({ BillToPersonID: 'ap-clerk' })]).BillToPersonID).toBe('member');
+    });
+
+    it('reads each value from the first member order that has it, and skips an order that could not be read', () => {
+        const carry = RenewalHeaderCarry(held, [null, prior({ PaymentTermsTypeID: 'net-30' }), prior({ BillToPersonID: 'ap-clerk', PaymentTermsTypeID: 'net-60' })]);
+        expect(carry).toEqual({ BillToPersonID: 'ap-clerk', PaymentTermsTypeID: 'net-30' });
+    });
+
+    it('does not read a prior order billed to a different organization', () => {
+        const other = prior({ BillToOrganizationID: 'org-2', BillToPersonID: 'their-clerk', PaymentTermsTypeID: 'net-90' });
+        expect(RenewalHeaderCarry(held, [other])).toEqual({ BillToPersonID: null, PaymentTermsTypeID: null });
+    });
+
+    it('leaves both empty when the prior order names neither', () => {
+        expect(RenewalHeaderCarry(held, [prior()])).toEqual({ BillToPersonID: null, PaymentTermsTypeID: null });
+        expect(RenewalHeaderCarry(held, [])).toEqual({ BillToPersonID: null, PaymentTermsTypeID: null });
     });
 });
