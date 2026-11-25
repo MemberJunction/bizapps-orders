@@ -8,9 +8,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
+    OrderCatalogTotal: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
 
@@ -64,6 +66,7 @@ describe('deciding a concession re-measures its share of the order', () => {
     it('stamps the share at the decision, not at the recording', async () => {
         // The draft grew to 100,000 while the concession waited: 5,500 is now 5.5%.
         gate.OrderNetTotal.mockResolvedValue(100000);
+        gate.OrderCatalogTotal.mockResolvedValue(100000);
         gate.OrderConcessionTotal.mockResolvedValue(5500);
         const { row, values } = pendingConcession('Approved');
 
@@ -75,6 +78,7 @@ describe('deciding a concession re-measures its share of the order', () => {
 
     it('counts every concession on the order still Pending or Approved, this one included', async () => {
         gate.OrderNetTotal.mockResolvedValue(20000);
+        gate.OrderCatalogTotal.mockResolvedValue(20000);
         gate.OrderConcessionTotal.mockResolvedValue(8500);
         const { row, values } = pendingConcession('Approved');
 
@@ -83,13 +87,27 @@ describe('deciding a concession re-measures its share of the order', () => {
         expect(values.CumulativeShare).toBe(0.425);
     });
 
-    it('records no share when the order has no net total to measure against', async () => {
+    it('records no share when the order has no catalog total to measure against', async () => {
         gate.OrderNetTotal.mockResolvedValue(0);
+        gate.OrderCatalogTotal.mockResolvedValue(0);
         gate.OrderConcessionTotal.mockResolvedValue(5500);
         const { row, values } = pendingConcession('Rejected');
 
         expect(await row.applyDecision()).toBeNull();
         expect(values.OrderNetTotal).toBe(0);
         expect(values.CumulativeShare).toBeNull();
+    });
+
+    it('measures the share against the order at its catalog prices, not after its discounts (golive #494)', async () => {
+        // 10% off every line of a 40,000 order: 4,000 given away, 36,000 left to pay. The share is
+        // 10% of the catalog total, where dividing by the net total read it as 11.1%.
+        gate.OrderNetTotal.mockResolvedValue(36000);
+        gate.OrderCatalogTotal.mockResolvedValue(40000);
+        gate.OrderConcessionTotal.mockResolvedValue(4000);
+        const { row, values } = pendingConcession('Approved');
+
+        expect(await row.applyDecision()).toBeNull();
+        expect(values.OrderNetTotal).toBe(36000);
+        expect(values.CumulativeShare).toBe(0.1);
     });
 });

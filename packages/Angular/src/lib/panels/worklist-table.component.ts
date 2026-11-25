@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJEmptyStateComponent, MJFilterChipComponent } from '@memberjunction/ng-ui-components';
 
@@ -15,7 +15,9 @@ export type MJOColumnKind =
     /** A `mjo-chip`; `ChipClass` picks the variant. */
     | 'chip'
     /** Monospace — document numbers and references. */
-    | 'mono';
+    | 'mono'
+    /** Monospace, and a link: clicking it raises `LinkClicked` instead of selecting the row. */
+    | 'link';
 
 /**
  * A column definition.
@@ -36,6 +38,8 @@ export interface MJOColumn<TRow = any> {
     Width?: string;
     /** Whether the header offers sorting. Index-limited in practice, so opt-in. */
     Sortable?: boolean;
+    /** What the column sorts on, when that is not the raw property (a computed or looked-up value). */
+    SortValue?: (row: TRow) => string | number | null | undefined;
     /** Muted second line under the value. */
     Secondary?: (row: TRow) => string | null;
     /** Chip variant class for `Kind: 'chip'`. */
@@ -44,6 +48,8 @@ export interface MJOColumn<TRow = any> {
     HideBelow?: 560 | 760 | 1000;
     /** Render the value differently from the raw property. */
     Format?: (row: TRow) => string;
+    /** For `Kind: 'link'`: the tooltip on the link, saying what it opens. */
+    LinkHint?: string;
 }
 
 /** A quick-filter chip above the table. */
@@ -134,8 +140,8 @@ export type MJORow = any;
             </div>
         }
 
-        <div class="mj-table-wrap">
-            <table class="mj-table">
+        <div class="mj-table-wrap" [style.max-height]="MaxHeight">
+            <table class="mj-table" [attr.aria-busy]="Loading ? 'true' : null">
                 <thead>
                     <tr>
                         @if (Selectable) {
@@ -153,9 +159,18 @@ export type MJORow = any;
                             <th
                                 [class.num]="column.Kind === 'money' || column.Kind === 'number'"
                                 [class]="hideClass(column)"
-                                [style.width]="column.Width">
+                                [style.width]="column.Width"
+                                [attr.aria-sort]="column.Sortable ? sortState(column) : null">
                                 @if (column.Sortable) {
-                                    <span class="sortable" (click)="SortChanged.emit(column.Key)">
+                                    <span
+                                        class="sortable mjo-wl__sort"
+                                        [class.is-sorted]="SortKey === column.Key"
+                                        role="button"
+                                        tabindex="0"
+                                        [attr.title]="'Sort by ' + column.Label.toLowerCase()"
+                                        (click)="SortChanged.emit(column.Key)"
+                                        (keydown.enter)="SortChanged.emit(column.Key)"
+                                        (keydown.space)="$event.preventDefault(); SortChanged.emit(column.Key)">
                                         {{ column.Label }}
                                         <i
                                             class="fa-solid"
@@ -173,10 +188,26 @@ export type MJORow = any;
                 </thead>
 
                 <tbody>
+                    @if (Loading && !Rows.length) {
+                        <!-- Placeholder rows while the first read is out: an empty state here would say "nothing", which is not known yet. -->
+                        @for (bone of skeleton; track bone) {
+                            <tr class="mjo-wl__bone-row" aria-hidden="true">
+                                @if (Selectable) {
+                                    <td class="mjo-wl__tick"></td>
+                                }
+                                @for (column of Columns; track column.Key) {
+                                    <td [class]="hideClass(column)"><span class="mjo-wl__bone" [style.width.%]="40 + ((bone * 17 + $index * 29) % 50)"></span></td>
+                                }
+                            </tr>
+                        }
+                    }
                     @for (row of Rows; track trackRow($index, row)) {
                         <tr
                             [class.is-clickable]="RowClicked.observed"
                             [class.is-selected]="isSelected(row)"
+                            [attr.tabindex]="RowClicked.observed ? rowTabIndex(row, $index) : null"
+                            [attr.aria-current]="isSelected(row) ? 'true' : null"
+                            (keydown)="onRowKey($event, row)"
                             (click)="onRowClick(row)">
                             @if (Selectable) {
                                 <td class="mjo-wl__tick" (click)="$event.stopPropagation()">
@@ -192,12 +223,20 @@ export type MJORow = any;
                             @for (column of Columns; track column.Key) {
                                 <td
                                     [class.num]="column.Kind === 'money' || column.Kind === 'number'"
-                                    [class.mono]="column.Kind === 'mono'"
+                                    [class.mono]="column.Kind === 'mono' || column.Kind === 'link'"
                                     [class]="hideClass(column)">
                                     @if (column.Kind === 'chip') {
                                         <span class="mjo-chip" [class]="column.ChipClass?.(row) ?? ''">
                                             {{ display(row, column) }}
                                         </span>
+                                    } @else if (column.Kind === 'link' && LinkClicked.observed) {
+                                        <button
+                                            type="button"
+                                            class="mjo-wl__link"
+                                            [attr.title]="column.LinkHint ?? null"
+                                            (click)="$event.stopPropagation(); LinkClicked.emit({ Row: row, Key: column.Key })">
+                                            {{ display(row, column) }}
+                                        </button>
                                     } @else {
                                         {{ display(row, column) }}
                                     }
@@ -208,7 +247,7 @@ export type MJORow = any;
                             }
                         </tr>
                     } @empty {
-                        <tr>
+                        <tr [hidden]="Loading">
                             <td [attr.colspan]="Columns.length + (Selectable ? 1 : 0)">
                                 <mj-empty-state
                                     Size="compact"
@@ -219,6 +258,18 @@ export type MJORow = any;
                         </tr>
                     }
                 </tbody>
+                @if (Totals && Rows.length) {
+                    <tfoot>
+                        <tr class="mjo-wl__total">
+                            @if (Selectable) {
+                                <td class="mjo-wl__tick"></td>
+                            }
+                            @for (column of Columns; track column.Key) {
+                                <td [class.num]="column.Kind === 'money' || column.Kind === 'number'" [class]="hideClass(column)">{{ Totals[column.Key] || '' }}</td>
+                            }
+                        </tr>
+                    </tfoot>
+                }
             </table>
         </div>
 
@@ -245,6 +296,55 @@ export type MJORow = any;
                 width: 36px;
                 text-align: center;
             }
+            .mjo-wl__sort {
+                cursor: pointer;
+                user-select: none;
+                white-space: nowrap;
+            }
+            .mjo-wl__sort:hover i, .mjo-wl__sort.is-sorted i { opacity: 1; }
+            .mjo-wl__sort.is-sorted { color: var(--mj-text-primary); }
+            .mjo-wl__sort:focus-visible {
+                outline: 2px solid var(--mj-brand-primary);
+                outline-offset: 2px;
+                border-radius: 2px;
+            }
+            .mjo-wl__link {
+                /* The cell is already monospace; the link takes its face from it. */
+                font: inherit;
+                padding: 0;
+                border: none;
+                background: none;
+                color: var(--mj-brand-primary);
+                cursor: pointer;
+            }
+            .mjo-wl__link:hover, .mjo-wl__link:focus-visible { text-decoration: underline; outline: none; }
+            tr[tabindex]:focus-visible { outline: 2px solid var(--mj-brand-primary); outline-offset: -2px; }
+            /* The totals stay in view at the foot of a list that scrolls inside its frame, as the header does at its top. */
+            .mjo-wl__total td {
+                position: sticky;
+                bottom: 0;
+                z-index: 1;
+                padding: var(--mj-space-3);
+                background: var(--mj-bg-surface-card, var(--mj-bg-surface));
+                border-top: 2px solid var(--mj-border-strong);
+                font-weight: var(--mj-font-semibold);
+                white-space: nowrap;
+            }
+            .mjo-wl__total td.num { text-align: right; font-variant-numeric: tabular-nums; }
+            .mjo-wl__bone {
+                display: inline-block;
+                height: 10px;
+                border-radius: 5px;
+                background: var(--mj-bg-surface-sunken);
+                animation: mjo-wl-pulse 1.2s ease-in-out infinite;
+            }
+            @keyframes mjo-wl-pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.45; }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                .mjo-wl__bone { animation: none; }
+            }
             .mjo-wl__tick input {
                 cursor: pointer;
                 margin: 0;
@@ -264,11 +364,11 @@ export type MJORow = any;
         `,
     ],
 })
-export class MJOWorklistTableComponent {
+export class MJOWorklistTableComponent implements OnChanges {
     /** Column definitions, left to right. */
     @Input() Columns: MJOColumn[] = [];
 
-    /** The rows to render. Filtering and sorting happen in the query, not here. */
+    /** The rows to render, already filtered and sorted by the host: this table orders nothing itself. */
     @Input() Rows: MJORow[] = [];
 
     /** Quick-filter chips. */
@@ -318,10 +418,31 @@ export class MJOWorklistTableComponent {
     /** Muted line under the table — where a stated caveat belongs. */
     @Input() FootNote: string | null = null;
 
+    /** A read is running. With no rows yet, placeholder rows are shown in place of the empty state. */
+    @Input() Loading = false;
+
+    /**
+     * A totals row at the foot, keyed by column: `{ CustomerName: '12 installments', Amount: '$4,200.00' }`.
+     * The host works the figures out, since it knows which rows they cover. Omit for no totals row.
+     */
+    @Input() Totals: Record<string, string> | null = null;
+
+    /**
+     * The tallest the list may grow before it scrolls inside its own frame, as a CSS length. With one
+     * set, the column headings and the totals stay in view while the rows scroll. Omit to let the list
+     * grow with its rows.
+     */
+    @Input() MaxHeight: string | null = null;
+
     @Output() PresetChanged = new EventEmitter<string>();
     @Output() SearchChanged = new EventEmitter<string>();
     @Output() SortChanged = new EventEmitter<string>();
     @Output() RowClicked = new EventEmitter<MJORow>();
+    /** A `Kind: 'link'` cell was clicked: the row, and which column. The row is not selected by it. */
+    @Output() LinkClicked = new EventEmitter<{ Row: MJORow; Key: string }>();
+
+    /** Placeholder rows for the first load. */
+    protected readonly skeleton = [0, 1, 2, 3, 4, 5];
 
     /** The full set of ticked keys after a change — never a delta, so the host cannot drift from the table. */
     @Output() SelectionChanged = new EventEmitter<string[]>();
@@ -336,6 +457,43 @@ export class MJOWorklistTableComponent {
 
     protected onRowClick(row: MJORow): void {
         if (this.RowClicked.observed) this.RowClicked.emit(row);
+    }
+
+    /** Whether the open row is among the rows listed. Worked out when the inputs change, not once per row per pass. */
+    private openRowListed = false;
+
+    public ngOnChanges(): void {
+        this.openRowListed = this.SelectedKey != null && this.Rows.some((row) => this.isSelected(row));
+    }
+
+    /**
+     * The ROWS are one tab stop, not one each: the open row, or the first when none is open, with the
+     * arrow keys moving between them. A row's own controls (its checkbox, its link) are still reached
+     * by Tab, as controls are.
+     */
+    protected rowTabIndex(row: MJORow, index: number): number {
+        if (this.openRowListed) return this.isSelected(row) ? 0 : -1;
+        return index === 0 ? 0 : -1;
+    }
+
+    /**
+     * Keys on a focused row: Enter or Space selects it, the arrows move to the row above or below.
+     * A key pressed inside a control in the row (its checkbox, its link) belongs to that control.
+     */
+    protected onRowKey(event: Event, row: MJORow): void {
+        if (event.target !== event.currentTarget) return;
+        const key = (event as KeyboardEvent).key;
+        const element = event.currentTarget as HTMLElement;
+        if (key === 'Enter' || key === ' ') {
+            event.preventDefault();
+            this.onRowClick(row);
+        } else if (key === 'ArrowDown' || key === 'ArrowUp') {
+            const next = (key === 'ArrowDown' ? element.nextElementSibling : element.previousElementSibling) as HTMLElement | null;
+            if (next?.hasAttribute('tabindex')) {
+                event.preventDefault();
+                next.focus();
+            }
+        }
     }
 
     protected keyOf(row: MJORow): string {
@@ -389,6 +547,12 @@ export class MJOWorklistTableComponent {
             else next.delete(key);
         }
         this.SelectionChanged.emit([...next]);
+    }
+
+    /** A sortable header's `aria-sort`: which way it is sorted, or that it is not. */
+    protected sortState(column: MJOColumn): 'ascending' | 'descending' | 'none' {
+        if (this.SortKey !== column.Key) return 'none';
+        return this.SortDescending ? 'descending' : 'ascending';
     }
 
     protected hideClass(column: MJOColumn): string {

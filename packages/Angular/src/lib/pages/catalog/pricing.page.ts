@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
@@ -6,6 +6,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetPriceLists, GetPriceTiers, GetProductPrices, GetPromotions } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { ToRecordOpenRequest, type RecordOpenRequest, type WorkspaceOpenEvent } from '../workspace-requests';
 import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersPromotionEntity } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -46,7 +47,9 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
             @if (ProductPriceEntityInfo) {
                 <mj-view-workspace
                     [Entity]="ProductPriceEntityInfo"
-                    [AutoSaveView]="true">
+                    [AutoSaveView]="true"
+                    (OpenRecordRequested)="OnRecordOpened($event)"
+                    (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                 </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading price rules...</div>
@@ -234,6 +237,11 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
 export class MJOPricingPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
+    /** A grid row double-click: the section opens that record's form. */
+    @Output() RecordOpenRequested = new EventEmitter<RecordOpenRequest>();
+
     public ProductPriceEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersProductPriceEntity[] = [];
 
@@ -252,6 +260,12 @@ export class MJOPricingPageComponent implements OnInit {
         this.PriceLists = lists;
         this.Tiers = tiers;
         this.cdr.detectChanges();
+    }
+
+    /** Relay a row double-click to the section, which owns navigation. */
+    public OnRecordOpened(event: WorkspaceOpenEvent): void {
+        const request = ToRecordOpenRequest(event);
+        if (request) this.RecordOpenRequested.emit(request);
     }
 
     /**
@@ -349,7 +363,9 @@ export class MJOPricingPageComponent implements OnInit {
             @if (PromotionEntityInfo) {
                 <mj-view-workspace
                     [Entity]="PromotionEntityInfo"
-                    [AutoSaveView]="true">
+                    [AutoSaveView]="true"
+                    (OpenRecordRequested)="OnRecordOpened($event)"
+                    (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                 </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading promotions...</div>
@@ -392,6 +408,11 @@ export class MJOPricingPageComponent implements OnInit {
 export class MJOPromotionsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
+    /** A grid row double-click: the section opens that record's form. */
+    @Output() RecordOpenRequested = new EventEmitter<RecordOpenRequest>();
+
     public PromotionEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersPromotionEntity[] = [];
 
@@ -400,5 +421,11 @@ export class MJOPromotionsPageComponent implements OnInit {
         this.PromotionEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Promotion) || null;
         this.Rows = await GetPromotions();
         this.cdr.detectChanges();
+    }
+
+    /** Relay a row double-click to the section, which owns navigation. */
+    public OnRecordOpened(event: WorkspaceOpenEvent): void {
+        const request = ToRecordOpenRequest(event);
+        if (request) this.RecordOpenRequested.emit(request);
     }
 }

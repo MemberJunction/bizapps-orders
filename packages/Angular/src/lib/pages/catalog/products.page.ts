@@ -7,6 +7,8 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { MJONewProductDialogComponent } from './new-product-dialog.component';
+import { ToRecordOpenRequest, type RecordOpenRequest, type WorkspaceOpenEvent } from '../workspace-requests';
 import {
     IsBefore,
     Today,
@@ -47,7 +49,7 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
 @Component({
     selector: 'mjo-products-page',
     standalone: true,
-    imports: [CommonModule, MJAlertComponent, EntityViewerModule],
+    imports: [CommonModule, MJAlertComponent, EntityViewerModule, MJONewProductDialogComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-sitemap" class="mjo-cat__note">
                 Product type determines revenue recognition, taxability, fulfillment and recurrence for
@@ -60,12 +62,14 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
                     [Entity]="ProductEntityInfo"
                     [AutoSaveView]="true"
                     (OpenRecordRequested)="OnRecordOpened($event)"
-                    (CreateNewRecordRequested)="ProductCreateRequested.emit()">
+                    (CreateNewRecordRequested)="NewProductOpen = true">
                 </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading products...</div>
             }
         </div>
+
+        <mjo-new-product-dialog [Visible]="NewProductOpen" (Created)="OnNewProductCreated($event)" (Closed)="OnNewProductClosed()"></mjo-new-product-dialog>
 
         <div class="mjo-cat__grid">
             <div class="mj-card">
@@ -196,8 +200,11 @@ export class MJOProductsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
     @Output() ProductOpened = new EventEmitter<mjBizAppsOrdersProductEntity>();
-    /** The grid's New button — the host routes it, this page never imports Router. */
-    @Output() ProductCreateRequested = new EventEmitter<void>();
+
+    /** The grid's New button opens the guided New product dialog (golive#434) rather than a blank form. */
+    public NewProductOpen = false;
+    /** The product the dialog saved, opened once the dialog closes. */
+    private createdProductID: string | null = null;
 
     public ProductEntityInfo: EntityInfo | null = null;
     public Categories: Array<Record<string, unknown>> = [];
@@ -224,6 +231,18 @@ export class MJOProductsPageComponent implements OnInit {
             const surrogate = { ID: id } as mjBizAppsOrdersProductEntity;
             this.ProductOpened.emit(surrogate);
         }
+    }
+
+    public OnNewProductCreated(id: string): void {
+        this.createdProductID = id;
+    }
+
+    /** The dialog closed: open the product it created, if it got that far. */
+    public OnNewProductClosed(): void {
+        this.NewProductOpen = false;
+        const id = this.createdProductID;
+        this.createdProductID = null;
+        if (id) this.ProductOpened.emit({ ID: id } as mjBizAppsOrdersProductEntity);
     }
 
     /** 'MJ_BizApps_Orders: Event Products' → 'Event Products'. */
@@ -266,7 +285,9 @@ export class MJOProductsPageComponent implements OnInit {
             @if (ChargeTypeEntityInfo) {
                 <mj-view-workspace
                     [Entity]="ChargeTypeEntityInfo"
-                    [AutoSaveView]="true">
+                    [AutoSaveView]="true"
+                    (OpenRecordRequested)="OnRecordOpened($event)"
+                    (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                 </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading charge types...</div>
@@ -471,6 +492,11 @@ export class MJOProductsPageComponent implements OnInit {
 export class MJOChargesTaxPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
+    /** A grid row double-click: the section opens that record's form. */
+    @Output() RecordOpenRequested = new EventEmitter<RecordOpenRequest>();
+
     public ChargeTypeEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersChargeTypeEntity[] = [];
 
@@ -495,6 +521,12 @@ export class MJOChargesTaxPageComponent implements OnInit {
         this.Nexus = nexus;
         this.Exemptions = exemptions;
         this.cdr.detectChanges();
+    }
+
+    /** Relay a row double-click to the section, which owns navigation. */
+    public OnRecordOpened(event: WorkspaceOpenEvent): void {
+        const request = ToRecordOpenRequest(event);
+        if (request) this.RecordOpenRequested.emit(request);
     }
 
     /**

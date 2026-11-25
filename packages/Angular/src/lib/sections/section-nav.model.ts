@@ -69,11 +69,11 @@ export const PAYMENTS_SUB_PAGES: OrdersSubPage[] = [
  * them under Reports would tell the accounting team their work is read-only.
  */
 export const RECEIVABLES_SUB_PAGES: OrdersSubPage[] = [
-    { Id: 'aging', Label: 'Customer A/R', Icon: 'fa-solid fa-user-tag', Description: 'Balances by customer' },
-    { Id: 'overdue', Label: 'Overdue worklist', Icon: 'fa-solid fa-hourglass-half' },
-    { Id: 'billing', Label: 'Billing worklist', Icon: 'fa-solid fa-file-invoice-dollar', Description: 'Installments due, not yet invoiced' },
-    { Id: 'invoicing-queue', Label: 'Invoicing queue', Icon: 'fa-solid fa-paper-plane', Description: 'Waiting to send, and payments needing a person' },
-    { Id: 'progress', Label: 'Progress attestation', Icon: 'fa-solid fa-diagram-project', Description: 'Percent complete on project lines' },
+    { Id: 'aging', Label: 'Customer A/R', Icon: 'fa-solid fa-user-tag', Description: 'Balances and aging by customer' },
+    { Id: 'overdue', Label: 'Overdue worklist', Icon: 'fa-solid fa-hourglass-half', Description: 'Past-due balances to follow up' },
+    { Id: 'billing', Label: 'Billing worklist', Icon: 'fa-solid fa-file-invoice-dollar', Description: 'Installments to invoice' },
+    { Id: 'invoicing-queue', Label: 'Invoicing queue', Icon: 'fa-solid fa-paper-plane', Description: 'Invoices to send and payments to review' },
+    { Id: 'progress', Label: 'Progress attestation', Icon: 'fa-solid fa-diagram-project', Description: 'Record percent complete on project work' },
 ];
 
 /**

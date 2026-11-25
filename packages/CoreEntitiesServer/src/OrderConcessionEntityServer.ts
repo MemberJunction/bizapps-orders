@@ -3,8 +3,8 @@
  *
  * RECORDING ONE. The requester states what was given — the line, or the term and the days added — and
  * why. Everything else is derived here and whatever the caller sent is overwritten: the order it
- * belongs to, its value at the arrangement's own rate, the order's net total and the share of it that
- * the order's concessions now come to, the requester, and its status. Within the
+ * belongs to, its value at the arrangement's own rate, the order's net total, the share the order's
+ * concessions now come to of the order at its catalog prices (golive #494), the requester, and its status. Within the
  * requester's `SalesAuthority` it is Approved on save; outside it, it is Pending, stamped with the
  * active ConcessionLimit rule whose role decides it. A requester who holds that role approves their
  * own, and the record shows that it went through the rule rather than through their authority — unless
@@ -145,10 +145,12 @@ import {
     type SelfApprovalEscalationResult,
 } from './ConcessionApprovalTask.js';
 import {
+    ApplyShareLimitMixTiers,
     FindConcessionTier,
     HeldManualDiscounts,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
+    OrderCatalogTotal,
     OrderConcessionTotal,
     OrderNetTotal,
     ProductsRequiringSaleApproval,
@@ -622,9 +624,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
 
         // Measured against the order as it stands, with every concession on it still Pending or Approved.
+        // The share is of the order at its catalog prices, before anything was given away (golive #494).
         const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
+        const catalog = await OrderCatalogTotal(this.OrderHeaderID, [], this.provider(), user);
         const others = await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user);
-        const share = ConcessionShare(others + valued.Value, net);
+        const share = ConcessionShare(others + valued.Value, catalog);
 
         this.RequestedByUserID = user.ID;
         this.ComputedValue = valued.Value;
@@ -655,7 +659,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             }
         }
 
-        const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
+        // The share limit is the one this order earns: mix tiers raise it by the order's product types (golive #281).
+        const authority = await ApplyShareLimitMixTiers(
+            await LoadConcessionAuthority(user.ID, this.provider(), user),
+            this.OrderHeaderID,
+            this.provider(),
+            user,
+        );
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChange?.ExtensionDays, share);
         const tier = await FindConcessionTier(measure, this.provider(), user);
         if (tier.Conflict) return tier.Conflict;
@@ -826,7 +836,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (UUIDsEqual(user.ID, this.RequestedByUserID)) return refuse('The person who asked for a shift cannot escalate it.');
         const reviewRoleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
         if (!reviewRoleID || !(await UserHoldsRole(reviewRoleID, this.provider(), user, user.ID))) {
-            return refuse('Only a holder of the finance acknowledgment role can escalate a shift.');
+            return refuse("You don't have permission to escalate this date change. Please request this from Finance.");
         }
         const tier = await FindConcessionTier(
             { Value: 0, CumulativeShare: this.CumulativeShare == null ? null : Number(this.CumulativeShare), TermLengthChangeDays: 0 },
@@ -1211,36 +1221,37 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         const rule = await this.approvingRule(user);
         if (!rule?.ApprovalRequiredRoleID) {
-            return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
+            return "No approver is set up for this concession, so it can't be approved or declined yet. Please contact your administrator.";
         }
         // A holder's own concession, under ConcessionSelfApprovalEscalation: only the escalation decides it.
         const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
         if (escalation) {
             if (UUIDsEqual(user.ID, this.RequestedByUserID)) {
                 return (
-                    'This concession was requested by a holder of the role that approves it, so it goes to the next ' +
-                    'approver up (Orders setting ConcessionSelfApprovalEscalation), and its requester cannot decide it.'
+                    "You can't approve or decline a concession you requested. It has been sent to the next approver."
                 );
             }
             if ('Refusal' in escalation) return escalation.Refusal;
             if (!escalation.UserIDs.some((id) => UUIDsEqual(id, user.ID))) {
                 return (
-                    `This concession was requested by a holder of the role that approves it, so only '${escalation.Target}' ` +
-                    `can decide it (Orders setting ConcessionSelfApprovalEscalation).`
+                    `This concession was requested by one of its usual approvers, so only ` +
+                    `${escalation.Target === 'CompanyCFO' ? "the company's CFO approver" : `the ${escalation.Target} role`} ` +
+                    `can approve or decline it.`
                 );
             }
         } else {
             if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
-                return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+                return "You don't have permission to approve or decline this concession. Only its assigned approvers can.";
             }
             if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
-                return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+                return "You can't approve or decline a concession you requested. Another approver needs to decide it.";
             }
         }
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
         // record should show the share the decision was made at.
         const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
-        const share = ConcessionShare(await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user), net);
+        const catalog = await OrderCatalogTotal(this.OrderHeaderID, [], this.provider(), user);
+        const share = ConcessionShare(await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user), catalog);
         this.OrderNetTotal = net;
         this.CumulativeShare = share === null ? null : Math.round(share * 1e4) / 1e4;
         this.decide(this.Status, user);
@@ -1253,7 +1264,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const roleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
         if (!roleID) return 'No finance acknowledgment role is configured (Orders setting AmendmentAcknowledgmentRole), so no one can decide this shift.';
         if (!(await UserHoldsRole(roleID, this.provider(), user, user.ID))) {
-            return 'Only a holder of the finance acknowledgment role can decide a shift under review.';
+            return "You don't have permission to approve or decline this date change. Please request this from Finance.";
         }
         this.decide(this.Status as 'Approved' | 'Rejected', user);
         return null;

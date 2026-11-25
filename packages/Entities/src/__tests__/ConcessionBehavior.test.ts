@@ -4,6 +4,7 @@ import {
     ConcessionAlwaysEscalates,
     ConcessionShare,
     ConcessionValue,
+    EffectiveShareLimit,
     DaysAdded,
     PaymentTermsDaysChange,
     InclusiveDays,
@@ -216,18 +217,18 @@ describe('a change of payment terms (#309)', () => {
 /**
  * Concessions as a share of the order they are given on (#306). A currency limit treats a small
  * order and a large one alike; the share limit measures every concession on the order, together,
- * against the order's net total.
+ * against the order at its catalog prices, before any discount (golive #494).
  */
 describe('share of the order', () => {
     const roomy = (share: number | null) =>
         authority({ MaxConcessionValue: 1_000_000, MaxTermExtensionDays: 366, MaxDiscountPct: 1, MaxConcessionPctOfContract: share });
 
-    it('divides every concession on the order by its net total', () => {
+    it('divides every concession on the order by its catalog total', () => {
         expect(ConcessionShare(500, 10000)).toBeCloseTo(0.05, 9);
         expect(ConcessionShare(0, 10000)).toBe(0);
     });
 
-    it('has no share when the order has no net total', () => {
+    it('has no share when the order has no catalog total', () => {
         expect(ConcessionShare(100, 0)).toBeNull();
         expect(ConcessionShare(100, -5)).toBeNull();
     });
@@ -238,7 +239,7 @@ describe('share of the order', () => {
         const at = ConcessionValue({ Form: 'Duration', TermAmount: 12000, TermDays: 365, AddedDays: 19 });
         const under = ConcessionValue({ Form: 'Duration', TermAmount: 12000, TermDays: 365, AddedDays: 18 });
         expect(AssessConcession('Duration', at, limit, 19, ConcessionShare(at.Value, 12000)).Breaches).toEqual([
-            'concessions on the order come to 5.2% of its net total, at or above the 5.0% limit',
+            'concessions on the order come to 5.2% of its catalog total, at or above the 5.0% limit',
         ]);
         expect(AssessConcession('Duration', under, limit, 18, ConcessionShare(under.Value, 12000)).WithinAuthority).toBe(true);
     });
@@ -270,9 +271,9 @@ describe('share of the order', () => {
         expect(AssessConcession('Seats', each, roomy(0.05), null, ConcessionShare(300 + 300, 10000)).WithinAuthority).toBe(false);
     });
 
-    it('breaches a set limit when the order has no net total to measure against', () => {
+    it('breaches a set limit when the order has no catalog total to measure against', () => {
         expect(AssessConcession('Seats', { Value: 10, Percent: null }, roomy(0.05), null, null).Breaches).toEqual([
-            'the order has no net total to measure its concessions against the 5.0% share limit',
+            'the order has no catalog total to measure its concessions against the 5.0% share limit',
         ]);
     });
 
@@ -316,7 +317,7 @@ describe('approval tiers (#308)', () => {
         expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: 0.0999, TermLengthChangeDays: 59 })).toBe(false);
     });
 
-    it('meets a share threshold when the order has no net total, as a share limit is breached', () => {
+    it('meets a share threshold when the order has no catalog total, as a share limit is breached', () => {
         const senior = tier({ ConcessionTier: 1, MinConcessionPctOfContract: 0.1 });
         expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: null })).toBe(true);
         expect(ConcessionTierMet(senior, { Value: 10 })).toBe(false);
@@ -378,5 +379,46 @@ describe('products that always need approval (golive #281)', () => {
     });
     it('lets a product require it on its own', () => {
         expect(ResolveRequiresSaleApproval({ Product: true, Categories: [], Type: null })).toBe(true);
+    });
+});
+
+describe('share limit raised by the product mix (golive #281)', () => {
+    const tiers = [
+        { MinProductTypes: 2, MaxConcessionPctOfContract: 0.1 },
+        { MinProductTypes: 3, MaxConcessionPctOfContract: 0.15 },
+    ];
+
+    it('keeps the authority limit on an order with one product type', () => {
+        expect(EffectiveShareLimit(0.05, tiers, 1)).toBe(0.05);
+    });
+
+    it('applies the tier for two product types', () => {
+        expect(EffectiveShareLimit(0.05, tiers, 2)).toBe(0.1);
+    });
+
+    it('applies the highest tier met, whatever order the tiers come in', () => {
+        expect(EffectiveShareLimit(0.05, [...tiers].reverse(), 4)).toBe(0.15);
+    });
+
+    it('never lowers the authority limit', () => {
+        expect(EffectiveShareLimit(0.2, tiers, 3)).toBe(0.2);
+    });
+
+    it('leaves an authority with no share limit unlimited', () => {
+        expect(EffectiveShareLimit(null, tiers, 3)).toBeNull();
+    });
+
+    it('lets a concession the base limit refuses through on a mixed order', () => {
+        const authority: ConcessionAuthority = {
+            ID: 'auth-1',
+            MaxDiscountPct: null,
+            MaxConcessionValue: 100000,
+            MaxTermExtensionDays: null,
+            MaxConcessionPctOfContract: EffectiveShareLimit(0.05, tiers, 2),
+        };
+        const valuation = { Value: 800, Percent: null };
+
+        expect(AssessConcession('Seats', valuation, authority, null, 0.08).WithinAuthority).toBe(true);
+        expect(AssessConcession('Seats', valuation, { ...authority, MaxConcessionPctOfContract: 0.05 }, null, 0.08).WithinAuthority).toBe(false);
     });
 });

@@ -164,7 +164,9 @@ describe('page outputs are wired to the section', () => {
         expect(dash).toMatch(/GetDashboardOrders\(\)/);
         expect(dash).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
         expect(doc).toMatch(/GetOrders\(\{\s*OrderHeaderID:\s*this\.OrderID\s*\}\)/);
-        expect(ar).toMatch(/GetOpenBalanceOrders\(\)/);
+        // Customer A/R reads plain rows, uncapped: a capped read newest-first drops the OLDEST debt.
+        expect(ar).toMatch(/GetReceivableOrders\(\)/);
+        expect(ar).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
     });
 });
 

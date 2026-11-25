@@ -137,6 +137,15 @@ add_migration; set_version 1.10.1; commit "patch"
 check "baseline compares versions numerically (v1.10.0 over v1.9.0)" \
   1 "This release bumps 1.10.0 -> 1.10.1, a patch"
 
+# Release lines: a newer line's tag (v2.0.0, on another branch) is the highest version in the
+# repo, but it is not reachable from this line, so it is not this line's last release. Picking it
+# would make 2.0.0 -> 1.2.1 look like no bump at all and hide the patch-with-a-migration failure.
+new_repo 1.2.0
+git -C "$DIR" checkout -q -b newer-line; set_version 2.0.0; commit "newer line"; git -C "$DIR" tag v2.0.0
+git -C "$DIR" checkout -q -; add_migration; set_version 1.2.1; commit "patch on the older line"
+check "baseline is this line's last release, not another line's newer tag" \
+  1 "This release bumps 1.2.0 -> 1.2.1, a patch"
+
 # --- what counts as a change -----------------------------------------------------------------
 
 new_repo 1.2.0

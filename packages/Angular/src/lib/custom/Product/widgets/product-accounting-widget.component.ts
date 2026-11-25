@@ -9,7 +9,7 @@ import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities'
     standalone: false,
     selector: 'bizapps-product-accounting-widget',
     templateUrl: './product-accounting-widget.component.html',
-    styleUrls: ['./product-accounting-widget.component.css'],
+    styleUrls: ['./product-gl-cards.css', './product-accounting-widget.component.css'],
 })
 export class BizAppsProductAccountingWidgetComponent {
     @Input() public Product!: mjBizAppsOrdersProductEntity;

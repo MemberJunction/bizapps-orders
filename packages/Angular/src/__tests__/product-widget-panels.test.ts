@@ -49,6 +49,8 @@ const FULFILLMENT_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-fulfillment-
 const ACCOUNTING_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-accounting-widget.component.html`);
 const PRODUCT_HEADER_HTML = ReadRepoFile('../lib/form-panels/product-header.panel.html');
 const PRODUCT_HEADER_TS = ReadRepoFile('../lib/form-panels/product-header.panel.ts');
+/** The readiness check the header and the New product dialog share (golive#434). */
+const READINESS_CHECK_TS = ReadRepoFile('../lib/form-panels/product-readiness-check.ts');
 const GENERATED_PRODUCT_FORM_HTML = ReadRepoFile(
     '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component.html'
 );
@@ -257,7 +259,8 @@ describe('Status lives in the Details panel', () => {
 
     it("the readiness check asks pricing to ignore the product's Draft status", () => {
         // Without the flag, pricing refuses every Draft product, so the check could never pass.
-        expect(PRODUCT_HEADER_TS).toContain('IgnoreSellability: true');
+        expect(PRODUCT_HEADER_TS).toContain('CheckProductReadiness(');
+        expect(READINESS_CHECK_TS).toContain('IgnoreSellability: true');
     });
 });
 

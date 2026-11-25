@@ -155,7 +155,7 @@ makes one order line produce one booking entry and \`N\` forward-dated release e
     {
         key: 'pricing', title: 'What it costs — price, promotion and who may discount',
         tables: ['ProductPrice', 'PriceList', 'PriceListAssignment', 'PriceTier', 'Promotion', 'PromotionCode',
-            'PromotionTarget', 'PromotionType', 'ChargeType', 'SalesAuthority', 'SalesRule', 'OrderConcession', 'ReferralProgram'],
+            'PromotionTarget', 'PromotionType', 'ChargeType', 'SalesAuthority', 'SalesAuthorityMixTier', 'SalesRule', 'OrderConcession', 'ReferralProgram'],
         blurb: () => `**Price is resolved, not stored on the product.** The price walk reads no price from \`Product\`; its
 \`StandaloneSellingPrice\` is used only by bundle expansion, to price \`SumOfParts\` components and to
 split a bundle's price across its \`Bundled\` ones. \`ProductPrice\` rows carry the money: each hangs on
@@ -166,7 +166,8 @@ tiered and volume models. The walk that reads all this is in §6.
 
 **\`Promotion\` is separated from \`PromotionCode\` on purpose**: one promotion can have many codes
 (per-campaign, per-partner, single-use), and \`PromotionTarget\` scopes what a promotion may apply to.
-\`SalesAuthority\` and \`SalesRule\` are the guardrails — who is allowed to give value away, and how much.
+\`SalesAuthority\` and \`SalesRule\` are the guardrails — who is allowed to give value away, and how much. A
+\`SalesAuthorityMixTier\` raises an authority's share limit on an order that spans several product types.
 \`OrderConcession\` records each concession on an order, whatever form it takes (price, duration, seats,
 scope or payment terms), with its computed value and the approval decision. An order cannot be
 confirmed, nor its documents sent, while a concession on it is \`Pending\`. A withdrawn concession stays on
@@ -681,7 +682,7 @@ p();
 const WALKS = [
     ['**GL account**', 'product → its category → that category\'s ancestors → its product type → the line\'s company', '**Refuses the confirm.** Booked money with nowhere to go is worse than no order.'],
     ['**Price**', 'stated `UnitPrice` → a pricing plugin registered for the product, its category or an ancestor, or the company → the default resolver, which picks by `Priority` among the `ProductPrice` rows on the product or inherited from its category chain, from the customer\'s price lists and the base prices', 'When no price rule is found, the line is refused unless the company\'s `OrderCompanyPolicy.RefuseUnpricedLines` is off, and then it books at zero. Rules that exist but do not apply to the quantity or date, or two that tie, are refused either way.'],
-    ['**Payment terms**', 'stated `DueDate` → stated `PaymentTermsTypeID` → `CustomerPaymentTerms` → the selling company\'s default, `OrderCompanyPolicy.DefaultPaymentTermsTypeID` → due on receipt', 'Falls through to due on receipt.'],
+    ['**Payment terms**', 'stated `DueDate` → stated `PaymentTermsTypeID` → `CustomerPaymentTerms` → on a renewal draft, the terms of the order it renews → the selling company\'s default, `OrderCompanyPolicy.DefaultPaymentTermsTypeID` → due on receipt', 'Falls through to due on receipt.'],
     ['**GL dimensions**', 'the tag stated on the line (`OrderLine.DimensionID` / `DimensionValueID`) → tags derived from the line itself (ARR type from its subscription action, vintage from its event\'s start year) → `DimensionDefault` rows on the product → its category → that category\'s ancestors → its product type → the line\'s company, nearest level per dimension; derived tags are written as `OrderLineDimension` rows', 'The line books untagged on that dimension. The booking is refused only where the GL account\'s link requires the dimension.'],
 ];
 p(`## 6. The rules that are not in the schema at all`);

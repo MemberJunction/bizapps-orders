@@ -114,6 +114,7 @@ export * from './accessOverride';
 export * from './coverage-overlap';
 // Reversing booked money (bc-aidp-next-golive#454) — cancel, refund, credit transfer and amount change are finance's.
 export * from './order-reversal';
+export * from './permission-messages';
 // A payment's date and correcting it (bc-aidp-next-golive#448) — the authorization and the initial payment's day.
 export * from './payment-date';
 export * from './pricing/linePricePick';
@@ -132,6 +133,8 @@ export * from './displaced-term-start';
 export * from './subscription-term-length';
 // Whether a subscription line's subscriber already holds its product — the extend-or-new question.
 export * from './existing-holding';
+// Instalments a moved term leaves behind, refused at confirm and warned on the line (golive #467).
+export * from './moved-term-schedule';
 export * from './subscription-type';
 
 /**

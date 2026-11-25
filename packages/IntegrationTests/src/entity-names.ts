@@ -51,6 +51,7 @@ export const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 export const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
 
 export const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
+export const SALES_AUTHORITY_MIX_TIER_ENTITY = 'MJ_BizApps_Orders: Sales Authority Mix Tiers';
 export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 export const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
@@ -73,11 +74,15 @@ export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimens
 export const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 export const CHECKOUT_WIDGET_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
 
-// ── Orders: external invoice rails (Bill.com) ─────────────────────────────────────────────────────
+// ── Orders: external invoice rails (Bill.com) & event/webhook tables ──────────────────────────────
 export const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
 export const EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers';
 export const EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments';
 export const PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States';
+export const OUTBOUND_EVENT_ENTITY = 'MJ_BizApps_Orders: Outbound Events';
+export const OUTBOUND_DELIVERY_ENTITY = 'MJ_BizApps_Orders: Outbound Deliveries';
+export const PAYMENT_WEBHOOK_DELIVERY_ENTITY = 'MJ_BizApps_Orders: Payment Webhook Deliveries';
+export const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 
 // ── Tasks (peer app; a Pending concession is routed to its approvers as a task) ─────────────────────
 export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
@@ -145,6 +150,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRICE_LIST_ENTITY,
     PRICE_LIST_ASSIGNMENT_ENTITY,
     SALES_AUTHORITY_ENTITY,
+    SALES_AUTHORITY_MIX_TIER_ENTITY,
     SALES_RULE_ENTITY,
     REFERRAL_PROGRAM_ENTITY,
     ORDER_CONCESSION_ENTITY,
@@ -166,6 +172,10 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     EXTERNAL_CUSTOMER_ENTITY,
     EXTERNAL_PAYMENT_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
+    OUTBOUND_EVENT_ENTITY,
+    OUTBOUND_DELIVERY_ENTITY,
+    PAYMENT_WEBHOOK_DELIVERY_ENTITY,
+    SUBSCRIPTION_EVENT_ENTITY,
     CHECKOUT_WIDGET_ENTITY,
     CHECKOUT_WIDGET_DISTRIBUTION_ENTITY,
     GL_ACCOUNT_ENTITY,

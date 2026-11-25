@@ -34,13 +34,14 @@
  * origin line's, which was settled when that line was sold, and pricing refuses a negative quantity.
  *
  *   3. on an order not yet confirmed, concessions that were approved on the requester's own
- *      authority when the order's concessions, as a share of its net total, now reach that
+ *      authority when the order's concessions, as a share of its catalog total, now reach that
  *      authority's `MaxConcessionPctOfContract`. The share is measured when a concession is
  *      recorded; a draft that loses lines afterwards raises it, and the approval on authority no
  *      longer covers what the order now gives away. An approver's decision on another concession
  *      does not cover it: the share that approver saw belongs to the order as it was then. The
  *      concession is withdrawn and recorded again, which measures it against the order as it is now
- *      and routes it for approval.
+ *      and routes it for approval. The limit is the one the order now earns: a mix tier (golive #281)
+ *      raises it by the order's distinct product types, so removing a product type can lower it.
  *
  *   4. on an order not yet confirmed, a line whose product always needs approval (golive #281) with no
  *      Approved Price or Scope concession decided through the ConcessionLimit rule recorded for it. Such
@@ -59,6 +60,7 @@
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import {
     ConcessionShare,
+    EffectiveShareLimit,
     ResolveRequiresSaleApproval,
     ConcessionValue,
     Money,
@@ -73,11 +75,13 @@ import {
     type ConcessionTierRule,
     type ConcessionValuation,
     type PricedLineFacts,
+    type ShareLimitMixTier,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { IsUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
+const SALES_AUTHORITY_MIX_TIER_ENTITY = 'MJ_BizApps_Orders: Sales Authority Mix Tiers';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
@@ -214,12 +218,7 @@ export async function LinePriceConcessionFor(
     user: UserInfo,
 ): Promise<LinePriceConcession | null> {
     const held = Money(Math.max(0, Number(line.HeldDiscount ?? 0)));
-    const standing = await ResolveLinePriceStanding(line, provider, user);
-    const engine = standing?.EngineUnitPrice ?? null;
-    const quantity = Math.abs(Number(line.Quantity ?? 0));
-    const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
-
-    const priceConcession = engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && charged < engine;
+    const { engine, quantity, charged, priceConcession, base } = await linePricing(line, provider, user);
     const priceValue = priceConcession
         ? ConcessionValue({ Form: 'Price', ReferenceUnitPrice: engine, ChargedUnitPrice: charged, Quantity: quantity }).Value
         : 0;
@@ -234,9 +233,6 @@ export async function LinePriceConcessionFor(
 
     const value = Money(priceValue + discountValue + held);
     if (!(value > 0)) return null;
-    // Measured against what the line would have cost before anything was given away: the engine
-    // price when the stated price is the concession, the stated price when only a discount is.
-    const base = (priceConcession ? engine : Math.max(0, charged)) * quantity;
     const chargedNothing = (priceConcession && charged <= 0) || (base > 0 && value + MONEY_TOLERANCE >= base);
     return {
         Form: chargedNothing ? 'Scope' : 'Price',
@@ -247,6 +243,88 @@ export async function LinePriceConcessionFor(
         DiscountPct: discountPct,
         HeldDiscount: held,
     };
+}
+
+/** A line's price as concessions are measured against it. */
+interface LinePricing {
+    /** Null when nothing resolves an engine price for the line. */
+    engine: number | null;
+    quantity: number;
+    /** The unit price the line is charged before its discount. */
+    charged: number;
+    /** True when the charged price is below the engine's and the engine's is the one the line should carry. */
+    priceConcession: boolean;
+    /**
+     * What the line would have cost before anything was given away: the engine price when the
+     * stated price is the concession, the stated price otherwise. Both before any discount.
+     */
+    base: number;
+}
+
+async function linePricing(line: LineConcessionFacts, provider: IMetadataProvider, user: UserInfo): Promise<LinePricing> {
+    const standing = await ResolveLinePriceStanding(line, provider, user);
+    const engine = standing?.EngineUnitPrice ?? null;
+    const quantity = Math.abs(Number(line.Quantity ?? 0));
+    const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
+    const priceConcession = engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && charged < engine;
+    const base = (priceConcession ? engine! : Math.max(0, charged)) * quantity;
+    return { engine, quantity, charged, priceConcession, base };
+}
+
+/**
+ * The order at the catalog prices chosen for it, before any concession: each line's quantity times its
+ * engine price where the stated price is below it, else times its stated price, with no discount taken
+ * off. A line with no engine price is counted at its stated price (#905). The order's concessions are
+ * measured as a share of this (golive #494): a 10% discount on every line is 10% of the order, the
+ * same base the per-line `MaxDiscountPct` uses. Measuring against the total after discounts counted
+ * that discount twice, once by raising what was given away and again by lowering the total.
+ *
+ * Left out, as in {@link OrderNetTotal}: reversal lines, and a bundle's components, since the bundle
+ * line carries the bundle's price and is valued like any other line.
+ *
+ * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
+ */
+export async function OrderCatalogTotal(
+    orderHeaderID: string,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
+    const lines: ConcessionLineFacts[] = inMemoryLines.filter((l) => !isComponentOrReversal(l));
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<ConcessionLineFacts>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+            Fields: [
+                'ID',
+                'LineNumber',
+                'ParentOrderLineID',
+                'ReversesOrderLineID',
+                'ProductID',
+                'OrderHeaderID',
+                'Quantity',
+                'UnitPrice',
+                'ProductPriceID',
+            ],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (res && !res.Success) throw new Error(`Could not read the order's lines to measure its concessions: ${res.ErrorMessage}`);
+    for (const row of res?.Results ?? []) {
+        if (held.has((row.ID ?? '').toLowerCase()) || isComponentOrReversal(row)) continue;
+        lines.push({ ...row, PriceStated: true });
+    }
+    let total = 0;
+    for (const line of lines) {
+        total += line.ProductID
+            ? (await linePricing(line, provider, user)).base
+            : Math.max(0, Number(line.UnitPrice ?? 0)) * Math.abs(Number(line.Quantity ?? 0));
+    }
+    return Money(total);
 }
 
 /**
@@ -514,7 +592,7 @@ export async function OrderConcessionTotal(
 
 /**
  * Check (3) in the header: the reason, if any, that approvals on the requesters' own authority no
- * longer cover the order's concessions as a share of its net total.
+ * longer cover the order's concessions as a share of its catalog total ({@link OrderCatalogTotal}).
  */
 async function shareNoLongerCovered(
     orderHeaderID: string,
@@ -526,11 +604,13 @@ async function shareNoLongerCovered(
     const onAuthority = rows.filter((r) => r.Status === 'Approved' && !r.SalesRuleID && !!r.AuthorizedBySalesAuthorityID);
     if (onAuthority.length === 0) return null;
 
-    const net = await OrderNetTotal(orderHeaderID, inMemoryLines, provider, user);
-    const share = ConcessionShare(concessionTotal(rows), net);
+    const catalog = await OrderCatalogTotal(orderHeaderID, inMemoryLines, provider, user);
+    const share = ConcessionShare(concessionTotal(rows), catalog);
 
     const limits = await loadShareLimits(
         [...new Set(onAuthority.map((r) => String(r.AuthorizedBySalesAuthorityID).toLowerCase()))],
+        orderHeaderID,
+        inMemoryLines,
         provider,
         user,
     );
@@ -538,26 +618,146 @@ async function shareNoLongerCovered(
     if (!breach) return null;
 
     return (
-        `${breach} (${concessionTotal(rows).toFixed(2)} on a net total of ${net.toFixed(2)}), and ` +
+        `${breach} (${concessionTotal(rows).toFixed(2)} on a catalog total of ${catalog.toFixed(2)}), and ` +
         `${onAuthority.length} concession(s) on it were approved on the requester's own authority when the order ` +
         `was measured differently. Withdraw them and record them again, so they are measured against the order ` +
         `as it is now and routed for approval`
     );
 }
 
-async function loadShareLimits(authorityIDs: string[], provider: IMetadataProvider, user: UserInfo): Promise<(number | null)[]> {
+/** Each authority's share limit on this order as it is now, mix tiers applied. */
+async function loadShareLimits(
+    authorityIDs: string[],
+    orderHeaderID: string,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<(number | null)[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ MaxConcessionPctOfContract: number | null }>(
+    const res = await rv.RunView<{ ID: string; MaxConcessionPctOfContract: number | null }>(
         {
             EntityName: SALES_AUTHORITY_ENTITY,
             ExtraFilter: `ID IN (${RequireUUIDs(authorityIDs, 'SalesAuthorityID').map((id) => `'${id}'`).join(',')})`,
-            Fields: ['MaxConcessionPctOfContract'],
+            Fields: ['ID', 'MaxConcessionPctOfContract'],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
-    return (res?.Results ?? []).map((r) => (r.MaxConcessionPctOfContract == null ? null : Number(r.MaxConcessionPctOfContract)));
+    const authorities = res?.Results ?? [];
+    const tiers = await LoadShareLimitMixTiers(
+        authorities.filter((a) => a.MaxConcessionPctOfContract != null).map((a) => a.ID),
+        provider,
+        user,
+    );
+    const count = tiers.size > 0 ? await OrderProductTypeCount(orderHeaderID, inMemoryLines, provider, user) : 0;
+    return authorities.map((a) =>
+        EffectiveShareLimit(
+            a.MaxConcessionPctOfContract == null ? null : Number(a.MaxConcessionPctOfContract),
+            tiers.get(a.ID.toLowerCase()) ?? [],
+            count,
+        ),
+    );
+}
+
+/**
+ * The mix tiers of the given authorities (golive #281), keyed by lower-cased SalesAuthorityID. An
+ * authority with none is absent from the map.
+ */
+export async function LoadShareLimitMixTiers(
+    authorityIDs: readonly string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, ShareLimitMixTier[]>> {
+    const byAuthority = new Map<string, ShareLimitMixTier[]>();
+    if (authorityIDs.length === 0) return byAuthority;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ SalesAuthorityID: string; MinProductTypes: number; MaxConcessionPctOfContract: number }>(
+        {
+            EntityName: SALES_AUTHORITY_MIX_TIER_ENTITY,
+            ExtraFilter: `SalesAuthorityID IN (${RequireUUIDs([...authorityIDs], 'SalesAuthorityID').map((id) => `'${id}'`).join(',')})`,
+            Fields: ['SalesAuthorityID', 'MinProductTypes', 'MaxConcessionPctOfContract'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!res?.Success) throw new Error(`Could not read the Sales Authority mix tiers: ${res?.ErrorMessage}`);
+    for (const row of res.Results) {
+        const key = row.SalesAuthorityID.toLowerCase();
+        const tiers = byAuthority.get(key) ?? [];
+        tiers.push({ MinProductTypes: Number(row.MinProductTypes), MaxConcessionPctOfContract: Number(row.MaxConcessionPctOfContract) });
+        byAuthority.set(key, tiers);
+    }
+    return byAuthority;
+}
+
+/**
+ * How many distinct product types (product families, golive #281) the order's lines span. Bundle
+ * components and reversals are left out, as the gate leaves them out: a component is part of the
+ * bundle line's product, and a reversal gives back what another order sold. A renewal line counts.
+ *
+ * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
+ */
+export async function OrderProductTypeCount(
+    orderHeaderID: string,
+    inMemoryLines: readonly ConcessionLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<number> {
+    const productIDs = new Set<string>();
+    const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
+    for (const line of inMemoryLines) {
+        if (line.ProductID && !isComponentOrReversal(line)) productIDs.add(line.ProductID.toLowerCase());
+    }
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const lines = await rv.RunView<{ ID: string; ProductID: string | null; ParentOrderLineID: string | null; ReversesOrderLineID: string | null; Quantity: number | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+            Fields: ['ID', 'ProductID', 'ParentOrderLineID', 'ReversesOrderLineID', 'Quantity'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!lines?.Success) throw new Error(`Could not read the order's lines: ${lines?.ErrorMessage}`);
+    for (const row of lines.Results) {
+        if (held.has(row.ID.toLowerCase()) || !row.ProductID || !!row.ParentOrderLineID || isReversal(row)) continue;
+        productIDs.add(row.ProductID.toLowerCase());
+    }
+    if (productIDs.size === 0) return 0;
+
+    const products = await rv.RunView<{ ProductTypeID: string }>(
+        {
+            EntityName: PRODUCT_ENTITY,
+            ExtraFilter: `ID IN (${RequireUUIDs([...productIDs], 'ProductID').map((id) => `'${id}'`).join(',')})`,
+            Fields: ['ProductTypeID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!products?.Success) throw new Error(`Could not read the order's products: ${products?.ErrorMessage}`);
+    return new Set(products.Results.map((p) => p.ProductTypeID.toLowerCase())).size;
+}
+
+/**
+ * The rep's authority with its share limit for this order: `MaxConcessionPctOfContract` raised by the
+ * highest mix tier the order's product-type count meets (golive #281). Unchanged when the authority
+ * has no share limit or no tiers.
+ */
+export async function ApplyShareLimitMixTiers(
+    authority: ConcessionAuthority | null,
+    orderHeaderID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ConcessionAuthority | null> {
+    if (!authority || authority.MaxConcessionPctOfContract == null) return authority;
+    const tiers = (await LoadShareLimitMixTiers([authority.ID], provider, user)).get(authority.ID.toLowerCase()) ?? [];
+    if (tiers.length === 0) return authority;
+    const count = await OrderProductTypeCount(orderHeaderID, [], provider, user);
+    return { ...authority, MaxConcessionPctOfContract: EffectiveShareLimit(authority.MaxConcessionPctOfContract, tiers, count) };
 }
 
 function concessionTotal(rows: readonly ConcessionRow[]): number {

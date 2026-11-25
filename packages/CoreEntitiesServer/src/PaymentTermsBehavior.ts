@@ -18,6 +18,7 @@
  *     1. a STATED DueDate           the caller knows the answer; never recomputed
  *     2. a STATED PaymentTermsTypeID   derive OrderDate + NetDays
  *     3. the CUSTOMER's terms       CustomerPaymentTerms, date-effective, optionally per company
+ *     3b. the PRIOR ORDER's terms   a renewal draft only: the terms on the order it renews (golive #477)
  *     4. the SELLING COMPANY's default  OrderCompanyPolicy.DefaultPaymentTermsTypeID
  *     5. due on receipt             the terminal default
  *
@@ -65,13 +66,20 @@ export interface TermsResolutionInput {
     CompanyID: string | null;
     /** Rung 3 candidates for this buyer, in any order. */
     CustomerTerms: readonly CustomerTermsFacts[];
+    /**
+     * Rung 3b: the terms on the order a renewal continues, when the caller is a renewal and that
+     * order had any. Below the customer's own terms, because an order records the terms it was
+     * derived on and the customer may have renegotiated since; above the company default, because
+     * what this customer was last billed on is the better guess.
+     */
+    PriorOrderTerms?: TermsFacts | null;
     /** Rung 4 — the selling company's default, or null when it has no profile. */
     CompanyDefault: TermsFacts | null;
     /** `NetDays` by terms id, for resolving a stated `PaymentTermsTypeID`. */
     TermsByID: ReadonlyMap<string, TermsFacts>;
 }
 
-export type TermsSource = 'StatedDueDate' | 'StatedTerms' | 'CustomerTerms' | 'CompanyDefault' | 'DueOnReceipt';
+export type TermsSource = 'StatedDueDate' | 'StatedTerms' | 'CustomerTerms' | 'PriorOrderTerms' | 'CompanyDefault' | 'DueOnReceipt';
 
 export interface TermsResolution {
     /** `YYYY-MM-DD`, or null only when the order date itself was unusable. */
@@ -197,6 +205,16 @@ export function ResolveDueDate(input: TermsResolutionInput): TermsResolution {
             DueDate: AddDays(input.OrderDate, customer.NetDays ?? 0),
             PaymentTermsTypeID: customer.PaymentTermsTypeID,
             Source: 'CustomerTerms',
+            WasStated: false,
+        };
+    }
+
+    // 3b. What the order this one renews was on.
+    if (input.PriorOrderTerms) {
+        return {
+            DueDate: AddDays(input.OrderDate, input.PriorOrderTerms.NetDays ?? 0),
+            PaymentTermsTypeID: input.PriorOrderTerms.PaymentTermsTypeID,
+            Source: 'PriorOrderTerms',
             WasStated: false,
         };
     }

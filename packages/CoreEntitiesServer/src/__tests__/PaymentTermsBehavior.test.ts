@@ -96,6 +96,17 @@ describe('the walk', () => {
         expect(result.PaymentTermsTypeID).toBe(NET60);
     });
 
+    it("then the terms of the order a renewal continues, below the customer's own (golive #477)", () => {
+        const prior = { PaymentTermsTypeID: NET30, NetDays: 30 };
+        const result = ResolveDueDate(input({ PriorOrderTerms: prior, CompanyDefault: { PaymentTermsTypeID: NET60, NetDays: 60 } }));
+        expect(result.DueDate).toBe('2026-07-31');
+        expect(result.Source).toBe('PriorOrderTerms');
+        expect(result.PaymentTermsTypeID).toBe(NET30);
+        expect(result.WasStated).toBe(false);
+        // An order records the terms it was derived on; terms the customer renegotiated since win.
+        expect(ResolveDueDate(input({ PriorOrderTerms: prior, CustomerTerms: [customer()] })).Source).toBe('CustomerTerms');
+    });
+
     it('then the selling company default', () => {
         const result = ResolveDueDate(input({ CompanyDefault: { PaymentTermsTypeID: NET30, NetDays: 30 } }));
         expect(result.DueDate).toBe('2026-07-31');

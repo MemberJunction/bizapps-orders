@@ -1,5 +1,22 @@
 # @mj-biz-apps/orders-entities
 
+## 5.51.0
+
+### Minor Changes
+
+- 3caa683: Confirm no longer moves a subscription line to the next term without anyone deciding it. A direct order is refused while a line for a product its subscriber already holds has not chosen between renewing that subscription and "Create new subscription" (checkout and provider-payment orders keep the subscription type's rule). When a line's stated start does move to the next term, confirm refuses the order if its payment schedule still falls due before that term starts, naming the line, both periods and the instalments, instead of invoicing them early. The order line card warns about those instalments as soon as the renew choice is made, testing every moved line against the gross of the lines on screen. `orders-entities` exports `FindInstalmentsBeforeMovedTerms`, `DescribeInstalmentsBeforeMovedTerm`, `ExplainInstalmentsBeforeMovedTerms` and `ExplainUnansweredHeldLines`.
+- aacb117: Renewals: a prior line longer than the renewal term renews at the term's share of its price, typed or engine-priced, and a shorter one renews unscaled with a review note; Spawn Renewals reports both (golive #468). Revenue bands: an unpicked band on one line no longer unprices the rest of the order on screen, Confirm accepts a band picked on the line, and bands are listed by lower edge (golive #470).
+- dab3dc1: Go-live fixes: a Confirmed order header, and a company's last schedule row on one, refuse DELETE (51019, 51020); the confirmation stamp is server-owned and put back if booking rolls back; a $0 line on a booked order keeps its money; Bill.com finds an existing customer by account number, creates one only when allowed, and tells finance when an invoice is ready; per-order "Check for payments now"; the payment webhook writes on its own provider; a settled checkout intent is not moved back; approval roles, permissions and the Senior Finance (AR) override grant; and smaller concession, review-task, renewal and pricing fixes.
+- 5162834: v5.51.x Metadata_Sync seed: the Senior Finance (AR), CFO and CEO Approver roles, Entitlement Access Override permissions for five roles, Senior Finance (AR) on the access-override authorization, three Bill.com application settings, the order-confirmed transition filter on the Send Document binding, and the PriceOrder and SpawnRenewals type definitions. Every create is guarded on its ID or natural key, with a PostgreSQL counterpart.
+- c5d9e02: A rep's share limit can rise with the order's product mix (golive #281). The new `SalesAuthorityMixTier` table holds tiers on a Sales Authority: on an order whose lines span at least `MinProductTypes` distinct product types, the authority's `MaxConcessionPctOfContract` is raised to the tier's value, for example 10% with two product types and 15% with three. A product type is the product family. Bundle components and reversals are not counted. The limit is applied when a concession is recorded and again at confirm, so removing a product type after an approval on the rep's own authority holds the confirm until that concession is withdrawn and recorded again. Authorities with no tiers behave as before. New migration `V202611170400__v5.51.x__SalesAuthority_MixTiers.sql`.
+
+### Patch Changes
+
+- 05d15e9: Customer A/R and the Orders dashboard now age an order billed in instalments by each instalment's own due date. Before, the whole balance aged on the order's single due date, so one late instalment made the entire balance past due and the date never moved as instalments were paid. The dashboard's Overdue amount is now the money that is late, matching the aging bar, and the overdue count above the orders list uses the next unpaid instalment's date like the list it labels. On Customer A/R the open items show the next due date. Orders with no instalments read as before.
+- 645dfa3: Checkout element: `capture-cookies` attribute, the embedding page URL and its referrer host, kept on the checkout session as `MetadataJSON.Tracking` for outbound consumers. The page URL keeps only its origin, path and tracking parameters (`utm_*` and ad click ids).
+- b416a08: The product pricing screen hides prices kept for orders created before a past cutover (Applicability `Order.__mj_CreatedAt lt <cutover>`) with the inactive and expired ones, behind "Show inactive". They show as "Orders before <date>" and are not offered for activation. New `OlderOrdersCutoff` reads the cutover from a row's Applicability.
+- 9a4efdd: Permission refusals no longer show authorization names, setting keys or rule types. Each one says what the person cannot do and who can; when an authorization is not installed, its name and the fix go to the server log (bc-aidp-next-golive#493). Messages that send a person to Finance or an administrator now ask politely ("Please request this from Finance.", "Please contact your administrator.").
+
 ## 5.50.2
 
 ### Patch Changes
@@ -984,8 +1001,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                          "FK_EntityFieldValue_EntityField"
+                                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

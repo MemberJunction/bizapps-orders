@@ -23,8 +23,8 @@ describe('orders-ng public API: order lines editor', () => {
         expect(mirror?.isStandalone).toBe(true);
     });
 
-    it('takes Order, EditMode and Provider, and emits PricingChanged and Navigate', () => {
-        expect(mirror!.inputs.map((i) => i.propName).sort()).toEqual(['EditMode', 'Order', 'Provider']);
+    it('takes Order, EditMode, Instalments and Provider, and emits PricingChanged and Navigate', () => {
+        expect(mirror!.inputs.map((i) => i.propName).sort()).toEqual(['EditMode', 'Instalments', 'Order', 'Provider']);
         expect(mirror!.outputs.map((o) => o.propName).sort()).toEqual(['Navigate', 'PricingChanged']);
     });
 });

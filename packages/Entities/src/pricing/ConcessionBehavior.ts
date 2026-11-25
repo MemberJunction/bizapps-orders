@@ -36,9 +36,16 @@
  *
  * SHARE OF THE ORDER. A currency limit treats a small order and a large one alike, so the same
  * concession can be trivial on one and most of the other. `MaxConcessionPctOfContract` limits every
- * concession on the order that is not Rejected, together, as a share of the order's net total. It
- * is cumulative so that splitting one concession into several cannot keep each under the limit.
- * An order with nothing to measure against (a net total of zero) breaches a limit that is set.
+ * concession on the order that is not Rejected, together, as a share of the order's catalog total: the
+ * order at its catalog prices, before any discount (golive #494). It is cumulative so that splitting one concession into several cannot keep each under the limit.
+ * An order with nothing to measure against (a catalog total of zero) breaches a limit that is set.
+ *
+ * MIX TIERS (golive #281). A rep may grant a larger share on an order that spans several product
+ * types, a product type being a product family: for example 10% with two and 15% with three. Each
+ * `SalesAuthorityMixTier` row raises the authority's share limit on an order whose lines span at
+ * least its number of distinct product types (`EffectiveShareLimit`). The count leaves out bundle
+ * components and reversals, as the gate does. It is taken when a concession is recorded and again at
+ * confirm, so removing products after an approval on authority lowers the limit that approval met.
  *
  * CONNECTS TO:
  *   CALLER: ./PromotionEngine.ts (AuthorizeManualDiscount — the absolute-value trigger)
@@ -191,7 +198,7 @@ export function RouteTermShortening(rules: ConcessionTierRule[], measure: Conces
 }
 
 /**
- * Concessions as a fraction of the order they are given on. Null when the order's net total is not
+ * Concessions as a fraction of the order they are given on. Null when the order's catalog total is not
  * positive, since there is then nothing to measure a share against.
  */
 export function ConcessionShare(totalConcessionValue: number, orderNetTotal: number): number | null {
@@ -268,7 +275,7 @@ export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
  * or a shortening is not a concession on the rep's authority and is routed on its own (#507).
  *
  * @param cumulativeShare  the order's concessions, this one included, from {@link ConcessionShare}.
- *   Omit it where no order is measured (a manual discount); null means the order has no net total.
+ *   Omit it where no order is measured (a manual discount); null means the order has no catalog total.
  */
 export function AssessConcession(
     form: ConcessionDeliveryForm,
@@ -317,7 +324,7 @@ export function AssessConcession(
 }
 
 /**
- * The breach, if any, of a limit on the order's concessions as a share of its net total. At or
+ * The breach, if any, of a limit on the order's concessions as a share of its catalog total. At or
  * above the limit breaches, as the policy reads. Null when no limit is set or the share is under it.
  *
  * @param share  undefined when nothing was measured, which no limit can breach.
@@ -326,12 +333,45 @@ export function ShareBreach(share: number | null | undefined, limit: number | nu
     if (share === undefined || limit == null) return null;
     const cap = Number(limit);
     if (share === null) {
-        return `the order has no net total to measure its concessions against the ${pct(cap)} share limit`;
+        return `the order has no catalog total to measure its concessions against the ${pct(cap)} share limit`;
     }
     if (share >= cap - 1e-9) {
-        return `concessions on the order come to ${pct(share)} of its net total, at or above the ${pct(cap)} limit`;
+        return `concessions on the order come to ${pct(share)} of its catalog total, at or above the ${pct(cap)} limit`;
     }
     return null;
+}
+
+/**
+ * One mix tier of a rep's authority (golive #281): on an order whose lines span at least
+ * `MinProductTypes` distinct product types, the rep's limit on concessions as a share of the order's
+ * catalog total is `MaxConcessionPctOfContract`. Mirrors `SalesAuthorityMixTier`.
+ */
+export interface ShareLimitMixTier {
+    MinProductTypes: number;
+    MaxConcessionPctOfContract: number;
+}
+
+/**
+ * The share limit a rep holds on one order: the authority's own `MaxConcessionPctOfContract`, raised
+ * by the highest mix tier the order's product-type count meets. A tier only raises the limit; one at
+ * or below the authority's own value changes nothing. An authority with no share limit (null) has
+ * nothing to raise, so it stays unlimited.
+ *
+ * @param productTypeCount  distinct product types on the order's lines, from `OrderProductTypeCount`.
+ */
+export function EffectiveShareLimit(
+    base: number | null,
+    tiers: readonly ShareLimitMixTier[],
+    productTypeCount: number,
+): number | null {
+    if (base == null) return null;
+    let limit = Number(base);
+    for (const tier of tiers) {
+        if (productTypeCount >= Number(tier.MinProductTypes)) {
+            limit = Math.max(limit, Number(tier.MaxConcessionPctOfContract));
+        }
+    }
+    return limit;
 }
 
 const DAY_MS = 86_400_000;
@@ -368,7 +408,7 @@ export interface ConcessionTierRule {
 /** What a concession is routed on: the figures its authority is judged on. */
 export interface ConcessionTierMeasure {
     Value: number;
-    /** The order's concessions as a share of its net total; null when it has none; undefined when not measured. */
+    /** The order's concessions as a share of its catalog total; null when it has none; undefined when not measured. */
     CumulativeShare?: number | null;
     /** Days the term gets longer or shorter (`TermLengthChangeDays`). A shift does not count: it is not a concession. */
     TermLengthChangeDays?: number | null;
@@ -376,7 +416,7 @@ export interface ConcessionTierMeasure {
 
 /**
  * Whether a concession meets a tier: the tier sets no threshold, or the concession is at or above any
- * one it sets. At or above, as the matching SalesAuthority limits read. An order with no net total meets
+ * one it sets. At or above, as the matching SalesAuthority limits read. An order with no catalog total meets
  * a share threshold, as it breaches a share limit.
  */
 export function ConcessionTierMet(rule: ConcessionTierRule, measure: ConcessionTierMeasure): boolean {
