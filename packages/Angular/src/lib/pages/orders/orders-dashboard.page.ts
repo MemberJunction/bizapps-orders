@@ -14,7 +14,7 @@ import { GetDashboardOrders, GetOpenInstalments, type MJODashboardOrderRow, type
 import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
 import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
-import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
+import { MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
 import { MJOOrderReviewQueueComponent } from '../../panels/order-review-queue.component';
 
@@ -232,7 +232,8 @@ interface MJOAttentionItem {
                                     [Entity]="OrderEntityInfo"
                                     [SelectedView]="WorkingView"
                                     [AutoSaveView]="true"
-                                    (OpenRecordRequested)="OnRecordOpened($event)">
+                                    (OpenRecordRequested)="OnRecordOpened($event)"
+                                    (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                                 </mj-view-workspace>
                             } @else {
                                 <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
@@ -270,7 +271,8 @@ interface MJOAttentionItem {
                             [Entity]="OrderEntityInfo"
                             [SelectedView]="ExplorerView ?? WorkingView"
                             [AutoSaveView]="true"
-                            (OpenRecordRequested)="OnRecordOpened($event)">
+                            (OpenRecordRequested)="OnRecordOpened($event)"
+                            (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                         </mj-view-workspace>
                     } @else {
                         <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
@@ -288,7 +290,8 @@ interface MJOAttentionItem {
                                 [Entity]="OrderLineEntityInfo"
                                 [SelectedView]="FulfillmentQueueView"
                                 [AutoSaveView]="true"
-                                (OpenRecordRequested)="OnRecordOpened($event)">
+                                (OpenRecordRequested)="OnRecordOpened($event)"
+                                (CreateNewRecordRequested)="OnFulfillmentNew()">
                             </mj-view-workspace>
                         } @else {
                             <div class="small muted" style="padding: 24px;">Loading fulfillment queue...</div>
@@ -340,7 +343,8 @@ interface MJOAttentionItem {
                                         [Entity]="OrderEntityInfo"
                                         [SelectedView]="AgingOverdueView"
                                         [AutoSaveView]="true"
-                                        (OpenRecordRequested)="OnRecordOpened($event)">
+                                        (OpenRecordRequested)="OnRecordOpened($event)"
+                                        (CreateNewRecordRequested)="RecordCreateRequested.emit($event.Name)">
                                     </mj-view-workspace>
                                 } @else {
                                     <div class="small muted" style="padding: 24px;">Loading order metadata...</div>
@@ -556,6 +560,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     private readonly navigationService = inject(NavigationService, { optional: true });
 
     @Output() NavigateRequested = new EventEmitter<string>();
+    /** The grid's New button: the section opens a blank form for this entity. */
+    @Output() RecordCreateRequested = new EventEmitter<string>();
     @Output() OrderOpened = new EventEmitter<MJODashboardOrderRow>();
 
     public ActiveTab = 'overview';
@@ -667,11 +673,13 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     /**
-     * The workspace hands back the row it opened, not a composite key — every grid here keys on
-     * `ID`, so the row carries it. A row without an `ID` is not openable and is dropped.
+     * The workspace hands back the row it opened, not a composite key. Every grid here opens an
+     * ORDER: the order grids key on `ID`, and the fulfillment queue's rows are order lines, which
+     * open the order they belong to. A row without that id is not openable and is dropped.
      */
     public OnRecordOpened(event: OpenRecordRequest): void {
-        const id = event.record['ID'] as string | undefined;
+        const isLine = event.entity.Name === MJO_ENTITIES.OrderLine;
+        const id = event.record[isLine ? 'OrderHeaderID' : 'ID'] as string | undefined;
         if (id) {
             const match = this.orders.find(o => o.ID === id);
             if (match) {
@@ -681,6 +689,14 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 this.OrderOpened.emit(surrogate);
             }
         }
+    }
+
+    /**
+     * New on the fulfillment queue starts an ORDER. A line is entered inside its order, so a blank
+     * Order Line form opened on its own would have no order to belong to.
+     */
+    public OnFulfillmentNew(): void {
+        this.RecordCreateRequested.emit(MJO_ENTITIES.OrderHeader);
     }
 
     public get OrdersPerDay(): MJODayBar[] {
