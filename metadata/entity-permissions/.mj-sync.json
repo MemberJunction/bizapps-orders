@@ -13,7 +13,7 @@
     "mergeStrategy": "merge",
     "backupBeforeUpdate": true,
     "backupDirectory": ".backups",
-    "filter": "RoleName IN ('Engagement Lead', 'Account Director', 'Finance', 'Senior Finance (AR)', 'CFO', 'CEO Approver', 'Checkout Operator')",
+    "filter": "RoleName IN ('Engagement Lead', 'Account Director', 'Finance', 'Senior Finance (AR)', 'CFO', 'CEO Approver', 'Checkout Operator', 'Order Creator', 'Orders Catalog Manager')",
     "externalizeFields": [],
     "lookupFields": {
       "EntityID": { "entity": "MJ: Entities", "field": "Name" },

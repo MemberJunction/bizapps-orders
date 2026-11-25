@@ -84,5 +84,25 @@
     "primaryKey": {
       "ID": "8A71E3E2-41B9-4D7E-9A55-71B983B8E013"
     }
+  },
+  {
+    "fields": {
+      "Name": "Order Creator",
+      "Description": "Creates and edits orders in BizApps Orders: the order header, its lines and the rows an order save writes (choices, dimensions, price components, payment schedule, charges, concessions, adjustments, checkout answers). Holds Create and Update, not Delete: removing a draft line runs its cleanup as the system user once the person's Update right on the order is checked. No price override grant; typing a unit price off list still needs Account Director.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "6D94E5B3-F7A5-4365-98B3-C730B03D9862"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Orders Catalog Manager",
+      "Description": "Maintains the BizApps Orders catalog: products, their prices and price tiers, bundles, entitlements, categories, price lists and their assignments, event products, and promotions with their codes (coupons) and targets. Products, promotions, price lists, categories and event products are retired by status, not deleted; their child rows may be deleted.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "8FA74CC9-64BC-4AFB-99C6-8F8B2E2624CF"
+    }
   }
 ]

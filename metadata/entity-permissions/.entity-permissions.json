@@ -148,5 +148,330 @@
     "primaryKey": {
       "ID": "A4098F01-3B5C-489E-9A41-19A0880E0005"
     }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "FBA68F70-04C6-4333-B2B9-0C8CAD260C9E"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "29ED1F90-1846-42EE-95B2-EA10BDF89743"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Choices",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "F31C5323-0B40-4FD6-9611-13102C05921B"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Dimensions",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "0A9143CC-FD27-4707-869C-B6E17FAAD769"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Price Components",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "5F3F3804-6244-4981-AB5F-774B5E536EEB"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "4983F539-7D87-46DD-8811-58B6FF2A1CAB"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Charges",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "6536A7A6-C94A-48EB-855F-757B02FDC721"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Charge Allocations",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "35458B55-8625-47A8-8A24-965524C82304"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "105EDB3D-B50C-45C5-A3CA-92032DB035C2"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Adjustments",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "FC5D2E42-A77D-4831-8FF3-0B9027B4D2F8"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Adjustment Allocations",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "38674633-2BF1-4EE4-BB81-02A25A36EF23"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Checkout Answers",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "7075AEA6-1EB0-40C4-A05D-ABCF45AB09C4"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines",
+      "RoleID": "@lookup:MJ: Roles.Name=Order Creator",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "6C99D03A-3998-4112-82C9-13DA429C62EE"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "1FC4D9EF-F15B-4977-9EA7-B7B9D6B01A10"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "79B18BED-09DE-403D-9120-BEAF95063F64"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Lists",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "33262BFF-B70F-454E-8BD6-26B10ABC7626"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotions",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "09BD4230-4F08-422D-83FF-DAD148158B0A"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "039391ED-DB6E-46F0-8748-89C3D30B251A"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Prices",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "979EA1DD-A5D7-46F6-9673-0B7796F3DB8D"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price Tiers",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "E253BDDE-418D-45B4-9FF2-EBF1E8D9C889"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Bundle Items",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "72FB3570-4E5F-495D-A651-5BB51D246CC9"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Entitlements",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "B5974BD1-18EC-4970-A0EB-C7DA872FD63E"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Price List Assignments",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "5F4383DD-0551-4424-B2F0-13EC70CB63C1"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotion Codes",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "583A5F0A-5D82-433D-A46C-ACD15456F351"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Promotion Targets",
+      "RoleID": "@lookup:MJ: Roles.Name=Orders Catalog Manager",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": true
+    },
+    "primaryKey": {
+      "ID": "4AA7D9C4-5C5A-4132-93BB-63C209623722"
+    }
   }
 ]
