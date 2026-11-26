@@ -9,7 +9,7 @@
  * "open" moves as observations post. POC-ness is decided the way booking decides it — the product's
  * revenue recognition type, else its product type's default — so this list and the ledger agree.
  */
-import { BaseRemotableOperation, RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { BaseRemotableOperation, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
     LoadOrdersEngine,
@@ -23,6 +23,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { EffectiveObservations, PROGRESS_SUPERSEDE_AUTH } from './ProgressSupersede.js';
+import { RunViewsBatch } from './run-views-batch.js';
 import { RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
@@ -132,12 +133,10 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
 
         const lineIDs = lineRows.map((l) => `'${RequireUUID(l.ID, 'ID')}'`).join(',');
         const orderIDs = [...new Set(lineRows.map((l) => `'${RequireUUID(l.OrderHeaderID, 'OrderHeaderID')}'`))].join(',');
-        const [orders, measurements] = await Promise.all([
-            rv.RunView<OrderShape>(
+        const [orders, measurements] = await RunViewsBatch(
+            provider as unknown as IRunViewProvider,
+            [
                 { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${orderIDs})`, Fields: ['ID', 'OrderNumber', 'Status', 'ConfirmedAt', 'BillToOrganization', 'BillToPerson'], ResultType: 'simple' },
-                user,
-            ),
-            rv.RunView<MeasurementShape>(
                 {
                     EntityName: ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
                     ExtraFilter: `OrderLineID IN (${lineIDs}) AND Status = 'Posted'`,
@@ -146,14 +145,14 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                     ResultType: 'simple',
                     BypassCache: true,
                 },
-                user,
-            ),
-        ]);
-        if (!orders.Success || !measurements.Success) {
-            return { Success: false, Message: `Could not read the orders or observations: ${orders.ErrorMessage ?? measurements.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
+            ],
+            user,
+        );
+        if (!orders?.Success || !measurements?.Success) {
+            return { Success: false, Message: `Could not read the orders or observations: ${orders?.ErrorMessage ?? measurements?.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
         }
 
-        const orderByID = new Map((orders.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
+        const orderByID = new Map(((orders.Results as OrderShape[] | undefined) ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
         // Observations arrive oldest first, so the last write per line wins. They are read for the
         // LAST one only: what is recognised to date comes off the line itself (D92), not from summing
         // these rows. The two agreed while progress was the only thing that recognised revenue on a
@@ -163,7 +162,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         // A SUPERSEDED observation is not "last" (golive #260): it was replaced, and its successor is
         // what the line now stands on. Its id is what a supersede from this screen would name.
         const byLine = new Map<string, MeasurementShape[]>();
-        for (const m of measurements.Results ?? []) {
+        for (const m of (measurements.Results as MeasurementShape[] | undefined) ?? []) {
             const key = String(m.OrderLineID).toLowerCase();
             byLine.set(key, [...(byLine.get(key) ?? []), m]);
         }

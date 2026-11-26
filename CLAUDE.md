@@ -50,6 +50,34 @@ The review test: *could a non-Angular host do this same work with the same objec
 logic belongs on the entity, its shared subclass, or a Remote Operation.
 
 
+## Performance & Caching Standard (5 Rules)
+
+Every engine, server operation, and Angular component in this repository MUST follow these five rules:
+
+1. **`BaseEngine` (`BaseSingleton` + `@RegisterForStartup`) for Bounded Reference & Catalog Metadata:**
+   - Lookup, taxonomy, policy, and catalog tables (`Payment Types`, `Payment Provider Types`, `Payment Providers`, `Payment Terms Types`, `Charge Types`, `Product Types`, `Subscription Types`, `Subscription Families`, `Revenue Recognition Types`, `Promotion Types`, `Order Company Policies`, `Price Lists`, `Price Tiers`, `Products`, `Product Prices`, `Product Categories`, `Product Bundle Items`, `Dimension Defaults`, `Event Products`) MUST be read from `OrdersEngine.Instance` after `LoadOrdersEngine(provider, user)` — NEVER re-queried via ad-hoc `RunView` per widget mount or per line.
+   - Keep `OrdersEngine` configs unfiltered with no `OrderBy` and `ResultType: 'entity_object'` (default), and do NOT override `AdditionalLoading`, so `BaseEngine` applies immediate in-place mutations on entity save/delete.
+
+2. **Multi-Provider & Impersonation Safety:**
+   - Override `ProviderToUse` on `BaseEngine` subclasses (`this._activeProvider ?? Metadata.Provider ?? super.ProviderToUse`) and update `_activeProvider` in `Config()` / `SetProvider()` so persona impersonation and multi-provider hosts immediately route through the active provider instead of `BaseEngine`'s first-wins `_provider` latch.
+   - Track `_loadedForUserId` and force a refresh when the client-side (`ProviderType.Network`) user changes; NEVER evict/reload on server-side (`ProviderType.Database`) `contextUser` changes because one server process serves all users. Provide `InvalidateCache()` and `IsConfiguredForUser()`.
+   - Set `CacheLocal: true` ONLY on global non-RLS reference metadata; set `CacheLocal: false` on any RLS-filtered entity to prevent cross-persona IndexedDB bleed.
+   - Gate optional cross-app or restricted-entity queries on `EntityInfo.GetUserPermisions(user)?.CanRead` (and rely on `BaseEngine.GetConfigData` throwing `PermissionConstrainedError` for engine properties).
+
+3. **Mandatory `rv.RunViews([...])` Single-Request Batching:**
+   - NEVER fire `Promise.all([rv.RunView(...), rv.RunView(...)])` or sequential independent `await rv.RunView(...)` calls when the queries do not depend on each other's output.
+   - Collapse independent reads into a single `rv.RunViews([...])` GraphQL / database batch using `RunView.FromMetadataProvider(this.ProviderToUse)` (or `LoadOverviewBatch` in Angular form panels / `RunViewsBatch` in `CoreEntitiesServer`).
+   - Use `ResultType: 'simple'` with narrow `Fields` (or `ResultType: 'count_only'`) whenever entity mutation is not needed; reserve `ResultType: 'entity_object'` for rows that will be mutated and saved.
+
+4. **`ConversationEngine`-Style Bounded Container Caching Only (No Arbitrary Filtered List Caches):**
+   - NEVER cache unbounded transactional tables (`Order Headers`, `Order Lines`, `Payment Headers`, `Payment Lines`, `Subscriptions`, `Subscription Terms`, `External Invoices`, `External Payments`) globally, and NEVER build a generic cache keyed by arbitrary `ExtraFilter` SQL strings.
+   - If a surface caches a bounded detail bundle (e.g., an open order's lines/charges/payments), key strictly by container ID with `BaseEntity` event invalidation, explicit `Invalidate*()` hooks, and persona-switch eviction.
+
+5. **RLS-Safe Two-Step Entity Reads:**
+   - NEVER write raw SQL subqueries against RLS-filtered base views (`vw*`) inside `ExtraFilter` — MJServer rejects SQL that reaches a row-filtered entity's base view directly.
+   - Instead, read the RLS-protected entity via a first-class `RunView` first to collect IDs, then query the target entity with `ID IN (...)` (chunked when large; short-circuited when empty).
+
+
 ## Database changes — INCREMENTAL MIGRATIONS ONLY
 
 **[`docs/database-migrations.md`](docs/database-migrations.md) is binding for this repo.**

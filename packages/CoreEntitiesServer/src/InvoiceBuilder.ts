@@ -18,7 +18,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
-import { RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { RunView, type IMetadataProvider, type IRunViewProvider, type RunViewParams, type UserInfo } from '@memberjunction/core';
 
 import {
     BuildAmountChangeCreditMemo,
@@ -39,6 +39,7 @@ import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHE
 import { RequireUUID } from './sql-guards.js';
 import { LoadOrdersEngine, OrdersEngine, ParseAddressSnapshot, ToISODate, type OrderAddressSnapshot } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
+import { RunViewsBatch } from './run-views-batch.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_CHARGE_ENTITY = 'MJ_BizApps_Orders: Order Charges';
@@ -87,6 +88,50 @@ async function view<T extends Row>(
     );
     if (!result.Success) return { rows: [], error: `${entityName}: ${result.ErrorMessage ?? 'unknown error'}` };
     return { rows: result.Results ?? [] };
+}
+
+interface ViewBatchSpec {
+    EntityName: string;
+    ExtraFilter: string;
+    OrderBy?: string;
+}
+
+/**
+ * Batch multiple independent view specs (some optionally skipped as `null`) into a single
+ * `RunViewsBatch` call, preserving positional output slots.
+ */
+async function viewBatch(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    specs: ReadonlyArray<ViewBatchSpec | null>,
+): Promise<Array<{ rows: Row[]; error?: string }>> {
+    const activeParams: RunViewParams[] = [];
+    const activeIndices: number[] = [];
+    for (let i = 0; i < specs.length; i++) {
+        const spec = specs[i];
+        if (!spec) continue;
+        activeIndices.push(i);
+        activeParams.push({
+            EntityName: spec.EntityName,
+            ExtraFilter: spec.ExtraFilter,
+            OrderBy: spec.OrderBy,
+            ResultType: 'simple',
+        });
+    }
+    const out: Array<{ rows: Row[]; error?: string }> = specs.map(() => ({ rows: [] }));
+    if (!activeParams.length) return out;
+    const results = await RunViewsBatch(provider as unknown as IRunViewProvider, activeParams, user);
+    for (let j = 0; j < activeIndices.length; j++) {
+        const idx = activeIndices[j];
+        const spec = specs[idx] as ViewBatchSpec;
+        const result = results[j];
+        if (!result?.Success) {
+            out[idx] = { rows: [], error: `${spec.EntityName}: ${result?.ErrorMessage ?? 'unknown error'}` };
+        } else {
+            out[idx] = { rows: (result.Results as Row[] | undefined) ?? [] };
+        }
+    }
+    return out;
 }
 
 const str = (v: unknown): string | null => {
@@ -169,35 +214,31 @@ export async function BuildInvoiceDocuments(
     const lineRows = lineResult.rows;
     const lineIDs = uuidList(lineRows.map((l) => String(l.ID)), 'OrderLineID');
 
-    // Everything below is fetched in parallel: none of it depends on any of the rest, and the
-    // sequential version of this function was four times the latency for no benefit.
-    const [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult, concessionResult] = await Promise.all([
-        view<Row>(provider, user, ORDER_CHARGE_ENTITY, `OrderHeaderID = '${id}'`, 'Sequence'),
-        view<Row>(provider, user, ORDER_ADJUSTMENT_ENTITY, `OrderHeaderID = '${id}'`, 'Sequence'),
-        view<Row>(provider, user, PAYMENT_LINE_ENTITY, `OrderHeaderID = '${id}'`),
-        (async () => {
-            const ids = uuidList(lineRows.map((l) => l.ProductID as string | null), 'ProductID');
-            return ids ? view<Row>(provider, user, PRODUCT_ENTITY, `ID IN (${ids})`) : { rows: [] as Row[] };
-        })(),
+    // Everything below is batched into a single RunViews call alongside OrdersEngine warmup:
+    // none of it depends on any of the rest.
+    const productIDs = uuidList(lineRows.map((l) => l.ProductID as string | null), 'ProductID');
+    const addressIDs = uuidList([order.BillToAddressID as string | null, order.ShipToAddressID as string | null], 'AddressID');
+    const [[chargeResult, adjustmentResult, paymentLineResult, productResult, addressResult, concessionResult]] = await Promise.all([
+        viewBatch(provider, user, [
+            { EntityName: ORDER_CHARGE_ENTITY, ExtraFilter: `OrderHeaderID = '${id}'`, OrderBy: 'Sequence' },
+            { EntityName: ORDER_ADJUSTMENT_ENTITY, ExtraFilter: `OrderHeaderID = '${id}'`, OrderBy: 'Sequence' },
+            { EntityName: PAYMENT_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${id}'` },
+            productIDs ? { EntityName: PRODUCT_ENTITY, ExtraFilter: `ID IN (${productIDs})` } : null,
+            addressIDs ? { EntityName: ADDRESS_ENTITY, ExtraFilter: `ID IN (${addressIDs})` } : null,
+            // Approved amount changes' credits (#684): what the order's balance already subtracts.
+            {
+                EntityName: ORDER_CONCESSION_ENTITY,
+                ExtraFilter: `OrderHeaderID = '${id}' AND Status = 'Approved' AND (ScheduleReduction > 0 OR CreditMemoAmount > 0)`,
+                OrderBy: 'DecidedAt',
+            },
+        ]),
         // Terms and charge types come from the lookup cache instead of two of the round trips this
         // batch used to make — they are seeded reference data, and an invoice render read both.
-        LoadOrdersEngine(provider, user).then(() => ({ rows: [] as Row[] })),
-        (async () => {
-            const ids = uuidList([order.BillToAddressID as string | null, order.ShipToAddressID as string | null], 'AddressID');
-            return ids ? view<Row>(provider, user, ADDRESS_ENTITY, `ID IN (${ids})`) : { rows: [] as Row[] };
-        })(),
-        // Approved amount changes' credits (#684): what the order's balance already subtracts.
-        view<Row>(
-            provider,
-            user,
-            ORDER_CONCESSION_ENTITY,
-            `OrderHeaderID = '${id}' AND Status = 'Approved' AND (ScheduleReduction > 0 OR CreditMemoAmount > 0)`,
-            'DecidedAt',
-        ),
+        LoadOrdersEngine(provider, user),
     ]);
 
-    const readError = [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult, concessionResult]
-        .map((r) => ('error' in r ? r.error : undefined))
+    const readError = [chargeResult, adjustmentResult, paymentLineResult, productResult, addressResult, concessionResult]
+        .map((r) => r.error)
         .find(Boolean);
     if (readError) return { Success: false, Message: `Could not assemble the invoice — ${readError}`, Documents: [] };
 
@@ -205,39 +246,31 @@ export async function BuildInvoiceDocuments(
     const adjustmentIDs = uuidList(adjustmentResult.rows.map((a) => String(a.ID)), 'OrderAdjustmentID');
     const paymentHeaderIDs = uuidList(paymentLineResult.rows.map((p) => p.PaymentHeaderID as string | null), 'PaymentHeaderID');
     const companyIDs = uuidList([...lineRows.map((l) => l.CompanyID as string), order.CompanyID as string], 'CompanyID');
+    const companyEntityID = provider.Entities?.find((e) => e.Name === COMPANY_ENTITY)?.ID;
 
-    const [chargeAllocResult, adjustmentAllocResult, chargeTypeResult, paymentHeaderResult, companyResult, profileResult, companyAddressResult] = await Promise.all([
-        chargeIDs && lineIDs
-            ? view<Row>(provider, user, ORDER_CHARGE_ALLOCATION_ENTITY, `OrderChargeID IN (${chargeIDs})`)
-            : Promise.resolve({ rows: [] as Row[] }),
-        adjustmentIDs
-            ? view<Row>(provider, user, ORDER_ADJUSTMENT_ALLOCATION_ENTITY, `OrderAdjustmentID IN (${adjustmentIDs})`)
-            : Promise.resolve({ rows: [] as Row[] }),
-        Promise.resolve({ rows: [] as Row[] }), // charge types come from the lookup cache
-        paymentHeaderIDs
-            ? view<Row>(provider, user, PAYMENT_HEADER_ENTITY, `ID IN (${paymentHeaderIDs})`)
-            : Promise.resolve({ rows: [] as Row[] }),
-        companyIDs ? view<Row>(provider, user, COMPANY_ENTITY, `ID IN (${companyIDs})`) : Promise.resolve({ rows: [] as Row[] }),
-        // IS-A: the profile shares the company's ID, so this is a lookup and not a join. A company
-        // with no accounting profile still issues an invoice — it just has no tax line to print.
-        companyIDs
-            ? view<Row>(provider, user, ACCOUNTING_COMPANY_PROFILE_ENTITY, `ID IN (${companyIDs})`)
-            : Promise.resolve({ rows: [] as Row[] }),
-        (async () => {
-            const companyEntityID = provider.Entities?.find((e) => e.Name === COMPANY_ENTITY)?.ID;
-            if (!companyEntityID || !companyIDs) return { rows: [] as Row[] };
-            return view<Row>(
-                provider,
-                user,
-                ADDRESS_LINK_ENTITY,
-                `EntityID = '${RequireUUID(companyEntityID, 'Company entity ID')}' AND RecordID IN (${companyIDs})`,
-                'IsPrimary DESC, Rank',
-            );
-        })(),
-    ]);
+    const [chargeAllocResult, adjustmentAllocResult, paymentHeaderResult, companyResult, profileResult, companyAddressResult] = await viewBatch(
+        provider,
+        user,
+        [
+            chargeIDs && lineIDs ? { EntityName: ORDER_CHARGE_ALLOCATION_ENTITY, ExtraFilter: `OrderChargeID IN (${chargeIDs})` } : null,
+            adjustmentIDs ? { EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY, ExtraFilter: `OrderAdjustmentID IN (${adjustmentIDs})` } : null,
+            paymentHeaderIDs ? { EntityName: PAYMENT_HEADER_ENTITY, ExtraFilter: `ID IN (${paymentHeaderIDs})` } : null,
+            companyIDs ? { EntityName: COMPANY_ENTITY, ExtraFilter: `ID IN (${companyIDs})` } : null,
+            // IS-A: the profile shares the company's ID, so this is a lookup and not a join. A company
+            // with no accounting profile still issues an invoice — it just has no tax line to print.
+            companyIDs ? { EntityName: ACCOUNTING_COMPANY_PROFILE_ENTITY, ExtraFilter: `ID IN (${companyIDs})` } : null,
+            companyEntityID && companyIDs
+                ? {
+                      EntityName: ADDRESS_LINK_ENTITY,
+                      ExtraFilter: `EntityID = '${RequireUUID(companyEntityID, 'Company entity ID')}' AND RecordID IN (${companyIDs})`,
+                      OrderBy: 'IsPrimary DESC, Rank',
+                  }
+                : null,
+        ],
+    );
 
-    const secondError = [chargeAllocResult, adjustmentAllocResult, chargeTypeResult, paymentHeaderResult, companyResult, profileResult, companyAddressResult]
-        .map((r) => ('error' in r ? r.error : undefined))
+    const secondError = [chargeAllocResult, adjustmentAllocResult, paymentHeaderResult, companyResult, profileResult, companyAddressResult]
+        .map((r) => r.error)
         .find(Boolean);
     if (secondError) return { Success: false, Message: `Could not assemble the invoice — ${secondError}`, Documents: [] };
 
@@ -522,14 +555,15 @@ export async function BuildCreditMemoDocuments(
     if (!orderDocs.Success || !orderDocs.Documents.length) return orderDocs;
     const orderDocument = orderDocs.Documents[0];
 
-    const [events, terms] = await Promise.all([
-        view<Row>(
-            provider,
-            user,
-            SUBSCRIPTION_EVENT_ENTITY,
-            `EventType = 'AmountChanged' AND RelatedOrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
-        ),
-        view<Row>(provider, user, SUBSCRIPTION_TERM_ENTITY, `ID = '${RequireUUID(String(concession.SubscriptionTermID), 'SubscriptionTermID')}'`),
+    const [events, terms] = await viewBatch(provider, user, [
+        {
+            EntityName: SUBSCRIPTION_EVENT_ENTITY,
+            ExtraFilter: `EventType = 'AmountChanged' AND RelatedOrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+        },
+        {
+            EntityName: SUBSCRIPTION_TERM_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(String(concession.SubscriptionTermID), 'SubscriptionTermID')}'`,
+        },
     ]);
     const readError = events.error ?? terms.error;
     if (readError) return { Success: false, Message: `Could not read the amount change — ${readError}`, Documents: [] };

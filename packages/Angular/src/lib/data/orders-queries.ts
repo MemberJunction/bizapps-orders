@@ -564,39 +564,84 @@ async function requireEntities<T>(entityName: string, filters: string[], orderBy
 }
 
 /**
+ * Batch dashboard orders + unpaid instalments in a single `rv.RunViews([...])` GraphQL request.
+ */
+export async function GetDashboardOrdersAndInstalments(
+    user?: UserInfo,
+): Promise<{ Orders: MJODashboardOrderRow[]; Instalments: MJOOpenInstalmentRow[] }> {
+    const rv = new RunView();
+    const effectiveUser = user ?? currentUser();
+    const [ordersRes, instalmentsRes] = await rv.RunViews(
+        [
+            {
+                EntityName: MJO_ENTITIES.OrderHeader,
+                ExtraFilter: `Status <> 'Voided'`,
+                OrderBy: 'OrderDate DESC',
+                IgnoreMaxRows: true,
+                Fields: DASHBOARD_ORDER_FIELDS,
+                ResultType: 'simple',
+            },
+            {
+                EntityName: MJO_ENTITIES.OrderHeaderPaymentSchedule,
+                ExtraFilter: UnpaidInstalmentClauses().filter(Boolean).join(' AND '),
+                OrderBy: 'DueDate',
+                IgnoreMaxRows: true,
+                Fields: ['OrderHeaderID', 'DueDate', 'Balance'],
+                ResultType: 'simple',
+            },
+        ],
+        effectiveUser,
+    );
+    if (!ordersRes?.Success) {
+        console.error(
+            `[orders-queries] Aggregate read failed for "${MJO_ENTITIES.OrderHeader}" — ${ordersRes?.ErrorMessage ?? 'no error message supplied'}`,
+        );
+    }
+    if (!instalmentsRes?.Success) {
+        console.error(
+            `[orders-queries] Aggregate read failed for "${MJO_ENTITIES.OrderHeaderPaymentSchedule}" — ${instalmentsRes?.ErrorMessage ?? 'no error message supplied'}`,
+        );
+    }
+    return {
+        Orders: ordersRes?.Success ? ((ordersRes.Results as MJODashboardOrderRow[] | undefined) ?? []) : [],
+        Instalments: instalmentsRes?.Success ? ((instalmentsRes.Results as MJOOpenInstalmentRow[] | undefined) ?? []) : [],
+    };
+}
+
+/**
  * The invoicing service each company sends its invoices through, by company id (lower case): the
  * provider type's name, for example "Bill.com". A company with no active one is absent.
  *
- * For wording only ("this sends the invoice through …"). A failure returns an empty map: the order
- * bills the same way whether or not the screen can name the service.
+ * Read synchronously from `OrdersEngine` (0 extra HTTP round trips). For wording only ("this sends
+ * the invoice through …"). A failure returns an empty map: the order bills the same way whether or
+ * not the screen can name the service.
  */
 export async function GetInvoiceServiceByCompany(user?: UserInfo): Promise<Map<string, string>> {
     const services = new Map<string, string>();
     try {
-        const codes = INVOICE_SERVICE_TYPE_CODES.map((code) => `'${code}'`).join(',');
-        const types = await runRows<{ ID: string; Name: string }>(PAYMENT_PROVIDER_TYPE_ENTITY, [`Code IN (${codes})`], 'Name', 0, user, ['ID', 'Name']);
-        const typeIDs = uuidList(types.map((t) => t.ID));
-        if (!typeIDs) return services;
-        const nameOf = new Map(types.map((t) => [String(t.ID).toLowerCase(), t.Name]));
-        const providers = await runRows<{ CompanyID: string; PaymentProviderTypeID: string }>(
-            MJO_ENTITIES.PaymentProvider,
-            ['IsActive = 1', `PaymentProviderTypeID IN (${typeIDs})`],
-            'Name',
-            0,
-            user,
-            ['CompanyID', 'PaymentProviderTypeID'],
-        );
-        for (const p of providers) {
+        const md = new Metadata();
+        await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+        const engine = OrdersEngine.Instance;
+        const nameOf = new Map<string, string>();
+        for (const code of INVOICE_SERVICE_TYPE_CODES) {
+            const typeRow = engine.PaymentProviderTypeByCode(code);
+            if (typeRow?.ID && typeRow.Name) {
+                nameOf.set(typeRow.ID.toLowerCase(), typeRow.Name);
+            }
+        }
+        if (!nameOf.size) return services;
+        const activeProviders = engine.PaymentProviders
+            .filter((p) => p.IsActive && p.PaymentProviderTypeID && nameOf.has(p.PaymentProviderTypeID.toLowerCase()))
+            .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
+        for (const p of activeProviders) {
             const name = nameOf.get(String(p.PaymentProviderTypeID).toLowerCase());
-            if (name) services.set(String(p.CompanyID ?? '').toLowerCase(), name);
+            if (name && p.CompanyID) services.set(p.CompanyID.toLowerCase(), name);
         }
     } catch {
         /* wording only */
     }
     return services;
 }
-
-const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 
 /** Provider type codes that send invoices to the customer. The Billing worklist keeps the same list. */
 const INVOICE_SERVICE_TYPE_CODES = ['BillCom'];
@@ -662,6 +707,48 @@ export async function GetOpenInstalmentDetails(user?: UserInfo): Promise<MJOOpen
         user,
         ['ID', 'OrderHeaderID', 'InstallmentNumber', 'DueDate', 'Amount', 'AmountPaid', 'Balance', 'Status', 'DocumentNumber', 'InvoicedAt'],
     );
+}
+
+/**
+ * Batch Customer A/R receivable orders + unpaid instalment details in a single `rv.RunViews([...])`
+ * request. Throws on failure of either read so the page preserves its last known totals.
+ */
+export async function GetReceivableOrdersAndInstalments(
+    user?: UserInfo,
+): Promise<{ Orders: MJOReceivableOrderRow[]; Instalments: MJOOpenInstalmentDetailRow[] }> {
+    const rv = new RunView();
+    const effectiveUser = user ?? currentUser();
+    const [ordersRes, instalmentsRes] = await rv.RunViews(
+        [
+            {
+                EntityName: MJO_ENTITIES.OrderHeader,
+                ExtraFilter: `Status NOT IN ('Draft','Quoted','Voided') AND Balance <> 0`,
+                OrderBy: 'OrderDate DESC',
+                IgnoreMaxRows: true,
+                Fields: ['ID', 'OrderNumber', 'Status', 'OrderDate', 'DueDate', 'TotalGross', 'AmountPaid', 'Balance', 'CompanyID', 'Company', 'BillToOrganizationID', 'BillToOrganization', 'BillToPersonID', 'BillToPerson'],
+                ResultType: 'simple',
+            },
+            {
+                EntityName: MJO_ENTITIES.OrderHeaderPaymentSchedule,
+                ExtraFilter: UnpaidInstalmentClauses().filter(Boolean).join(' AND '),
+                OrderBy: 'DueDate, InstallmentNumber',
+                IgnoreMaxRows: true,
+                Fields: ['ID', 'OrderHeaderID', 'InstallmentNumber', 'DueDate', 'Amount', 'AmountPaid', 'Balance', 'Status', 'DocumentNumber', 'InvoicedAt'],
+                ResultType: 'simple',
+            },
+        ],
+        effectiveUser,
+    );
+    if (!ordersRes?.Success) {
+        throw new Error(ordersRes?.ErrorMessage || `"${MJO_ENTITIES.OrderHeader}" could not be read.`);
+    }
+    if (!instalmentsRes?.Success) {
+        throw new Error(instalmentsRes?.ErrorMessage || `"${MJO_ENTITIES.OrderHeaderPaymentSchedule}" could not be read.`);
+    }
+    return {
+        Orders: (ordersRes.Results as MJOReceivableOrderRow[] | undefined) ?? [],
+        Instalments: (instalmentsRes.Results as MJOOpenInstalmentDetailRow[] | undefined) ?? [],
+    };
 }
 
 /** Lines belonging to one order. */
@@ -1808,22 +1895,29 @@ export async function GetDimensionOptions(
     asOf: Date,
     user?: UserInfo,
 ): Promise<MJODimensionOption[]> {
-    const [dimensions, values] = await Promise.all([
-        run<mjBizAppsAccountingDimensionEntity>(
-            MJO_ACCOUNTING_ENTITIES.Dimension,
-            ['IsActive = 1'],
-            'DisplayOrder ASC, Name ASC',
-            undefined,
-            user,
-        ),
-        run<mjBizAppsAccountingDimensionValueEntity>(
-            MJO_ACCOUNTING_ENTITIES.DimensionValue,
-            ['IsActive = 1'],
-            'Code ASC',
-            2000,
-            user,
-        ),
-    ]);
+    const rv = new RunView();
+    const effectiveUser = user ?? currentUser();
+    const [dimensionsRes, valuesRes] = await rv.RunViews(
+        [
+            {
+                EntityName: MJO_ACCOUNTING_ENTITIES.Dimension,
+                ExtraFilter: 'IsActive = 1',
+                OrderBy: 'DisplayOrder ASC, Name ASC',
+                MaxRows: 500,
+                ResultType: 'entity_object',
+            },
+            {
+                EntityName: MJO_ACCOUNTING_ENTITIES.DimensionValue,
+                ExtraFilter: 'IsActive = 1',
+                OrderBy: 'Code ASC',
+                MaxRows: 2000,
+                ResultType: 'entity_object',
+            },
+        ],
+        effectiveUser,
+    );
+    const dimensions = dimensionsRes?.Success ? ((dimensionsRes.Results as mjBizAppsAccountingDimensionEntity[] | undefined) ?? []) : [];
+    const values = valuesRes?.Success ? ((valuesRes.Results as mjBizAppsAccountingDimensionValueEntity[] | undefined) ?? []) : [];
 
     const byDimension = new Map<string, Array<{ ID: string; Code: string; Name: string }>>();
     for (const value of values) {
@@ -1895,25 +1989,25 @@ export async function GetCompanyDimensionValueIDs(companyID: string, user?: User
     const company = uuidList([companyID]);
     if (!company) return new Set();
 
-    const [defaults, products, categories] = await Promise.all([
-        runRows<MJODimensionDefaultScopeRow>(
-            MJO_ENTITIES.DimensionDefault,
-            [`Status = 'Active'`],
-            'Entity',
-            5000,
-            user,
-            ['Entity', 'RecordID', 'DimensionValueID'],
-        ),
-        runRows<{ ID: string }>(MJO_ENTITIES.Product, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
-        runRows<{ ID: string }>(MJO_ENTITIES.ProductCategory, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
-    ]);
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    const engine = OrdersEngine.Instance;
+    const companyKey = companyID.toLowerCase();
+    const defaults: MJODimensionDefaultScopeRow[] = engine.DimensionDefaults
+        .filter((d) => d.Status === 'Active')
+        .map((d) => ({
+            Entity: d.Entity ?? '',
+            RecordID: d.RecordID,
+            DimensionValueID: d.DimensionValueID,
+        }));
+    const productIDs = engine.Products
+        .filter((p) => (p.CompanyID ?? '').toLowerCase() === companyKey)
+        .map((p) => p.ID);
+    const categoryIDs = engine.ProductCategories
+        .filter((c) => (c.CompanyID ?? '').toLowerCase() === companyKey)
+        .map((c) => c.ID);
 
-    return CompanyDimensionValueIDs(
-        defaults,
-        companyID,
-        products.map((p) => p.ID),
-        categories.map((c) => c.ID),
-    );
+    return CompanyDimensionValueIDs(defaults, companyID, productIDs, categoryIDs);
 }
 
 /** Dimension tags on an order's lines — the analysis axes a line was filed under. */
@@ -2058,13 +2152,70 @@ export interface MJOTenderOption {
  * one, and offering it here would let someone record a reversal with nothing to reverse.
  */
 export async function GetPaymentTypes(user?: UserInfo): Promise<mjBizAppsOrdersPaymentTypeEntity[]> {
-    return run<mjBizAppsOrdersPaymentTypeEntity>(
-        MJO_ENTITIES.PaymentType,
-        [`IsActive = 1`, `IsReversal = 0`],
-        'Sequence',
-        undefined,
-        user,
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return OrdersEngine.Instance.PaymentTypes
+        .filter((t) => t.IsActive && !t.IsReversal)
+        .sort((a, b) => Number(a.Sequence ?? 0) - Number(b.Sequence ?? 0));
+}
+
+/**
+ * Batch a customer's recent payments and subscriptions in a single `rv.RunViews([...])` request.
+ * Throws on failure of either read (same contract as `GetPaymentsForCustomer` / `GetSubscriptionsForCustomer`).
+ */
+export async function GetCustomerPaymentsAndSubscriptions(
+    customer: { OrganizationID?: string | null; PersonID?: string | null },
+    user?: UserInfo,
+): Promise<{
+    Payments: mjBizAppsOrdersPaymentHeaderEntity[];
+    Subscriptions: mjBizAppsOrdersSubscriptionEntity[];
+}> {
+    const paymentFilters: string[] = [];
+    const subClauses: string[] = [];
+    if (customer.OrganizationID && UUID_PATTERN.test(customer.OrganizationID)) {
+        paymentFilters.push(`BillToOrganizationID = '${customer.OrganizationID}'`);
+        subClauses.push(`HolderOrganizationID = '${customer.OrganizationID}'`);
+    }
+    if (customer.PersonID && UUID_PATTERN.test(customer.PersonID)) {
+        if (!paymentFilters.length) {
+            paymentFilters.push(`BillToPersonID = '${customer.PersonID}'`);
+        }
+        subClauses.push(`BeneficiaryPersonID = '${customer.PersonID}'`);
+    }
+    if (!paymentFilters.length || !subClauses.length) {
+        return { Payments: [], Subscriptions: [] };
+    }
+    const rv = new RunView();
+    const effectiveUser = user ?? currentUser();
+    const [paymentsRes, subsRes] = await rv.RunViews(
+        [
+            {
+                EntityName: MJO_ENTITIES.PaymentHeader,
+                ExtraFilter: paymentFilters.join(' AND '),
+                OrderBy: 'PaymentDate DESC',
+                MaxRows: 50,
+                ResultType: 'entity_object',
+            },
+            {
+                EntityName: MJO_ENTITIES.Subscription,
+                ExtraFilter: `(${subClauses.join(' OR ')})`,
+                OrderBy: 'EndDate DESC',
+                MaxRows: 50,
+                ResultType: 'entity_object',
+            },
+        ],
+        effectiveUser,
     );
+    if (!paymentsRes?.Success) {
+        throw new Error(paymentsRes?.ErrorMessage || `"${MJO_ENTITIES.PaymentHeader}" could not be read.`);
+    }
+    if (!subsRes?.Success) {
+        throw new Error(subsRes?.ErrorMessage || `"${MJO_ENTITIES.Subscription}" could not be read.`);
+    }
+    return {
+        Payments: (paymentsRes.Results as mjBizAppsOrdersPaymentHeaderEntity[] | undefined) ?? [],
+        Subscriptions: (subsRes.Results as mjBizAppsOrdersSubscriptionEntity[] | undefined) ?? [],
+    };
 }
 
 /* ── Subscriptions ───────────────────────────────────────────────────────────── */
@@ -2331,17 +2482,9 @@ export async function GetSubscriptionTypeRenewalLeadDays(
     user?: UserInfo,
 ): Promise<number | null> {
     if (!UUID_PATTERN.test(subscriptionTypeID)) return null;
-    const result = await new RunView().RunView<{ RenewalLeadDays: number | null }>(
-        {
-            EntityName: MJO_ENTITIES.SubscriptionType,
-            ExtraFilter: `ID = '${subscriptionTypeID}'`,
-            Fields: ['ID', 'RenewalLeadDays'],
-            ResultType: 'simple',
-            MaxRows: 1,
-        },
-        user ?? currentUser(),
-    );
-    return result.Success ? (result.Results?.[0]?.RenewalLeadDays ?? null) : null;
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return OrdersEngine.Instance.SubscriptionTypeByID(subscriptionTypeID)?.RenewalLeadDays ?? null;
 }
 
 function FilterRecognitionEntries(
@@ -2656,25 +2799,20 @@ export async function GetCatalogOptions(user?: UserInfo, includeNotSellableNew =
 }
 
 /**
- * Which bundles contain a subscription product. One read of the bundle items for the whole catalog.
- * A failed read leaves every bundle without the term-start field, which is what the editor showed
- * before; confirm still dates the components from their own types.
+ * Which bundles contain a subscription product, derived synchronously from `OrdersEngine`
+ * (`ProductBundleItems` + `ResolveSubscriptionTypeID`).
  */
 async function getBundlesWithSubscription(user?: UserInfo): Promise<Set<string>> {
-    const result = await new RunView().RunView<MJOBundleItemRow>(
-        {
-            EntityName: MJO_ENTITIES.ProductBundleItem,
-            Fields: ['BundleProductID', 'ComponentProductID'],
-            ResultType: 'simple',
-        },
-        user ?? currentUser(),
-    );
-    if (!result.Success) {
-        console.warn(`Could not read bundle items: ${result.ErrorMessage ?? 'unknown error'}`);
-        return new Set();
-    }
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
     const engine = OrdersEngine.Instance;
-    return BundlesWithSubscription(result.Results ?? [], (id) => !!engine.ResolveSubscriptionTypeID(id));
+    return BundlesWithSubscription(
+        (engine.ProductBundleItems ?? []).map((item) => ({
+            BundleProductID: item.BundleProductID,
+            ComponentProductID: item.ComponentProductID,
+        })),
+        (id) => !!engine.ResolveSubscriptionTypeID(id),
+    );
 }
 
 /** Promotions, newest window first. */
@@ -2693,7 +2831,11 @@ export async function GetPromotions(user?: UserInfo): Promise<mjBizAppsOrdersPro
 
 /** Categories, which supply a product's defaults when it states none. */
 export async function GetProductCategories(user?: UserInfo): Promise<mjBizAppsOrdersProductCategoryEntity[]> {
-    return run<mjBizAppsOrdersProductCategoryEntity>(MJO_ENTITIES.ProductCategory, [`IsActive = 1`], 'Name', undefined, user);
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return OrdersEngine.Instance.ProductCategories
+        .filter((c) => c.IsActive)
+        .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
 }
 
 /**
@@ -2712,7 +2854,11 @@ export async function GetProductTypes(user?: UserInfo): Promise<mjBizAppsOrdersP
 
 /** Price lists — the named sets a customer can be assigned to. */
 export async function GetPriceLists(user?: UserInfo): Promise<mjBizAppsOrdersPriceListEntity[]> {
-    return run<mjBizAppsOrdersPriceListEntity>(MJO_ENTITIES.PriceList, [], 'Name', undefined, user);
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return [...OrdersEngine.Instance.PriceLists].sort((a, b) =>
+        (a.Name ?? '').localeCompare(b.Name ?? ''),
+    );
 }
 
 /**
@@ -2722,19 +2868,19 @@ export async function GetPriceLists(user?: UserInfo): Promise<mjBizAppsOrdersPri
  * lists, which is the point of having price lists.
  */
 export async function GetPriceTiers(user?: UserInfo): Promise<mjBizAppsOrdersPriceTierEntity[]> {
-    return run<mjBizAppsOrdersPriceTierEntity>(MJO_ENTITIES.PriceTier, [], 'SortOrder', undefined, user);
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return [...OrdersEngine.Instance.PriceTiers].sort((a, b) =>
+        Number(a.SortOrder ?? 0) - Number(b.SortOrder ?? 0),
+    );
 }
 
 /** Charge types, in the sequence they compute. */
 export async function GetChargeTypes(user?: UserInfo): Promise<mjBizAppsOrdersChargeTypeEntity[]> {
-    return run<mjBizAppsOrdersChargeTypeEntity>(
-        MJO_ENTITIES.ChargeType,
-        [],
-        // Sequence, not name: the ORDER is the behaviour — non-tax charges run first and enlarge the
-        // taxable base, tax charges run after.
-        'Sequence',
-        undefined,
-        user,
+    const md = new Metadata();
+    await LoadOrdersEngine(Metadata.Provider, user ?? md.CurrentUser);
+    return [...OrdersEngine.Instance.ChargeTypes].sort((a, b) =>
+        Number(a.Sequence ?? 0) - Number(b.Sequence ?? 0),
     );
 }
 
@@ -2787,34 +2933,101 @@ export async function GetTaxNexus(user?: UserInfo): Promise<Array<Record<string,
  * generated types are not a dependency of this package. The shape that leaves here is
  * `MJOCustomerOption`, which is what the picker actually renders.
  */
+/**
+ * Batch tax jurisdictions, rates, nexus, and exemptions into a single `rv.RunViews([...])` call.
+ */
+export async function GetTaxOverviewData(user?: UserInfo): Promise<{
+    Jurisdictions: Array<Record<string, unknown>>;
+    Rates: Array<Record<string, unknown>>;
+    Nexus: Array<Record<string, unknown>>;
+    Exemptions: mjBizAppsOrdersCustomerTaxExemptionEntity[];
+}> {
+    const rv = new RunView();
+    const effectiveUser = user ?? currentUser();
+    const [jurisdictionsRes, ratesRes, nexusRes, exemptionsRes] = await rv.RunViews(
+        [
+            {
+                EntityName: MJO_ACCOUNTING_ENTITIES.TaxJurisdiction,
+                ExtraFilter: 'IsActive = 1',
+                OrderBy: 'Name',
+                MaxRows: 500,
+                ResultType: 'simple',
+            },
+            {
+                EntityName: MJO_ACCOUNTING_ENTITIES.TaxRate,
+                ExtraFilter: '',
+                OrderBy: 'EffectiveFrom DESC',
+                MaxRows: 500,
+                ResultType: 'simple',
+            },
+            {
+                EntityName: MJO_ACCOUNTING_ENTITIES.CompanyTaxNexus,
+                ExtraFilter: '',
+                OrderBy: 'RegisteredFrom DESC',
+                MaxRows: 500,
+                ResultType: 'simple',
+            },
+            {
+                EntityName: MJO_ENTITIES.TaxExemption,
+                ExtraFilter: '',
+                OrderBy: 'StartedAt DESC',
+                MaxRows: 500,
+                ResultType: 'entity_object',
+            },
+        ],
+        effectiveUser,
+    );
+    return {
+        Jurisdictions: jurisdictionsRes?.Success ? ((jurisdictionsRes.Results as Array<Record<string, unknown>> | undefined) ?? []) : [],
+        Rates: ratesRes?.Success ? ((ratesRes.Results as Array<Record<string, unknown>> | undefined) ?? []) : [],
+        Nexus: nexusRes?.Success ? ((nexusRes.Results as Array<Record<string, unknown>> | undefined) ?? []) : [],
+        Exemptions: exemptionsRes?.Success ? ((exemptionsRes.Results as mjBizAppsOrdersCustomerTaxExemptionEntity[] | undefined) ?? []) : [],
+    };
+}
+
 export async function SearchCustomers(query: string, user?: UserInfo): Promise<MJOCustomerOption[]> {
     const text = query.trim();
     if (text.length < 2) return [];
     const escaped = likeText(text);
 
-    const [orgs, people] = await Promise.all([
-        run<Record<string, unknown>>(MJO_COMMON_ENTITIES.Organization, [`Name LIKE '%${escaped}%'`], 'Name', 20, user),
-        run<Record<string, unknown>>(
-            MJO_COMMON_ENTITIES.Person,
-            [`(FirstName LIKE '%${escaped}%' OR LastName LIKE '%${escaped}%' OR Email LIKE '%${escaped}%')`],
-            'LastName',
-            20,
-            user,
-        ),
-    ]);
+    const rv = new RunView();
+    const effectiveUser = user ?? currentUser();
+    const [orgsRes, peopleRes] = await rv.RunViews(
+        [
+            {
+                EntityName: MJO_COMMON_ENTITIES.Organization,
+                ExtraFilter: `Name LIKE '%${escaped}%'`,
+                OrderBy: 'Name',
+                MaxRows: 20,
+                Fields: ['ID', 'Name', 'Email'],
+                ResultType: 'simple',
+            },
+            {
+                EntityName: MJO_COMMON_ENTITIES.Person,
+                ExtraFilter: `(FirstName LIKE '%${escaped}%' OR LastName LIKE '%${escaped}%' OR Email LIKE '%${escaped}%')`,
+                OrderBy: 'LastName',
+                MaxRows: 20,
+                Fields: ['ID', 'FirstName', 'LastName', 'Email'],
+                ResultType: 'simple',
+            },
+        ],
+        effectiveUser,
+    );
+    const orgs = orgsRes?.Success ? ((orgsRes.Results as Array<{ ID: string; Name?: string | null; Email?: string | null }> | undefined) ?? []) : [];
+    const people = peopleRes?.Success ? ((peopleRes.Results as Array<{ ID: string; FirstName?: string | null; LastName?: string | null; Email?: string | null }> | undefined) ?? []) : [];
 
     return [
         ...orgs.map((o) => ({
-            ID: String(o['ID']),
-            Name: String(o['Name'] ?? ''),
+            ID: String(o.ID),
+            Name: String(o.Name ?? ''),
             IsOrganization: true,
-            Email: (o['Email'] as string) ?? null,
+            Email: o.Email ?? null,
         })),
         ...people.map((p) => ({
-            ID: String(p['ID']),
-            Name: [p['FirstName'], p['LastName']].filter(Boolean).join(' ').trim() || String(p['Email'] ?? ''),
+            ID: String(p.ID),
+            Name: [p.FirstName, p.LastName].filter(Boolean).join(' ').trim() || String(p.Email ?? ''),
             IsOrganization: false,
-            Email: (p['Email'] as string) ?? null,
+            Email: p.Email ?? null,
         })),
     ];
 }

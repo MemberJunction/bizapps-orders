@@ -475,6 +475,25 @@ export class DefaultPriceResolver extends BasePriceResolver {
     ): Promise<Map<string, PriceTierRule[]>> {
         const out = new Map<string, PriceTierRule[]>();
         if (!priceIDs.length) return out;
+        if (await OrdersEngineReady(provider, user)) {
+            for (const priceId of priceIDs) {
+                const key = uuidKey(priceId);
+                if (!key || out.has(key)) continue;
+                const tiers = OrdersEngine.Instance.PriceTiersForPrice(priceId);
+                if (tiers.length) {
+                    out.set(
+                        key,
+                        tiers.map((t) => ({
+                            MinQuantity: Number(t.MinQuantity),
+                            MaxQuantity: t.MaxQuantity == null ? null : Number(t.MaxQuantity),
+                            Amount: Number(t.Amount),
+                            SortOrder: t.SortOrder,
+                        })),
+                    );
+                }
+            }
+            return out;
+        }
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const quoted = priceIDs.map((id) => `'${id}'`).join(',');
         const res = await rv.RunView<TierRow>(
@@ -582,16 +601,32 @@ export async function ResolvePriceListsForCustomer(
         return (b.PersonID ? 1 : 0) - (a.PersonID ? 1 : 0);
     });
 
-    const listRes = await rv.RunView<{ ID: string; EffectiveFrom: Date | null; EffectiveTo: Date | null; Status: string }>(
-        {
-            EntityName: PRICE_LIST_ENTITY,
-            ExtraFilter: `ID IN (${live.map((a) => `'${a.PriceListID}'`).join(',')})`,
-            ResultType: 'simple',
-            BypassCache: true,
-        },
-        user,
-    );
-    const usable = new Map((listRes?.Results ?? []).map((l) => [uuidKey(l.ID), l]));
+    let usable: Map<string, { ID: string; EffectiveFrom: Date | null; EffectiveTo: Date | null; Status: string }>;
+    if (await OrdersEngineReady(provider, user)) {
+        usable = new Map();
+        for (const a of live) {
+            const list = OrdersEngine.Instance.PriceListByID(a.PriceListID);
+            if (list) {
+                usable.set(uuidKey(list.ID), {
+                    ID: list.ID,
+                    EffectiveFrom: list.EffectiveFrom,
+                    EffectiveTo: list.EffectiveTo,
+                    Status: list.Status,
+                });
+            }
+        }
+    } else {
+        const listRes = await rv.RunView<{ ID: string; EffectiveFrom: Date | null; EffectiveTo: Date | null; Status: string }>(
+            {
+                EntityName: PRICE_LIST_ENTITY,
+                ExtraFilter: `ID IN (${live.map((a) => `'${a.PriceListID}'`).join(',')})`,
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        usable = new Map((listRes?.Results ?? []).map((l) => [uuidKey(l.ID), l]));
+    }
     const ids: string[] = [];
     const seen = new Set<string>();
     for (const a of live) {

@@ -17,7 +17,7 @@ import { FormatMoney } from '../panels/money-format';
 import { LoadProductLookupNames } from '../panels/product-lookup-names';
 import { FormatShortInstantDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
-import { CountOverviewRows, LoadOverviewRows } from './overview-load';
+import { LoadOverviewBatch, LoadOverviewRows, OverviewCountSpec, OverviewRowsSpec } from './overview-load';
 
 const OVERVIEW_META = {
     slot: 'after-fields' as const,
@@ -110,15 +110,15 @@ export class ProductCategoryOverviewPanel extends BaseFormPanel<mjBizAppsOrdersP
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [products, children, promos] = await Promise.all([
-            LoadOverviewRows<{ Name: string; ProductType: string; Status: string }>(
-                p, MJO_ENTITIES.Product, `ProductCategoryID='${this.Record.ID}'`, ['Name', 'ProductType', 'Status'],
+        const [products, children, promos] = await LoadOverviewBatch(p, [
+            OverviewRowsSpec<{ Name: string; ProductType: string; Status: string }>(
+                MJO_ENTITIES.Product, `ProductCategoryID='${this.Record.ID}'`, ['Name', 'ProductType', 'Status'],
             ),
-            LoadOverviewRows<{ Name: string; Code: string | null; IsActive: boolean }>(
-                p, MJO_ENTITIES.ProductCategory, `ParentProductCategoryID='${this.Record.ID}'`, ['Name', 'Code', 'IsActive'],
+            OverviewRowsSpec<{ Name: string; Code: string | null; IsActive: boolean }>(
+                MJO_ENTITIES.ProductCategory, `ParentProductCategoryID='${this.Record.ID}'`, ['Name', 'Code', 'IsActive'],
             ),
-            LoadOverviewRows<{ PromotionID: string }>(
-                p, MJO_ENTITIES.PromotionTarget, `ProductCategoryID='${this.Record.ID}'`, ['PromotionID'],
+            OverviewRowsSpec<{ PromotionID: string }>(
+                MJO_ENTITIES.PromotionTarget, `ProductCategoryID='${this.Record.ID}'`, ['PromotionID'],
             ),
         ]);
         this.Cards = [
@@ -216,22 +216,23 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [prices, entitlements, events, orderCount, names] = await Promise.all([
-            LoadOverviewRows<OverviewPriceRow>(
-                p,
-                MJO_ENTITIES.ProductPrice,
-                `ProductID='${this.Record.ID}'`,
-                ['Name', 'PriceList', 'Amount', 'Status', 'Priority', 'Applicability', 'EffectiveTo'],
-                OVERVIEW_PRICE_ROWS_MAX,
-                'Priority DESC, Amount ASC, Name ASC',
-            ),
-            LoadOverviewRows<Pick<mjBizAppsOrdersProductEntitlementEntity, 'Name' | 'Code' | 'EntitlementType' | 'IsActive'>>(
-                p, MJO_ENTITIES.ProductEntitlement, `ProductID='${this.Record.ID}'`, ['Name', 'Code', 'EntitlementType', 'IsActive'],
-            ),
-            LoadOverviewRows<Pick<mjBizAppsOrdersEventProductEntity, 'VenueName' | 'Capacity' | 'EventStartsAt' | 'EventEndsAt'>>(
-                p, MJO_ENTITIES.EventProduct, `ID='${this.Record.ID}'`, ['VenueName', 'Capacity', 'EventStartsAt', 'EventEndsAt'], 1,
-            ),
-            CountOverviewRows(p, MJO_ENTITIES.OrderLine, `ProductID='${this.Record.ID}'`),
+        const [[prices, entitlements, events, orderCount], names] = await Promise.all([
+            LoadOverviewBatch(p, [
+                OverviewRowsSpec<OverviewPriceRow>(
+                    MJO_ENTITIES.ProductPrice,
+                    `ProductID='${this.Record.ID}'`,
+                    ['Name', 'PriceList', 'Amount', 'Status', 'Priority', 'Applicability', 'EffectiveTo'],
+                    OVERVIEW_PRICE_ROWS_MAX,
+                    'Priority DESC, Amount ASC, Name ASC',
+                ),
+                OverviewRowsSpec<Pick<mjBizAppsOrdersProductEntitlementEntity, 'Name' | 'Code' | 'EntitlementType' | 'IsActive'>>(
+                    MJO_ENTITIES.ProductEntitlement, `ProductID='${this.Record.ID}'`, ['Name', 'Code', 'EntitlementType', 'IsActive'],
+                ),
+                OverviewRowsSpec<Pick<mjBizAppsOrdersEventProductEntity, 'VenueName' | 'Capacity' | 'EventStartsAt' | 'EventEndsAt'>>(
+                    MJO_ENTITIES.EventProduct, `ID='${this.Record.ID}'`, ['VenueName', 'Capacity', 'EventStartsAt', 'EventEndsAt'], 1,
+                ),
+                OverviewCountSpec(MJO_ENTITIES.OrderLine, `ProductID='${this.Record.ID}'`),
+            ]),
             LoadProductLookupNames(this.Record),
         ]);
         const event = events[0];
@@ -310,11 +311,11 @@ export class SubscriptionTypeOverviewPanel extends BaseFormPanel<mjBizAppsOrders
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [products, liveCount] = await Promise.all([
-            LoadOverviewRows<{ Name: string; SKU: string | null }>(
-                p, MJO_ENTITIES.Product, `SubscriptionTypeID='${this.Record.ID}'`, ['Name', 'SKU'],
+        const [products, liveCount] = await LoadOverviewBatch(p, [
+            OverviewRowsSpec<{ Name: string; SKU: string | null }>(
+                MJO_ENTITIES.Product, `SubscriptionTypeID='${this.Record.ID}'`, ['Name', 'SKU'],
             ),
-            CountOverviewRows(p, MJO_ENTITIES.Subscription, `SubscriptionTypeID='${this.Record.ID}'`),
+            OverviewCountSpec(MJO_ENTITIES.Subscription, `SubscriptionTypeID='${this.Record.ID}'`),
         ]);
         this.Cards = [
             {

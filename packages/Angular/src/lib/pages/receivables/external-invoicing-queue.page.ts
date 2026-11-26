@@ -1,8 +1,10 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RunView } from '@memberjunction/core';
+import { Metadata, RunView } from '@memberjunction/core';
 import { MJAlertComponent, MJButtonDirective, MJConfirmService, MJDialogActionsComponent, MJDialogComponent } from '@memberjunction/ng-ui-components';
 import {
+    LoadOrdersEngine,
+    OrdersEngine,
     OrdersGetExternalInvoicingWorklistOperation,
     OrdersIssueExternalInvoiceOperation,
     OrdersPollExternalPaymentsOperation,
@@ -96,7 +98,6 @@ interface PaymentExceptionRow {
 }
 
 const EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments';
-const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 const EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers';
 
 /**
@@ -1164,22 +1165,23 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     private async loadExceptions(seq: number): Promise<void> {
         const rv = new RunView();
         const list = EXCEPTION_DISPOSITIONS.map((d) => `'${d}'`).join(',');
-        const [result, providers] = await Promise.all([
+        const md = new Metadata();
+        const [result] = await Promise.all([
             rv.RunView<PaymentExceptionRow>({
                 EntityName: EXTERNAL_PAYMENT_ENTITY,
                 ExtraFilter: `Disposition IN (${list})`,
                 OrderBy: 'LastSeenAt DESC',
                 ResultType: 'simple',
             }),
-            // Which company each provider belongs to. Context for a column: a failure leaves it blank.
-            rv.RunView<{ ID: string; CompanyID?: string | null; Company?: string | null }>({ EntityName: PAYMENT_PROVIDER_ENTITY, Fields: ['ID', 'CompanyID', 'Company'], ResultType: 'simple' }).catch(() => null),
+            LoadOrdersEngine(Metadata.Provider, md.CurrentUser).catch(() => undefined),
         ]);
         if (seq !== this.loadSeq) return;
         const customerNames = await this.loadCustomers(rv, result.Success ? (result.Results ?? []) : []);
         if (seq !== this.loadSeq) return;
         this.customerNames = customerNames;
+        const cachedProviders = OrdersEngine.Instance.Loaded ? OrdersEngine.Instance.PaymentProviders : [];
         this.providerCompany = new Map(
-            (providers?.Results ?? []).filter((p) => p.CompanyID).map((p) => [String(p.ID).toLowerCase(), { ID: String(p.CompanyID).toLowerCase(), Name: String(p.Company ?? '') }]),
+            cachedProviders.filter((p) => p.CompanyID).map((p) => [String(p.ID).toLowerCase(), { ID: String(p.CompanyID).toLowerCase(), Name: String(p.Company ?? '') }]),
         );
         this.Exceptions = result.Success ? (result.Results ?? []) : [];
         this.applyExceptionFilter();

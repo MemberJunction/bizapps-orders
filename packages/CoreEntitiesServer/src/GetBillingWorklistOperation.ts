@@ -11,7 +11,7 @@
  * SQL `date` column, and stringifying one of those is how the overdue worklist once reported an
  * order 46,264 days late.
  */
-import { BaseRemotableOperation, RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { BaseRemotableOperation, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersGetBillingWorklistOperation as OrdersGetBillingWorklistOperationBase,
@@ -23,6 +23,7 @@ import {
 
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { RunViewsBatch } from './run-views-batch.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -115,35 +116,33 @@ export class GetBillingWorklistOperation extends OrdersGetBillingWorklistOperati
         if (!rows.length) return { ...this.empty('', asOf, windowEnd), Success: true, Message: undefined };
 
         const orderIDs = [...new Set(rows.map((r) => `'${RequireUUID(r.OrderHeaderID, 'OrderHeaderID')}'`))].join(',');
-        const [orders, siblings] = await Promise.all([
-            rv.RunView<OrderShape>(
+        const [orders, siblings] = await RunViewsBatch(
+            provider as unknown as IRunViewProvider,
+            [
                 {
                     EntityName: ORDER_HEADER_ENTITY,
                     ExtraFilter: `ID IN (${orderIDs})`,
                     Fields: ['ID', 'OrderNumber', 'Status', 'BillToOrganizationID', 'BillToPersonID', 'BillToOrganization', 'BillToPerson'],
                     ResultType: 'simple',
                 },
-                user,
-            ),
-            // Every live instalment on those orders, so "2 of 4" can be said.
-            rv.RunView<ScheduleShape>(
+                // Every live instalment on those orders, so "2 of 4" can be said.
                 {
                     EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
                     ExtraFilter: `OrderHeaderID IN (${orderIDs}) AND Status <> 'Canceled'`,
                     Fields: ['ID', 'OrderHeaderID', 'CompanyID'],
                     ResultType: 'simple',
                 },
-                user,
-            ),
-        ]);
-        if (!orders.Success || !siblings.Success) {
-            return this.empty(`Could not read the orders behind the schedule: ${orders.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, asOf, windowEnd);
+            ],
+            user,
+        );
+        if (!orders?.Success || !siblings?.Success) {
+            return this.empty(`Could not read the orders behind the schedule: ${orders?.ErrorMessage ?? siblings?.ErrorMessage ?? 'unknown error'}`, asOf, windowEnd);
         }
 
-        const orderByID = new Map((orders.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
+        const orderByID = new Map(((orders.Results as OrderShape[] | undefined) ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
         const countKey = (orderID: string, companyID: string): string => `${String(orderID).toLowerCase()}|${String(companyID).toLowerCase()}`;
         const counts = new Map<string, number>();
-        for (const s of siblings.Results ?? []) {
+        for (const s of (siblings.Results as ScheduleShape[] | undefined) ?? []) {
             const k = countKey(s.OrderHeaderID, s.CompanyID);
             counts.set(k, (counts.get(k) ?? 0) + 1);
         }

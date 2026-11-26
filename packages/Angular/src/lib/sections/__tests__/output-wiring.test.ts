@@ -161,11 +161,11 @@ describe('page outputs are wired to the section', () => {
         const dash = readFileSync(join(LIB, 'pages', 'orders', 'orders-dashboard.page.ts'), 'utf8');
         const doc = readFileSync(join(LIB, 'pages', 'orders', 'order-document.page.ts'), 'utf8');
         const ar = readFileSync(join(LIB, 'pages', 'receivables', 'customer-ar.page.ts'), 'utf8');
-        expect(dash).toMatch(/GetDashboardOrders\(\)/);
+        expect(dash).toMatch(/GetDashboardOrders(?:AndInstalments)?\(\)/);
         expect(dash).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
         expect(doc).toMatch(/GetOrders\(\{\s*OrderHeaderID:\s*this\.OrderID\s*\}\)/);
         // Customer A/R reads plain rows, uncapped: a capped read newest-first drops the OLDEST debt.
-        expect(ar).toMatch(/GetReceivableOrders\(\)/);
+        expect(ar).toMatch(/GetReceivableOrders(?:AndInstalments)?\(\)/);
         expect(ar).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
     });
 });

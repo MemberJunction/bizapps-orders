@@ -47,6 +47,7 @@ import {
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { UserCache } from '@memberjunction/generic-database-provider';
+import { RunViewsBatch } from './run-views-batch.js';
 import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
@@ -3041,13 +3042,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         ctx: { Provider: IMetadataProvider; User: UserInfo },
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const rv = new RunView(ctx.Provider as unknown as IRunViewProvider);
-        const [order, rows] = await Promise.all([
-            rv.RunView<{ OrderNumber: string | null; CompanyID: string }>(
+        const [order, rows] = await RunViewsBatch(
+            ctx.Provider as unknown as IRunViewProvider,
+            [
                 { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(originOrder, 'OrderHeaderID')}'`, Fields: ['OrderNumber', 'CompanyID'], ResultType: 'simple' },
-                ctx.User,
-            ),
-            rv.RunView<{ ID: string; CompanyID: string; InstallmentNumber: number; DueDate: Date | string; Amount: number; AmountPaid: number | null; Balance: number | null; Status: string; DocumentNumber: string | null }>(
                 {
                     EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
                     ExtraFilter: `OrderHeaderID = '${RequireUUID(originOrder, 'OrderHeaderID')}'`,
@@ -3056,14 +3054,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     ResultType: 'simple',
                     BypassCache: true,
                 },
-                ctx.User,
-            ),
-        ]);
-        const origin = order.Results?.[0];
-        if (!order.Success || !rows.Success || !origin) {
+            ],
+            ctx.User,
+        );
+        const origin = (order?.Results as Array<{ OrderNumber: string | null; CompanyID: string }> | undefined)?.[0];
+        if (!order?.Success || !rows?.Success || !origin) {
             throw new Error(`The order a return takes back from (${originOrder}) could not be read to lower its instalments.`);
         }
-        const schedule = rows.Results ?? [];
+        const schedule = (rows.Results as Array<{ ID: string; CompanyID: string; InstallmentNumber: number; DueDate: Date | string; Amount: number; AmountPaid: number | null; Balance: number | null; Status: string; DocumentNumber: string | null }> | undefined) ?? [];
         const coverage = ScheduleCoverage(
             schedule.map((r) => ({ CompanyID: r.CompanyID, Amount: Number(r.Amount), Status: r.Status })),
             reductions.map((r) => r.originCompanyID),

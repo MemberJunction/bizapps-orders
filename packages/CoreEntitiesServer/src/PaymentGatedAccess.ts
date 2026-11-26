@@ -70,6 +70,7 @@ import {
 } from './EntitlementBehavior.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { RunViewsBatch } from './run-views-batch.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -583,9 +584,11 @@ export async function EnforcePaymentGatedAccess(
 }
 
 async function findCandidateOrders(asOf: string, provider: IMetadataProvider, user: UserInfo): Promise<string[]> {
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const [suspendedLines, overdueRenewals, lapsedOverrides] = await Promise.all([
-        rv.RunView<{ OrderLineID: string }>(
+    const rvProvider = provider as unknown as IRunViewProvider;
+    const rv = new RunView(rvProvider);
+    const [suspendedLines, overdueRenewals, lapsedOverrides] = await RunViewsBatch(
+        rvProvider,
+        [
             {
                 EntityName: ENTITLEMENT_GRANT_ENTITY,
                 ExtraFilter:
@@ -595,9 +598,6 @@ async function findCandidateOrders(asOf: string, provider: IMetadataProvider, us
                 ResultType: 'simple',
                 BypassCache: true,
             },
-            user,
-        ),
-        rv.RunView<{ ID: string }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter:
@@ -611,9 +611,6 @@ async function findCandidateOrders(asOf: string, provider: IMetadataProvider, us
                 ResultType: 'simple',
                 BypassCache: true,
             },
-            user,
-        ),
-        rv.RunView<{ OrderHeaderID: string }>(
             {
                 EntityName: ACCESS_OVERRIDE_ENTITY,
                 ExtraFilter: `Status = 'Approved' AND EffectiveThrough < '${RequireDate(asOf, 'AsOfDate')}'`,
@@ -621,18 +618,18 @@ async function findCandidateOrders(asOf: string, provider: IMetadataProvider, us
                 ResultType: 'simple',
                 BypassCache: true,
             },
-            user,
-        ),
-    ]);
-    if (!suspendedLines.Success) throw new Error(`Could not read suspended grants: ${suspendedLines.ErrorMessage}`);
-    if (!overdueRenewals.Success) throw new Error(`Could not read overdue renewals: ${overdueRenewals.ErrorMessage}`);
-    if (!lapsedOverrides.Success) throw new Error(`Could not read lapsed access overrides: ${lapsedOverrides.ErrorMessage}`);
+        ],
+        user,
+    );
+    if (!suspendedLines?.Success) throw new Error(`Could not read suspended grants: ${suspendedLines?.ErrorMessage}`);
+    if (!overdueRenewals?.Success) throw new Error(`Could not read overdue renewals: ${overdueRenewals?.ErrorMessage}`);
+    if (!lapsedOverrides?.Success) throw new Error(`Could not read lapsed access overrides: ${lapsedOverrides?.ErrorMessage}`);
 
     const orderIDs = new Set([
-        ...(overdueRenewals.Results ?? []).map((o) => key(o.ID)),
-        ...(lapsedOverrides.Results ?? []).map((o) => key(o.OrderHeaderID)),
+        ...((overdueRenewals.Results as Array<{ ID: string }> | undefined) ?? []).map((o) => key(o.ID)),
+        ...((lapsedOverrides.Results as Array<{ OrderHeaderID: string }> | undefined) ?? []).map((o) => key(o.OrderHeaderID)),
     ]);
-    const lineIDs = [...new Set((suspendedLines.Results ?? []).map((g) => g.OrderLineID).filter(Boolean))];
+    const lineIDs = [...new Set(((suspendedLines.Results as Array<{ OrderLineID: string }> | undefined) ?? []).map((g) => g.OrderLineID).filter(Boolean))];
     if (lineIDs.length) {
         const lines = await rv.RunView<{ OrderHeaderID: string }>(
             {

@@ -806,34 +806,34 @@ export class PartyOrdersOverviewComponent implements OnInit {
             const filterField = this.Mode === 'person' ? 'BillToPersonID' : 'BillToOrganizationID';
             const subField = this.Mode === 'person' ? 'BeneficiaryPersonID' : 'HolderOrganizationID';
 
-            const rv = new RunView(provider);
-            const [ordersRes, subsRes] = await Promise.all([
-                rv.RunView<OrderRow>({
+            const rv = RunView.FromMetadataProvider(provider);
+            const [ordersRes, subsRes] = await rv.RunViews([
+                {
                     EntityName: MJO_ENTITIES.OrderHeader,
                     ExtraFilter: `${filterField} = '${this.PartyID}' AND Status <> 'Voided'`,
                     OrderBy: 'OrderDate DESC',
                     MaxRows: 6,
                     ResultType: 'simple',
-                }),
-                rv.RunView<SubRow>({
+                },
+                {
                     EntityName: MJO_ENTITIES.Subscription,
                     ExtraFilter: `${subField} = '${this.PartyID}' AND Status = 'Active'`,
                     OrderBy: 'StartDate DESC',
                     MaxRows: 4,
                     ResultType: 'simple',
-                }),
+                },
             ]);
 
-            if (ordersRes.Success && ordersRes.Results) {
-                this.Orders = ordersRes.Results;
+            if (ordersRes?.Success && ordersRes.Results) {
+                this.Orders = ordersRes.Results as OrderRow[];
                 let total = 0;
                 this.Orders.forEach(o => { total += Number(o.TotalGross) || 0; });
                 this.LifetimeValue = total;
                 this.AvgOrderValue = this.Orders.length > 0 ? total / this.Orders.length : 0;
             }
 
-            if (subsRes.Success && subsRes.Results) {
-                this.Subscriptions = subsRes.Results;
+            if (subsRes?.Success && subsRes.Results) {
+                this.Subscriptions = subsRes.Results as SubRow[];
             }
 
             this.ProcessSpendTrajectory([]);

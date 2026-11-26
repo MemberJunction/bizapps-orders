@@ -60,6 +60,7 @@ import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
 import { AppliedScheduleReductions } from './ReversalScheduleReduction.js';
+import { RunViewsBatch } from './run-views-batch.js';
 import { RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 
@@ -167,30 +168,30 @@ export async function IssueInstalment(
 
         // The schedule must tie to the lines — the same check the confirm ran, because a Scheduled
         // row may have been edited since.
-        const [lines, siblings] = await Promise.all([
-            rv.RunView<{ CompanyID: string; LineTotalGross: number }>(
+        const [lines, siblings] = await RunViewsBatch(
+            provider as unknown as IRunViewProvider,
+            [
                 { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${order.ID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple' },
-                user,
-            ),
-            rv.RunView<ScheduleRow>(
                 { EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ExtraFilter: `OrderHeaderID = '${order.ID}'`, ResultType: 'simple' },
-                user,
-            ),
-        ]);
-        if (!lines.Success || !siblings.Success) {
-            return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
+            ],
+            user,
+        );
+        if (!lines?.Success || !siblings?.Success) {
+            return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines?.ErrorMessage ?? siblings?.ErrorMessage ?? 'unknown error'}`, echo);
         }
         // An approved amount change (#506) or a return (#661) lowered the instalments, not the lines: the lines are
         // read less what each took off them, so the lowered schedule still ties and each instalment bills the
         // lowered line.
         const reductions = await AppliedScheduleReductions(order.ID, { Provider: provider, User: user });
+        const lineRows = (lines.Results as Array<{ CompanyID: string; LineTotalGross: number }> | undefined) ?? [];
+        const siblingRows = (siblings.Results as ScheduleRow[] | undefined) ?? [];
         const billedLines = [
-            ...(lines.Results ?? []),
+            ...lineRows,
             ...reductions.map((c) => ({ CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
         ];
-        const shortfalls = ScheduleShortfalls(siblings.Results ?? [], billedLines, order.CompanyID);
+        const shortfalls = ScheduleShortfalls(siblingRows, billedLines, order.CompanyID);
         if (shortfalls.length) {
-            const names = new Map((siblings.Results ?? []).map((s) => [String(s.CompanyID).toLowerCase(), s.Company ?? s.CompanyID]));
+            const names = new Map(siblingRows.map((s) => [String(s.CompanyID).toLowerCase(), s.Company ?? s.CompanyID]));
             return refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);
         }
 

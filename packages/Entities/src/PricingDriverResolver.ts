@@ -119,19 +119,7 @@ export async function ResolvePricingDriver(
                 if (driver) return { CanPriceLocally: false, DriverClass: driver, Level: 'type' };
             }
             if (companyID && UUID.test(companyID)) {
-                const policyRes = await rv.RunView<{ PricingDriverClass: string | null }>(
-                    {
-                        EntityName: POLICY_ENTITY,
-                        ExtraFilter: `ID = '${companyID}'`,
-                        Fields: ['PricingDriverClass'],
-                        ResultType: 'simple',
-                    },
-                    user,
-                );
-                if (!policyRes?.Success) {
-                    return { ...LOCAL, Unresolved: `Could not read the company pricing policy.` };
-                }
-                const policyDriver = policyRes.Results?.[0]?.PricingDriverClass;
+                const policyDriver = engine.OrderCompanyPolicyByCompanyID(companyID)?.PricingDriverClass ?? null;
                 if (policyDriver) return { CanPriceLocally: false, DriverClass: policyDriver, Level: 'company' };
             }
             return { CanPriceLocally: true, DriverClass: null, Level: null };

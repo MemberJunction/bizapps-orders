@@ -15,9 +15,11 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
     const engine = {
         Products: PRODUCTS,
+        ProductBundleItems: [],
         BaseProductPrices: () => [],
         ProductTypeByID: () => undefined,
         ProductByID: (id: string) => PRODUCTS.find((p) => p.ID === id),
+        ResolveSubscriptionTypeID: () => null,
     };
     return {
         ...actual,
