@@ -33,6 +33,8 @@ const bookedRollups: ResolvedOrderRollups = {
     AmountPaid: 0,
     Balance: 895,
     FulfillmentStatus: 'NotApplicable',
+    RecurringMonthlyTotal: 50,
+    RecurringAnnualTotal: 600,
 };
 
 /** An order object with the real prototype, and the two seams it touches stubbed. */
@@ -76,7 +78,14 @@ describe('OrderEntityServer.refreshRolledUpTotals', () => {
 
         await instance.refreshRolledUpTotals();
 
-        expect(resets).toEqual(['TotalGross', 'AmountPaid', 'Balance', 'FulfillmentStatus']);
+        expect(resets).toEqual([
+            'TotalGross',
+            'AmountPaid',
+            'Balance',
+            'FulfillmentStatus',
+            'RecurringMonthlyTotal',
+            'RecurringAnnualTotal',
+        ]);
     });
 
     it('resets before writing, or the writes are dropped', async () => {
@@ -89,7 +98,7 @@ describe('OrderEntityServer.refreshRolledUpTotals', () => {
         await instance.refreshRolledUpTotals();
 
         expect(order[order.length - 1]).toBe('set');
-        expect(order.filter((step) => step === 'reset')).toHaveLength(4);
+        expect(order.filter((step) => step === 'reset')).toHaveLength(6);
     });
 });
 

@@ -2827,6 +2827,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             AmountPaid: this.AmountPaid,
             Balance: this.Balance,
             FulfillmentStatus: this.FulfillmentStatus,
+            RecurringMonthlyTotal: this.RecurringMonthlyTotal,
+            RecurringAnnualTotal: this.RecurringAnnualTotal,
         });
     }
 
