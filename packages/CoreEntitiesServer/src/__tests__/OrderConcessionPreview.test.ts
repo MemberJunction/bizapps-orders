@@ -25,11 +25,11 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 
 vi.mock('../ConcessionGate.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../ConcessionGate.js')>()),
-    FindUnapprovedConcessions: vi.fn(async () => [] as string[]),
+    AssessConcessionGate: vi.fn(async () => ({ Problems: [] as string[], Notes: [] as string[] })),
 }));
 
 import { OrderEntityServer } from '../OrderEntityServer.js';
-import { FindUnapprovedConcessions } from '../ConcessionGate.js';
+import { AssessConcessionGate } from '../ConcessionGate.js';
 
 type GateHooks = { passesConcessionGate(): Promise<boolean> };
 
@@ -94,7 +94,7 @@ afterEach(() => {
 
 describe('PreviewConcessionProblems', () => {
     it('returns the clauses confirm refuses with, and the refusal carries the same clauses', async () => {
-        vi.mocked(FindUnapprovedConcessions).mockResolvedValue(CLAUSES);
+        vi.mocked(AssessConcessionGate).mockResolvedValue({ Problems: CLAUSES, Notes: [] });
         const preview = order();
         expect(await preview.o.PreviewConcessionProblems()).toEqual(CLAUSES);
 
@@ -107,7 +107,7 @@ describe('PreviewConcessionProblems', () => {
         const { o } = order();
         await o.PreviewConcessionProblems();
         await o.passesConcessionGate();
-        const [previewCall, confirmCall] = vi.mocked(FindUnapprovedConcessions).mock.calls;
+        const [previewCall, confirmCall] = vi.mocked(AssessConcessionGate).mock.calls;
         expect(previewCall).toEqual(confirmCall);
         expect(previewCall[0]).toBe(ORDER_ID);
         expect(previewCall[2]).toBe(true);
@@ -119,7 +119,7 @@ describe('PreviewConcessionProblems', () => {
         const { o, lines } = order({ linesLoaded: false });
         await o.PreviewConcessionProblems();
         expect(lines.Load).toHaveBeenCalledTimes(1);
-        expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][1]).toHaveLength(1);
+        expect(vi.mocked(AssessConcessionGate).mock.calls[0][1]).toHaveLength(1);
     });
 
     it('judges a draft the renewal pass left on the pass\'s own prices, as confirm does', async () => {
@@ -131,7 +131,7 @@ describe('PreviewConcessionProblems', () => {
         const { o, lines } = order();
         Object.assign(lines.Items[0], { RenewsSubscriptionID: SUB, UnitPrice: 142.14, DiscountPct: 0 });
         await o.PreviewConcessionProblems();
-        expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][1][0]).toMatchObject({ RenewsSubscriptionID: SUB, PriceStated: false });
+        expect(vi.mocked(AssessConcessionGate).mock.calls[0][1][0]).toMatchObject({ RenewsSubscriptionID: SUB, PriceStated: false });
         // Read once per object: a second preview asks nothing more of the database.
         await o.PreviewConcessionProblems();
         expect(renewalEvents.reads).toBe(1);
@@ -143,13 +143,13 @@ describe('PreviewConcessionProblems', () => {
         const { o, lines } = order();
         Object.assign(lines.Items[0], { RenewsSubscriptionID: SUB, UnitPrice: 120, DiscountPct: 0 });
         await o.PreviewConcessionProblems();
-        expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][1][0]).toMatchObject({ RenewsSubscriptionID: SUB, PriceStated: true });
+        expect(vi.mocked(AssessConcessionGate).mock.calls[0][1][0]).toMatchObject({ RenewsSubscriptionID: SUB, PriceStated: true });
     });
 
     it('reports nothing without a context user, as the gate passes without one', async () => {
-        vi.mocked(FindUnapprovedConcessions).mockResolvedValue(CLAUSES);
+        vi.mocked(AssessConcessionGate).mockResolvedValue({ Problems: CLAUSES, Notes: [] });
         const { o } = order({ user: null });
         expect(await o.PreviewConcessionProblems()).toEqual([]);
-        expect(FindUnapprovedConcessions).not.toHaveBeenCalled();
+        expect(AssessConcessionGate).not.toHaveBeenCalled();
     });
 });

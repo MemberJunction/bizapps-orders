@@ -175,6 +175,11 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
      * refreshed on load, after every save (lines save with the header) and after a refresh.
      */
     public ConcessionProblems: string[] = [];
+    /**
+     * What the confirm gate let through on the order as a whole and does not hold Confirm for, one
+     * sentence each: lines priced above their engine price making up for one below (golive #499).
+     */
+    public ConcessionNotes: string[] = [];
     /** Set when the readiness check itself failed. Confirm stays offered: the server still checks. */
     public ConcessionCheckError: string | null = null;
     private readinessSeq = 0;
@@ -367,6 +372,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return this.record?.StatedTermLengthNotes() ?? [];
     }
 
+    /** Everything shown under "When this is confirmed": term lengths, then the concession gate's notes. */
+    public get ConfirmNotes(): string[] {
+        const concessionNotes = this.record?.IsSaved && CanOfferConfirm(this.record.Status).Allowed ? this.ConcessionNotes : [];
+        return [...this.TermLengthNotes, ...concessionNotes];
+    }
+
     /** The concession problems that hold Confirm, or none once the order is booked or voided. */
     public get ConcessionBlockers(): string[] {
         if (!this.record?.IsSaved || !CanOfferConfirm(this.record.Status).Allowed) return [];
@@ -388,20 +399,26 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         const seq = ++this.readinessSeq;
         if (!order?.IsSaved || !CanOfferConfirm(order.Status).Allowed) {
             this.ConcessionProblems = [];
+            this.ConcessionNotes = [];
             this.ConcessionCheckError = null;
             return;
         }
         let problems: string[] = [];
+        let notes: string[] = [];
         let error: string | null = null;
         try {
             const result = await new OrdersConfirmReadinessOperation().Execute({ OrderHeaderID: order.ID });
-            if (result.Success && result.Output) problems = result.Output.ConcessionProblems ?? [];
+            if (result.Success && result.Output) {
+                problems = result.Output.ConcessionProblems ?? [];
+                notes = result.Output.ConcessionNotes ?? [];
+            }
             else error = result.ErrorMessage?.trim() || null;
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);
         }
         if (seq !== this.readinessSeq || this.record !== order) return;
         this.ConcessionProblems = problems;
+        this.ConcessionNotes = notes;
         this.ConcessionCheckError = error
             ? `Whether concessions still need approval could not be checked (${error}). Confirm still checks.`
             : null;

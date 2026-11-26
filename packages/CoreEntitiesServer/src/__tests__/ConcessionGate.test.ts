@@ -22,7 +22,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     return { ...actual, ResolveLinePriceStanding: (...args: unknown[]) => mockStanding(...args) };
 });
 
-const { ApplyShareLimitMixTiers, FindUnapprovedConcessions } = await import('../ConcessionGate.js');
+const { ApplyShareLimitMixTiers, AssessConcessionGate, FindUncoveredLinePrices, FindUnapprovedConcessions } = await import('../ConcessionGate.js');
 
 const ORDER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const LINE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3302';
@@ -600,5 +600,165 @@ describe('ApplyShareLimitMixTiers (golive #281)', () => {
             MaxConcessionPctOfContract: null,
         });
         expect(mockRunView).not.toHaveBeenCalled();
+    });
+});
+
+describe('the order judged as a whole on price (golive #499)', () => {
+    const UPSELL_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
+    const PLAN_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3312';
+    // An upgrade split across two lines: the upsell lists at 3000, the existing plan at 8000.
+    const upsell = { ...apiLine, ID: UPSELL_ID, LineNumber: 1, ProductID: 'upsell', Quantity: 1, UnitPrice: 5012 };
+    const plan = { ...apiLine, ID: PLAN_ID, LineNumber: 2, ProductID: 'plan', Quantity: 1, UnitPrice: 5988 };
+    const engineFor = (prices: Record<string, number>) => (line?: { ProductID: string }) =>
+        Promise.resolve({ EngineUnitPrice: prices[line?.ProductID ?? ""], IsEnginePrice: false, IsNamedListPick: false });
+
+    beforeEach(() => mockStanding.mockImplementation(engineFor({ upsell: 3000, plan: 8000 })));
+
+    it('lets a line below its engine price through when another line above its own makes up for it, and says so', async () => {
+        database([], [upsell, plan]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([]);
+        expect(report.Notes).toEqual([
+            'line 2 is priced 2012.00 below its engine price, made up for by line 1, priced 2012.00 above its own, so the order as a whole gives nothing away by price',
+        ]);
+    });
+
+    it('reports the line as before when the lines above their engine price fall short', async () => {
+        database([], [{ ...upsell, UnitPrice: 4000 }, plan]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00 against an engine price of 8000.00, a concession worth 2012.00/)]);
+        expect(report.Notes).toEqual([]);
+    });
+
+    it('still counts a DiscountPct on the line whose price is made up for', async () => {
+        database([], [upsell, { ...plan, DiscountPct: 0.1 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/^line 2 is discounted 10%, a concession worth 598.80 with no approved Price/)]);
+    });
+
+    it('takes a premium line\'s own discount off what it makes up for', async () => {
+        // 5012 less 70% is 1503.60, below its list of 3000, so it makes up for none of the 2012.00.
+        database([], [{ ...upsell, DiscountPct: 0.7 }, plan]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems.some((p) => /line 2 is priced at 5988.00/.test(p))).toBe(true);
+    });
+
+    it('never nets a product given away', async () => {
+        database([], [upsell, { ...plan, UnitPrice: 0 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 0.00 .* with no approved Scope concession/)]);
+    });
+
+    it('raises no booking exception for a line made up for', async () => {
+        database([], [upsell, plan]);
+
+        expect(await FindUncoveredLinePrices(ORDER_ID, [], provider, user)).toEqual([]);
+    });
+
+    it('names every line on each side', async () => {
+        const third = { ...plan, ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3313', LineNumber: 3, UnitPrice: 7000 };
+        database([], [{ ...upsell, UnitPrice: 6012 }, plan, third]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([]);
+        expect(report.Notes[0]).toMatch(/^lines 2 and 3 are priced 3012.00 below their engine prices, made up for by line 1, priced 3012.00/);
+    });
+
+    it("takes a premium line's held manual discount off what it makes up for", async () => {
+        // 5012 less a held 3500 is 1512, below its list of 3000, so it makes up for none of the 2012.
+        database([], [upsell, plan], [], [{ OrderLineID: UPSELL_ID, Amount: 3500 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems.some((p) => /line 2 is priced at 5988.00/.test(p))).toBe(true);
+    });
+
+    it('counts no premium for a named list pick', async () => {
+        mockStanding.mockImplementation((line?: { ProductID: string }) =>
+            Promise.resolve(
+                line?.ProductID === 'upsell'
+                    ? { EngineUnitPrice: 3000, IsEnginePrice: false, IsNamedListPick: true }
+                    : { EngineUnitPrice: 8000, IsEnginePrice: false, IsNamedListPick: false },
+            ),
+        );
+        database([], [upsell, plan]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00/)]);
+    });
+
+    it('counts no premium for a product sold at a negotiated price, which lists at 0', async () => {
+        // Its price is the sale, not a premium: the 7000 off line 2 is still given away.
+        mockStanding.mockImplementation(engineFor({ upsell: 0, plan: 8000 }));
+        database([], [{ ...upsell, UnitPrice: 20000 }, { ...plan, UnitPrice: 1000 }]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/line 2 is priced at 1000.00 against an engine price of 8000.00, a concession worth 7000.00/)]);
+        expect(report.Notes).toEqual([]);
+        expect(await FindUncoveredLinePrices(ORDER_ID, [], provider, user)).toHaveLength(1);
+    });
+
+    it('counts no premium for a line nothing resolves an engine price for', async () => {
+        mockStanding.mockImplementation((line?: { ProductID: string }) =>
+            Promise.resolve({ EngineUnitPrice: line?.ProductID === 'upsell' ? null : 8000, IsEnginePrice: false, IsNamedListPick: false }),
+        );
+        database([], [upsell, plan]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00/)]);
+    });
+
+    it('never nets a product given away, even when the premiums would cover it', async () => {
+        database([], [{ ...upsell, UnitPrice: 12000 }, { ...plan, UnitPrice: 0 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 2 is priced at 0.00 .* with no approved Scope concession/)]);
+    });
+
+    it('does not net a line an approver refused a Price concession for', async () => {
+        const refused = { Status: 'Rejected', DeliveryForm: 'Price', ReasonCategory: 'Retention', ComputedValue: 2012, OrderLineID: PLAN_ID, AuthorizedBySalesAuthorityID: null, SalesRuleID: null };
+        database([refused], [upsell, plan]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/line 2 is priced at 5988.00 .* with no approved Price concession/)]);
+        expect(report.Notes).toEqual([]);
+    });
+
+    it('tells the rep to withdraw a pending Price concession the netted line no longer needs', async () => {
+        const pending = { Status: 'Pending', DeliveryForm: 'Price', ReasonCategory: 'Retention', ComputedValue: 2012, OrderLineID: PLAN_ID, AuthorizedBySalesAuthorityID: null, SalesRuleID: null };
+        database([pending], [upsell, plan]);
+
+        const report = await AssessConcessionGate(ORDER_ID, [], true, provider, user);
+
+        expect(report.Problems).toEqual([expect.stringMatching(/awaiting approval/)]);
+        expect(report.Notes[0]).toMatch(/; the Price concession awaiting approval on line 2 is no longer needed, so withdraw it to confirm$/);
+    });
+
+    it('measures the share against the netted line at its stated price', async () => {
+        // 1200 of seats on the rep's own authority. The customer pays 11000: 10.9%, over a 10% limit.
+        // Counting line 2 at its engine price would make it 1200 on 13012, 9.2%, and let it through.
+        const AUTHORITY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3320';
+        const seats = { Status: 'Approved', DeliveryForm: 'Seats', ReasonCategory: 'Retention', ComputedValue: 1200, OrderLineID: PLAN_ID, AuthorizedBySalesAuthorityID: AUTHORITY_ID, SalesRuleID: null };
+        database([seats], [upsell, plan], [{ ID: AUTHORITY_ID, MaxConcessionPctOfContract: 0.1 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/10\.9% of its catalog total, at or above the 10\.0% limit \(1200\.00 on a catalog total of 11000\.00\)/)]);
     });
 });

@@ -882,6 +882,12 @@ export interface ConfirmReadinessOutput {
      * a concession worth 1000.00 with no approved Price concession recorded for it."
      */
     ConcessionProblems: string[];
+    /**
+     * One sentence per thing the gate let through on the order as a whole, which does not hold confirm,
+     * e.g. "Line 2 is priced 2012.00 below its engine price, made up for by line 1, priced 5012.00 above
+     * its own, so the order as a whole gives nothing away by price." (golive #499).
+     */
+    ConcessionNotes: string[];
 }
 
 /**
