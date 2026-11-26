@@ -127,7 +127,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     charges: 15,
     tax: 18,
     composition: 10,
-    returns: 17,
+    returns: 18,
     'gift-cards': 15,
     bundles: 14,
     fulfillment: 12,

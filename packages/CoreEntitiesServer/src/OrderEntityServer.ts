@@ -102,7 +102,8 @@ import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
-import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
+import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft, type ReversalLedger } from './OrderJournalEntryFactory.js';
+import { LoadOriginRecognitionLedger, type OriginRecognitionLedger } from './OriginRecognitionLedger.js';
 import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
@@ -2897,6 +2898,36 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * For each reversing line, keyed by its id: the origin's recognition entries and earlier reversals' mirrors as
+     * the ledger holds them, and the share of what is left the line takes back (its quantity over the origin's
+     * quantity not yet reversed). Lines of this order that reverse the same origin each take their own share of the
+     * same remainder, so together they take back their combined share.
+     */
+    private async originLedgersForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+    ): Promise<Map<string, ReversalLedger>> {
+        const out = new Map<string, ReversalLedger>();
+        const ctx = { Provider: this.ProviderToUse as unknown as IMetadataProvider, User: this.ContextCurrentUser as UserInfo };
+        const byOrigin = new Map<string, Promise<OriginRecognitionLedger>>();
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context) continue;
+            const remaining = context.Origin.Quantity - context.AlreadyReversed;
+            if (!(remaining > 0)) continue;
+            const origin = uuidKey(context.Origin.ID);
+            if (!byOrigin.has(origin)) {
+                byOrigin.set(origin, LoadOriginRecognitionLedger(context.Origin.ID, context.PriorReversals.map((p) => p.ID), ctx));
+            }
+            out.set(String(line.ID), {
+                Ledger: await byOrigin.get(origin)!,
+                Fraction: Math.min(1, Math.abs(Number(line.Quantity ?? 0)) / remaining),
+            });
+        }
+        return out;
+    }
+
+    /**
      * The origin position for each reversing line whose origin is billed by instalment (D92 §6),
      * keyed by the REVERSING line's id. Absence means an ordinary reversal: mirror the booking.
      */
@@ -3920,8 +3951,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // the origin sits on a different order, so the factory would have to query for it. Empty
         // for an order that reverses nothing.
         const creditMemoByLine = this.creditMemosForReversals(unbooked, reversals);
+        // WHAT EACH REVERSED ORIGIN STAGED, read from the ledger (golive #495): a return mirrors the entries the
+        // origin holds, not a schedule rebuilt from its product's recognition type as it is today.
+        const originLedgerByLine = await this.originLedgersForReversals(unbooked, reversals);
         const drafts = await factory.BuildDrafts(
-            this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
+            this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine, originLedgerByLine,
         );
         const creditMemos = factory.DrainCreditMemos();
         // An order can legitimately produce NO entries: every line fully comped, so nothing to

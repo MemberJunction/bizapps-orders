@@ -107,6 +107,7 @@ import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { CustomerPart, OrderCustomerName } from './JournalEntryCustomer.js';
+import { HasOriginRecognition, LedgerEarnedThrough, PlanLedgerMirrors, type OriginRecognitionLedger } from './OriginRecognitionLedger.js';
 import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
@@ -300,6 +301,13 @@ export interface CreditMemoForLine extends ReversalPosition {
     OriginLineNumber?: number | null;
 }
 
+/** A reversing line's origin as the ledger records it, and the share of what is left the line takes back. */
+export interface ReversalLedger {
+    Ledger: OriginRecognitionLedger;
+    /** The line's quantity over what of the origin was not yet reversed: 1 takes back everything left. */
+    Fraction: number;
+}
+
 export function BuildValueEntryLines(
     amounts: ValueEntryAmounts,
     accounts: ValueEntryAccounts,
@@ -450,6 +458,13 @@ export class OrderJournalEntryFactory {
          * for every order that reverses nothing, which is nearly all of them.
          */
         creditMemoByLine?: Map<string, CreditMemoForLine>,
+        /**
+         * Each REVERSING line's origin, as the ledger records it, keyed by the reversing line's ID (golive #495):
+         * the origin's staged recognition entries, earlier reversals' mirrors, and the share of what is left this
+         * line takes back. When present, the line mirrors the ledger instead of a schedule rebuilt from the
+         * product's current recognition type.
+         */
+        originLedgerByLine?: Map<string, ReversalLedger>,
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
             throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
@@ -501,6 +516,7 @@ export class OrderJournalEntryFactory {
                 scheduledCompanies,
                 termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
                 creditMemoByLine?.get(String(line.ID)),
+                originLedgerByLine?.get(String(line.ID)),
             );
             // A LINK THAT REQUIRES A DIMENSION IS OBEYED HERE (#417), on the finished lines, after
             // Dimension Defaults, derived tags and the line's own tag have all been merged.
@@ -579,6 +595,8 @@ export class OrderJournalEntryFactory {
         recognitionMonths?: number,
         /** Present when this line reverses a line billed by instalment (D92 §6). */
         creditMemo?: CreditMemoForLine,
+        /** Present when this line reverses a line; what the origin's recognition entries say (golive #495). */
+        originLedger?: ReversalLedger,
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID.toLowerCase());
         if (!product) {
@@ -738,9 +756,15 @@ export class OrderJournalEntryFactory {
         // a separate order with no schedule of its own. The caller read the ORIGIN's schedule.
         const scheduledOrigin = isReversal ? creditMemo : undefined;
         const stagesReleases = revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard;
+        // THE LEDGER SAYS WHAT THE ORIGIN STAGED (golive #495). A schedule rebuilt from the product's current type
+        // describes a line that never existed once finance changes the type or rebuilds the line's schedule. The
+        // driver rebuild remains only for an origin with nothing staged in the ledger.
+        const ledger = isReversal && stagesReleases && HasOriginRecognition(originLedger?.Ledger) ? originLedger! : undefined;
         const stagedEarned =
             scheduledOrigin && stagesReleases
-                ? this.stagedEarnedThrough(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths)
+                ? ledger
+                    ? LedgerEarnedThrough(ledger.Ledger, effectiveDate)
+                    : this.stagedEarnedThrough(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths)
                 : 0;
         // EARNED AHEAD OF BILLED IS REFUSED HERE TOO (Andrew, #237 third pass). The line-save refusal
         // reads stored RecognizedToDate, which staged releases do not advance, so on a subscription
@@ -929,7 +953,26 @@ export class OrderJournalEntryFactory {
         // A percentage-of-completion type (ScheduleBasis 'OnMeasurement', D90) is deferred but its
         // schedule is not knowable at booking: the credit parks in Deferred Revenue above and
         // Orders.RecordProgress releases it as progress is attested. Nothing is staged here.
-        if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
+        if (ledger) {
+            // A REVERSAL MIRRORS ITS SHARE OF WHAT THE ORIGIN STILL HOLDS, date by date and account by account, as
+            // the ledger records it. A scheduled origin keeps what it has earned (D92 §6), so only later dates are
+            // mirrored; any other origin is mirrored whole, as before. Linked to this line, like every mirror.
+            for (const mirror of PlanLedgerMirrors(ledger.Ledger, ledger.Fraction, scheduledOrigin ? effectiveDate : null)) {
+                this.assertBalanced(mirror.Lines, order, line, 'recognition');
+                out.push({
+                    OrderLineID: line.ID,
+                    IsBooking: false,
+                    Draft: {
+                        EffectiveDate: mirror.Date,
+                        EntryType: 'RevenueRecognition',
+                        Description: `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — unrecognize ${product.Name}`,
+                        LinkedEntityID: this._orderLineEntityID,
+                        LinkedRecordID: line.ID,
+                        Lines: mirror.Lines,
+                    },
+                });
+            }
+        } else if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
             // A line with several terms recognizes each over its own window, at its own amount, so
