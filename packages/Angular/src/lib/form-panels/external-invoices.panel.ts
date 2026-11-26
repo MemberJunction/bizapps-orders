@@ -1,11 +1,13 @@
 import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
-import { RunView } from '@memberjunction/core';
+import { Metadata, RunView } from '@memberjunction/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import { MJConfirmService } from '@memberjunction/ng-ui-components';
 import {
+    LoadOrdersEngine,
     OrdersAdoptExternalInvoiceOperation,
     OrdersCancelExternalInvoiceOperation,
+    OrdersEngine,
     OrdersIssueExternalInvoiceOperation,
     OrdersPollExternalPaymentsOperation,
     type mjBizAppsOrdersOrderHeaderEntity,
@@ -40,8 +42,6 @@ interface ExternalInvoiceRow {
 }
 
 const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
-const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
-const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 
 /** Provider type codes that invoice through an external rail. Mirrors `INVOICE_RAIL_TYPE_CODES`. */
@@ -664,24 +664,19 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      * because this runs on every order form including the great majority with no rail at all.
      */
     private async loadRail(): Promise<{ Present: boolean; Name: string | null }> {
-        const rv = new RunView();
-        const codes = RAIL_TYPE_CODES.map((c) => `'${c}'`).join(',');
-        const types = await rv.RunView<{ ID: string }>({
-            EntityName: PAYMENT_PROVIDER_TYPE_ENTITY,
-            ExtraFilter: `Code IN (${codes})`,
-            Fields: ['ID'],
-            ResultType: 'simple',
-        });
-        const typeIDs = (types.Results ?? []).map((t) => `'${t.ID}'`);
-        if (!typeIDs.length) return { Present: false, Name: null };
+        const provider = this.FormComponent?.ProviderToUse ?? Metadata.Provider;
+        await LoadOrdersEngine(provider, provider?.CurrentUser);
+        const engine = OrdersEngine.Instance;
+        const typeIDs = new Set(
+            RAIL_TYPE_CODES
+                .map((c) => engine.PaymentProviderTypeByCode(c)?.ID?.toLowerCase())
+                .filter((id): id is string => Boolean(id)),
+        );
+        if (!typeIDs.size) return { Present: false, Name: null };
 
-        const providers = await rv.RunView<{ Name: string }>({
-            EntityName: PAYMENT_PROVIDER_ENTITY,
-            ExtraFilter: `CompanyID = '${this.Record.CompanyID}' AND IsActive = 1 AND PaymentProviderTypeID IN (${typeIDs.join(',')})`,
-            Fields: ['Name'],
-            ResultType: 'simple',
-        });
-        const first = providers.Results?.[0];
+        const first = engine
+            .PaymentProvidersByCompanyID(this.Record.CompanyID)
+            .find((p) => p.IsActive && typeIDs.has((p.PaymentProviderTypeID ?? '').toLowerCase()));
         return { Present: !!first, Name: first?.Name ?? null };
     }
 }

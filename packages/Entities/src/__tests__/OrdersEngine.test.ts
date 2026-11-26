@@ -4,8 +4,10 @@ import {
     BaseEnginePropertyConfig,
     BaseEntity,
     PermissionConstrainedError,
+    ProviderType,
     StartupManager,
     type IMetadataProvider,
+    type UserInfo,
 } from '@memberjunction/core';
 import {
     LoadOrdersEngine,
@@ -18,27 +20,43 @@ type Row = Record<string, unknown>;
 function seed(data: {
     paymentTypes?: Row[];
     paymentProviderTypes?: Row[];
+    paymentProviders?: Row[];
     paymentTermsTypes?: Row[];
     chargeTypes?: Row[];
     types?: Row[];
     subTypes?: Row[];
+    subFamilies?: Row[];
     revRec?: Row[];
+    promotionTypes?: Row[];
+    companyPolicies?: Row[];
+    priceLists?: Row[];
+    priceTiers?: Row[];
     products?: Row[];
     prices?: Row[];
     categories?: Row[];
+    bundleItems?: Row[];
+    dimensionDefaults?: Row[];
     eventProducts?: Row[];
 }): void {
     const engine = OrdersEngine.Instance as unknown as Record<string, unknown>;
     engine._paymentTypes = data.paymentTypes ?? [];
     engine._paymentProviderTypes = data.paymentProviderTypes ?? [];
+    engine._paymentProviders = data.paymentProviders ?? [];
     engine._paymentTermsTypes = data.paymentTermsTypes ?? [];
     engine._chargeTypes = data.chargeTypes ?? [];
     engine._productTypes = data.types ?? [];
     engine._subscriptionTypes = data.subTypes ?? [];
+    engine._subscriptionFamilies = data.subFamilies ?? [];
     engine._revenueRecognitionTypes = data.revRec ?? [];
+    engine._promotionTypes = data.promotionTypes ?? [];
+    engine._orderCompanyPolicies = data.companyPolicies ?? [];
+    engine._priceLists = data.priceLists ?? [];
+    engine._priceTiers = data.priceTiers ?? [];
     engine._products = data.products ?? [];
     engine._productPrices = data.prices ?? [];
     engine._productCategories = data.categories ?? [];
+    engine._productBundleItems = data.bundleItems ?? [];
+    engine._dimensionDefaults = data.dimensionDefaults ?? [];
     engine._eventProducts = data.eventProducts ?? [];
 }
 
@@ -400,5 +418,97 @@ describe('OrdersEngine catalog cache', () => {
 
         // Accessing PaymentTypeByID touches PaymentTypes and throws PermissionConstrainedError
         expect(() => OrdersEngine.Instance.PaymentTypeByID('pt-1')).toThrow(PermissionConstrainedError);
+    });
+
+    it('supports O(1) lookups for newly cached reference and catalog collections', () => {
+        seed({
+            paymentProviderTypes: [{ ID: 'ppt-1', Code: 'BillCom', Name: 'Bill.com' }],
+            paymentProviders: [
+                { ID: 'pp-1', CompanyID: 'co-1', PaymentProviderTypeID: 'ppt-1', Name: 'Bill.com Main', IsActive: true },
+                { ID: 'pp-2', CompanyID: 'co-2', PaymentProviderTypeID: 'ppt-1', Name: 'Bill.com Sub', IsActive: true },
+            ],
+            priceLists: [{ ID: 'pl-1', Code: 'MEMBER', Name: 'Member Pricing', Status: 'Active' }],
+            priceTiers: [
+                { ID: 'pt-b', ProductPriceID: 'price-1', MinQuantity: 10, MaxQuantity: null, Amount: 80, SortOrder: 2 },
+                { ID: 'pt-a', ProductPriceID: 'price-1', MinQuantity: 1, MaxQuantity: 9, Amount: 100, SortOrder: 1 },
+            ],
+            promotionTypes: [{ ID: 'prt-1', Code: 'PercentageOff', Name: 'Percentage Off' }],
+            companyPolicies: [{ ID: 'co-1', RefuseUnpricedLines: false, AllowPromotionStacking: true, PricingDriverClass: 'CustomDriver' }],
+            subFamilies: [{ ID: 'sf-1', Code: 'ANNUAL', Name: 'Annual Memberships' }],
+            bundleItems: [
+                { ID: 'bi-2', BundleProductID: 'bundle-1', ComponentProductID: 'comp-2', SortOrder: 2 },
+                { ID: 'bi-1', BundleProductID: 'bundle-1', ComponentProductID: 'comp-1', SortOrder: 1 },
+            ],
+            dimensionDefaults: [{ ID: 'dd-1', Entity: 'MJ: Companies', RecordID: 'co-1', DimensionValueID: 'dv-1', Status: 'Active' }],
+        });
+
+        const engine = OrdersEngine.Instance;
+        expect(engine.PaymentProviderTypeByCode('billcom')?.ID).toBe('ppt-1');
+        expect(engine.PaymentProviderByID('PP-1')?.Name).toBe('Bill.com Main');
+        expect(engine.PaymentProvidersByCompanyID('CO-1').map((p) => p.ID)).toEqual(['pp-1']);
+        expect(engine.PriceListByID('PL-1')?.Code).toBe('MEMBER');
+        expect(engine.PriceListByCode(' member ')?.ID).toBe('pl-1');
+        expect(engine.PriceTiersForPrice('PRICE-1').map((t) => t.ID)).toEqual(['pt-a', 'pt-b']);
+        expect(engine.PromotionTypeByID('PRT-1')?.Code).toBe('PercentageOff');
+        expect(engine.PromotionTypeByCode('percentageoff')?.ID).toBe('prt-1');
+        expect(engine.OrderCompanyPolicyByCompanyID('CO-1')?.PricingDriverClass).toBe('CustomDriver');
+        expect(engine.SubscriptionFamilyByID('SF-1')?.Code).toBe('ANNUAL');
+        expect(engine.SubscriptionFamilyByCode('annual')?.ID).toBe('sf-1');
+        expect(engine.BundleItemsForProduct('BUNDLE-1').map((b) => b.ID)).toEqual(['bi-1', 'bi-2']);
+        expect(engine.DimensionDefaults).toHaveLength(1);
+    });
+
+    it('routes ProviderToUse to the active Config provider and evicts cache on client user change', async () => {
+        const engine = OrdersEngine.Instance;
+        engine.InvalidateCache();
+
+        const loadSpy = vi
+            .spyOn(
+                BaseEngine.prototype as unknown as {
+                    Load: (
+                        configs: Partial<BaseEnginePropertyConfig>[],
+                        provider: IMetadataProvider,
+                        forceRefresh: boolean,
+                        contextUser?: UserInfo,
+                    ) => Promise<void>;
+                },
+                'Load',
+            )
+            .mockResolvedValue(undefined);
+
+        const userA = { ID: 'user-a' } as UserInfo;
+        const userB = { ID: 'user-b' } as UserInfo;
+        const providerA = { ProviderType: ProviderType.Network, CurrentUser: userA } as unknown as IMetadataProvider;
+        const providerB = { ProviderType: ProviderType.Network, CurrentUser: userB } as unknown as IMetadataProvider;
+
+        await engine.Config(false, userA, providerA);
+        expect(engine.ProviderToUse).toBe(providerA);
+        expect(loadSpy).toHaveBeenLastCalledWith(expect.any(Array), providerA, true, userA);
+        // Every cached config carries CacheLocal: true for global reference metadata
+        const configs = loadSpy.mock.calls[0][0];
+        expect(configs.every((c) => c.CacheLocal === true)).toBe(true);
+
+        // Same client user does NOT force refresh
+        await engine.Config(false, userA, providerA);
+        expect(loadSpy).toHaveBeenLastCalledWith(expect.any(Array), providerA, false, userA);
+
+        // Switching client user (persona impersonation) switches ProviderToUse and forces refresh
+        await engine.Config(false, userB, providerB);
+        expect(engine.ProviderToUse).toBe(providerB);
+        expect(loadSpy).toHaveBeenLastCalledWith(expect.any(Array), providerB, true, userB);
+
+        // Server Database provider does NOT force refresh when contextUser varies per request
+        const dbProvider = { ProviderType: ProviderType.Database } as unknown as IMetadataProvider;
+        await engine.Config(false, userA, dbProvider);
+        expect(engine.ProviderToUse).toBe(dbProvider);
+        expect(loadSpy).toHaveBeenLastCalledWith(expect.any(Array), dbProvider, false, userA);
+
+        // InvalidateCache resets state and forces the next Config to refresh
+        engine.InvalidateCache();
+        expect(engine.IsConfiguredForUser('user-b')).toBe(false);
+        await engine.Config(false, userA, dbProvider);
+        expect(loadSpy).toHaveBeenLastCalledWith(expect.any(Array), dbProvider, true, userA);
+
+        engine.InvalidateCache();
     });
 });

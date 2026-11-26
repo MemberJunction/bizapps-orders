@@ -20,6 +20,7 @@ import type { GiftCardSaleLine, OrderLineShare } from './PaymentAllocationFactor
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 import { CompanySlices, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { RunViewsBatch } from './run-views-batch.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
@@ -191,17 +192,17 @@ export async function LoadInstalmentCashFacts(
     }));
     if (!rows.length) return [];
 
-    const [header, lines] = await Promise.all([
-        rv.RunView<{ CompanyID: string }>(
+    const [header, lines] = await RunViewsBatch(
+        provider,
+        [
             { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple', BypassCache: true },
-            user,
-        ),
-        rv.RunView<{ CompanyID: string; LineTotalGross: number }>(
             { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID='${orderID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple', BypassCache: true },
-            user,
-        ),
-    ]);
-    const orderCompanyID = header?.Results?.[0]?.CompanyID;
+        ],
+        user,
+    );
+    const headerRows = (header?.Results as Array<{ CompanyID: string }> | undefined) ?? [];
+    const lineRows = (lines?.Results as Array<{ CompanyID: string; LineTotalGross: number }> | undefined) ?? [];
+    const orderCompanyID = headerRows[0]?.CompanyID;
     if (!header?.Success || !lines?.Success || !orderCompanyID) {
         throw new Error(
             `Could not read order ${orderID} to divide its payment schedule among its companies: ` +
@@ -210,7 +211,7 @@ export async function LoadInstalmentCashFacts(
     }
     return CompanySlices(
         rows,
-        (lines.Results ?? []).map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+        lineRows.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
         orderCompanyID,
     ).map(({ InstallmentNumber: _number, ...fact }) => fact);
 }

@@ -36,6 +36,8 @@ import {
     BaseEngine,
     BaseEnginePropertyConfig,
     BaseEntity,
+    Metadata,
+    ProviderType,
     RegisterForStartup,
     type IMetadataProvider,
     type IRunViewProvider,
@@ -44,15 +46,23 @@ import {
 import type { Observable } from 'rxjs';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
+    mjBizAppsOrdersDimensionDefaultEntity,
     mjBizAppsOrdersEventProductEntity,
+    mjBizAppsOrdersOrderCompanyPolicyEntity,
+    mjBizAppsOrdersPaymentProviderEntity,
     mjBizAppsOrdersPaymentProviderTypeEntity,
     mjBizAppsOrdersPaymentTermsTypeEntity,
     mjBizAppsOrdersPaymentTypeEntity,
+    mjBizAppsOrdersPriceListEntity,
+    mjBizAppsOrdersPriceTierEntity,
+    mjBizAppsOrdersProductBundleItemEntity,
     mjBizAppsOrdersProductCategoryEntity,
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersProductPriceEntity,
     mjBizAppsOrdersProductTypeEntity,
+    mjBizAppsOrdersPromotionTypeEntity,
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
+    mjBizAppsOrdersSubscriptionFamilyEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
 import { ResolveSubscriptionTypeID } from '../subscription-type';
@@ -78,6 +88,26 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     private _indexGeneration = 0;
+    private _activeProvider: IMetadataProvider | null = null;
+    private _loadedForUserId: string | null = null;
+    private _cacheInvalidated = false;
+
+    /**
+     * Routes engine reads through the active provider passed to `Config()` (or live
+     * `Metadata.Provider` in browser sessions) instead of BaseEngine's first-wins `_provider`
+     * latch — essential for persona impersonation and multi-provider hosts. Falls back to
+     * `super.ProviderToUse` for unit tests that inject `_provider` without `Metadata.Provider`.
+     */
+    public override get ProviderToUse(): IMetadataProvider {
+        return this._activeProvider ?? Metadata.Provider ?? super.ProviderToUse;
+    }
+
+    protected override SetProvider(provider: IMetadataProvider): void {
+        super.SetProvider(provider);
+        if (provider) {
+            this._activeProvider = provider;
+        }
+    }
 
     protected override NotifyDataChange(
         config: BaseEnginePropertyConfig,
@@ -91,14 +121,22 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
 
     private _paymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
     private _paymentProviderTypes: mjBizAppsOrdersPaymentProviderTypeEntity[] = [];
+    private _paymentProviders: mjBizAppsOrdersPaymentProviderEntity[] = [];
     private _paymentTermsTypes: mjBizAppsOrdersPaymentTermsTypeEntity[] = [];
     private _chargeTypes: mjBizAppsOrdersChargeTypeEntity[] = [];
     private _productTypes: mjBizAppsOrdersProductTypeEntity[] = [];
     private _subscriptionTypes: mjBizAppsOrdersSubscriptionTypeEntity[] = [];
+    private _subscriptionFamilies: mjBizAppsOrdersSubscriptionFamilyEntity[] = [];
     private _revenueRecognitionTypes: mjBizAppsOrdersRevenueRecognitionTypeEntity[] = [];
+    private _promotionTypes: mjBizAppsOrdersPromotionTypeEntity[] = [];
+    private _orderCompanyPolicies: mjBizAppsOrdersOrderCompanyPolicyEntity[] = [];
+    private _priceLists: mjBizAppsOrdersPriceListEntity[] = [];
+    private _priceTiers: mjBizAppsOrdersPriceTierEntity[] = [];
     private _products: mjBizAppsOrdersProductEntity[] = [];
     private _productPrices: mjBizAppsOrdersProductPriceEntity[] = [];
     private _productCategories: mjBizAppsOrdersProductCategoryEntity[] = [];
+    private _productBundleItems: mjBizAppsOrdersProductBundleItemEntity[] = [];
+    private _dimensionDefaults: mjBizAppsOrdersDimensionDefaultEntity[] = [];
     private _eventProducts: mjBizAppsOrdersEventProductEntity[] = [];
     /** The reload in flight, so concurrent misses share one query. See {@link EnsureProducts}. */
     private _productReload: Promise<void> | null = null;
@@ -147,6 +185,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
 
     private _paymentProviderTypesIndex: {
         byId: Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>;
     } | null = null;
     private _paymentProviderTypesGen = -1;
     private _paymentProviderTypesArray: mjBizAppsOrdersPaymentProviderTypeEntity[] | null = null;
@@ -154,6 +193,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
 
     private ensurePaymentProviderTypesIndex(): {
         byId: Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>;
     } {
         const current = this.PaymentProviderTypes;
         if (
@@ -166,6 +206,214 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         }
 
         const byId = new Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._paymentProviderTypesIndex = { byId, byCode };
+        this._paymentProviderTypesGen = this._indexGeneration;
+        this._paymentProviderTypesArray = current;
+        this._paymentProviderTypesLength = current.length;
+        return this._paymentProviderTypesIndex;
+    }
+
+    private _paymentProvidersIndex: {
+        byId: Map<string, mjBizAppsOrdersPaymentProviderEntity>;
+        byCompanyId: Map<string, mjBizAppsOrdersPaymentProviderEntity[]>;
+    } | null = null;
+    private _paymentProvidersGen = -1;
+    private _paymentProvidersArray: mjBizAppsOrdersPaymentProviderEntity[] | null = null;
+    private _paymentProvidersLength = -1;
+
+    private ensurePaymentProvidersIndex(): {
+        byId: Map<string, mjBizAppsOrdersPaymentProviderEntity>;
+        byCompanyId: Map<string, mjBizAppsOrdersPaymentProviderEntity[]>;
+    } {
+        const current = this.PaymentProviders;
+        if (
+            this._paymentProvidersIndex &&
+            this._paymentProvidersGen === this._indexGeneration &&
+            this._paymentProvidersArray === current &&
+            this._paymentProvidersLength === current.length
+        ) {
+            return this._paymentProvidersIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersPaymentProviderEntity>();
+        const byCompanyId = new Map<string, mjBizAppsOrdersPaymentProviderEntity[]>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const compKey = uuidKey(item.CompanyID);
+            if (compKey) {
+                const list = byCompanyId.get(compKey) ?? [];
+                list.push(item);
+                byCompanyId.set(compKey, list);
+            }
+        }
+
+        this._paymentProvidersIndex = { byId, byCompanyId };
+        this._paymentProvidersGen = this._indexGeneration;
+        this._paymentProvidersArray = current;
+        this._paymentProvidersLength = current.length;
+        return this._paymentProvidersIndex;
+    }
+
+    private _priceListsIndex: {
+        byId: Map<string, mjBizAppsOrdersPriceListEntity>;
+        byCode: Map<string, mjBizAppsOrdersPriceListEntity>;
+    } | null = null;
+    private _priceListsGen = -1;
+    private _priceListsArray: mjBizAppsOrdersPriceListEntity[] | null = null;
+    private _priceListsLength = -1;
+
+    private ensurePriceListsIndex(): {
+        byId: Map<string, mjBizAppsOrdersPriceListEntity>;
+        byCode: Map<string, mjBizAppsOrdersPriceListEntity>;
+    } {
+        const current = this.PriceLists;
+        if (
+            this._priceListsIndex &&
+            this._priceListsGen === this._indexGeneration &&
+            this._priceListsArray === current &&
+            this._priceListsLength === current.length
+        ) {
+            return this._priceListsIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersPriceListEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersPriceListEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._priceListsIndex = { byId, byCode };
+        this._priceListsGen = this._indexGeneration;
+        this._priceListsArray = current;
+        this._priceListsLength = current.length;
+        return this._priceListsIndex;
+    }
+
+    private _priceTiersIndex: {
+        byPriceId: Map<string, mjBizAppsOrdersPriceTierEntity[]>;
+    } | null = null;
+    private _priceTiersGen = -1;
+    private _priceTiersArray: mjBizAppsOrdersPriceTierEntity[] | null = null;
+    private _priceTiersLength = -1;
+
+    private ensurePriceTiersIndex(): {
+        byPriceId: Map<string, mjBizAppsOrdersPriceTierEntity[]>;
+    } {
+        const current = this.PriceTiers;
+        if (
+            this._priceTiersIndex &&
+            this._priceTiersGen === this._indexGeneration &&
+            this._priceTiersArray === current &&
+            this._priceTiersLength === current.length
+        ) {
+            return this._priceTiersIndex;
+        }
+
+        const byPriceId = new Map<string, mjBizAppsOrdersPriceTierEntity[]>();
+        for (const item of current) {
+            const priceKey = uuidKey(item.ProductPriceID);
+            if (priceKey) {
+                const list = byPriceId.get(priceKey) ?? [];
+                list.push(item);
+                byPriceId.set(priceKey, list);
+            }
+        }
+        for (const list of byPriceId.values()) {
+            list.sort((a, b) => Number(a.SortOrder ?? 0) - Number(b.SortOrder ?? 0) || Number(a.MinQuantity ?? 0) - Number(b.MinQuantity ?? 0));
+        }
+
+        this._priceTiersIndex = { byPriceId };
+        this._priceTiersGen = this._indexGeneration;
+        this._priceTiersArray = current;
+        this._priceTiersLength = current.length;
+        return this._priceTiersIndex;
+    }
+
+    private _promotionTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersPromotionTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersPromotionTypeEntity>;
+    } | null = null;
+    private _promotionTypesGen = -1;
+    private _promotionTypesArray: mjBizAppsOrdersPromotionTypeEntity[] | null = null;
+    private _promotionTypesLength = -1;
+
+    private ensurePromotionTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersPromotionTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersPromotionTypeEntity>;
+    } {
+        const current = this.PromotionTypes;
+        if (
+            this._promotionTypesIndex &&
+            this._promotionTypesGen === this._indexGeneration &&
+            this._promotionTypesArray === current &&
+            this._promotionTypesLength === current.length
+        ) {
+            return this._promotionTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersPromotionTypeEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersPromotionTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._promotionTypesIndex = { byId, byCode };
+        this._promotionTypesGen = this._indexGeneration;
+        this._promotionTypesArray = current;
+        this._promotionTypesLength = current.length;
+        return this._promotionTypesIndex;
+    }
+
+    private _orderCompanyPoliciesIndex: {
+        byId: Map<string, mjBizAppsOrdersOrderCompanyPolicyEntity>;
+    } | null = null;
+    private _orderCompanyPoliciesGen = -1;
+    private _orderCompanyPoliciesArray: mjBizAppsOrdersOrderCompanyPolicyEntity[] | null = null;
+    private _orderCompanyPoliciesLength = -1;
+
+    private ensureOrderCompanyPoliciesIndex(): {
+        byId: Map<string, mjBizAppsOrdersOrderCompanyPolicyEntity>;
+    } {
+        const current = this.OrderCompanyPolicies;
+        if (
+            this._orderCompanyPoliciesIndex &&
+            this._orderCompanyPoliciesGen === this._indexGeneration &&
+            this._orderCompanyPoliciesArray === current &&
+            this._orderCompanyPoliciesLength === current.length
+        ) {
+            return this._orderCompanyPoliciesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersOrderCompanyPolicyEntity>();
         for (const item of current) {
             const idKey = uuidKey(item.ID);
             if (idKey && !byId.has(idKey)) {
@@ -173,11 +421,93 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
             }
         }
 
-        this._paymentProviderTypesIndex = { byId };
-        this._paymentProviderTypesGen = this._indexGeneration;
-        this._paymentProviderTypesArray = current;
-        this._paymentProviderTypesLength = current.length;
-        return this._paymentProviderTypesIndex;
+        this._orderCompanyPoliciesIndex = { byId };
+        this._orderCompanyPoliciesGen = this._indexGeneration;
+        this._orderCompanyPoliciesArray = current;
+        this._orderCompanyPoliciesLength = current.length;
+        return this._orderCompanyPoliciesIndex;
+    }
+
+    private _subscriptionFamiliesIndex: {
+        byId: Map<string, mjBizAppsOrdersSubscriptionFamilyEntity>;
+        byCode: Map<string, mjBizAppsOrdersSubscriptionFamilyEntity>;
+    } | null = null;
+    private _subscriptionFamiliesGen = -1;
+    private _subscriptionFamiliesArray: mjBizAppsOrdersSubscriptionFamilyEntity[] | null = null;
+    private _subscriptionFamiliesLength = -1;
+
+    private ensureSubscriptionFamiliesIndex(): {
+        byId: Map<string, mjBizAppsOrdersSubscriptionFamilyEntity>;
+        byCode: Map<string, mjBizAppsOrdersSubscriptionFamilyEntity>;
+    } {
+        const current = this.SubscriptionFamilies;
+        if (
+            this._subscriptionFamiliesIndex &&
+            this._subscriptionFamiliesGen === this._indexGeneration &&
+            this._subscriptionFamiliesArray === current &&
+            this._subscriptionFamiliesLength === current.length
+        ) {
+            return this._subscriptionFamiliesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersSubscriptionFamilyEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersSubscriptionFamilyEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._subscriptionFamiliesIndex = { byId, byCode };
+        this._subscriptionFamiliesGen = this._indexGeneration;
+        this._subscriptionFamiliesArray = current;
+        this._subscriptionFamiliesLength = current.length;
+        return this._subscriptionFamiliesIndex;
+    }
+
+    private _productBundleItemsIndex: {
+        byBundleProductId: Map<string, mjBizAppsOrdersProductBundleItemEntity[]>;
+    } | null = null;
+    private _productBundleItemsGen = -1;
+    private _productBundleItemsArray: mjBizAppsOrdersProductBundleItemEntity[] | null = null;
+    private _productBundleItemsLength = -1;
+
+    private ensureProductBundleItemsIndex(): {
+        byBundleProductId: Map<string, mjBizAppsOrdersProductBundleItemEntity[]>;
+    } {
+        const current = this.ProductBundleItems;
+        if (
+            this._productBundleItemsIndex &&
+            this._productBundleItemsGen === this._indexGeneration &&
+            this._productBundleItemsArray === current &&
+            this._productBundleItemsLength === current.length
+        ) {
+            return this._productBundleItemsIndex;
+        }
+
+        const byBundleProductId = new Map<string, mjBizAppsOrdersProductBundleItemEntity[]>();
+        for (const item of current) {
+            const bundleKey = uuidKey(item.BundleProductID);
+            if (bundleKey) {
+                const list = byBundleProductId.get(bundleKey) ?? [];
+                list.push(item);
+                byBundleProductId.set(bundleKey, list);
+            }
+        }
+        for (const list of byBundleProductId.values()) {
+            list.sort((a, b) => Number(a.SortOrder ?? 0) - Number(b.SortOrder ?? 0));
+        }
+
+        this._productBundleItemsIndex = { byBundleProductId };
+        this._productBundleItemsGen = this._indexGeneration;
+        this._productBundleItemsArray = current;
+        this._productBundleItemsLength = current.length;
+        return this._productBundleItemsIndex;
     }
 
     private _paymentTermsTypesIndex: {
@@ -568,26 +898,79 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
      *
      * `ResultType: 'entity_object'` on purpose: callers get typed entities, so reading a column that
      * does not exist is a COMPILE error rather than an `undefined` at run time.
+     *
+     * All cached entities below are global non-RLS reference/catalog tables (`CacheLocal: true`,
+     * `AutoRefresh: true`, no `Filter` or `OrderBy`) so BaseEngine applies immediate in-place
+     * mutations on save/delete and client-side persona switches automatically evict and reload.
      */
     public async Config(forceRefresh?: boolean, contextUser?: UserInfo, provider?: IMetadataProvider): Promise<void> {
+        this._activeProvider = provider ?? null;
+        const md = this.ProviderToUse;
+        const effectiveUser = contextUser ?? md?.CurrentUser;
+        const isClientSide = md?.ProviderType === ProviderType.Network;
+        const nextUserId = uuidKey(effectiveUser?.ID);
+        const userChanged =
+            isClientSide &&
+            this._loadedForUserId !== null &&
+            nextUserId.length > 0 &&
+            this._loadedForUserId !== nextUserId;
+        const shouldForceRefresh = Boolean(forceRefresh || this._cacheInvalidated || userChanged);
+
         await this.Load(
             [
-                { Type: 'entity', PropertyName: '_paymentTypes', EntityName: 'MJ_BizApps_Orders: Payment Types' },
-                { Type: 'entity', PropertyName: '_paymentProviderTypes', EntityName: 'MJ_BizApps_Orders: Payment Provider Types' },
-                { Type: 'entity', PropertyName: '_paymentTermsTypes', EntityName: 'MJ_BizApps_Orders: Payment Terms Types' },
-                { Type: 'entity', PropertyName: '_chargeTypes', EntityName: 'MJ_BizApps_Orders: Charge Types' },
-                { Type: 'entity', PropertyName: '_productTypes', EntityName: 'MJ_BizApps_Orders: Product Types' },
-                { Type: 'entity', PropertyName: '_subscriptionTypes', EntityName: 'MJ_BizApps_Orders: Subscription Types' },
-                { Type: 'entity', PropertyName: '_revenueRecognitionTypes', EntityName: 'MJ_BizApps_Orders: Revenue Recognition Types' },
-                { Type: 'entity', PropertyName: '_products', EntityName: 'MJ_BizApps_Orders: Products' },
-                { Type: 'entity', PropertyName: '_productPrices', EntityName: 'MJ_BizApps_Orders: Product Prices' },
-                { Type: 'entity', PropertyName: '_productCategories', EntityName: 'MJ_BizApps_Orders: Product Categories' },
-                { Type: 'entity', PropertyName: '_eventProducts', EntityName: EVENT_PRODUCT_ENTITY },
+                { Type: 'entity', PropertyName: '_paymentTypes', EntityName: 'MJ_BizApps_Orders: Payment Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_paymentProviderTypes', EntityName: 'MJ_BizApps_Orders: Payment Provider Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_paymentProviders', EntityName: 'MJ_BizApps_Orders: Payment Providers', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_paymentTermsTypes', EntityName: 'MJ_BizApps_Orders: Payment Terms Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_chargeTypes', EntityName: 'MJ_BizApps_Orders: Charge Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_productTypes', EntityName: 'MJ_BizApps_Orders: Product Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_subscriptionTypes', EntityName: 'MJ_BizApps_Orders: Subscription Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_subscriptionFamilies', EntityName: 'MJ_BizApps_Orders: Subscription Families', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_revenueRecognitionTypes', EntityName: 'MJ_BizApps_Orders: Revenue Recognition Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_promotionTypes', EntityName: 'MJ_BizApps_Orders: Promotion Types', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_orderCompanyPolicies', EntityName: 'MJ_BizApps_Orders: Order Company Policies', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_priceLists', EntityName: 'MJ_BizApps_Orders: Price Lists', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_priceTiers', EntityName: 'MJ_BizApps_Orders: Price Tiers', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_products', EntityName: 'MJ_BizApps_Orders: Products', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_productPrices', EntityName: 'MJ_BizApps_Orders: Product Prices', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_productCategories', EntityName: 'MJ_BizApps_Orders: Product Categories', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_productBundleItems', EntityName: 'MJ_BizApps_Orders: Product Bundle Items', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_dimensionDefaults', EntityName: 'MJ_BizApps_Orders: Dimension Defaults', CacheLocal: true },
+                { Type: 'entity', PropertyName: '_eventProducts', EntityName: EVENT_PRODUCT_ENTITY, CacheLocal: true },
             ],
-            provider as IMetadataProvider,
-            forceRefresh,
-            contextUser,
+            md,
+            shouldForceRefresh,
+            effectiveUser,
         );
+
+        if (isClientSide || shouldForceRefresh || this._loadedForUserId === null) {
+            this._loadedForUserId = nextUserId || null;
+        }
+        this._cacheInvalidated = false;
+        this._indexGeneration++;
+    }
+
+    /**
+     * Clears O(1) lookup indexes, user tracking, and active provider binding so the next
+     * `Config()` performs a fresh load under the active provider and user context.
+     */
+    public InvalidateCache(): void {
+        this._cacheInvalidated = true;
+        this._loadedForUserId = null;
+        this._activeProvider = null;
+        this._indexGeneration++;
+    }
+
+    /** True when the engine is loaded, not invalidated, and matches `userId` (if supplied). */
+    public IsConfiguredForUser(userId?: string | null): boolean {
+        if (!this.Loaded || this._cacheInvalidated) {
+            return false;
+        }
+        const norm = uuidKey(userId);
+        if (!norm) {
+            return this._loadedForUserId !== null;
+        }
+        return this._loadedForUserId === norm;
     }
 
     public get PaymentTypes(): mjBizAppsOrdersPaymentTypeEntity[] {
@@ -595,6 +978,9 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public get PaymentProviderTypes(): mjBizAppsOrdersPaymentProviderTypeEntity[] {
         return this.GetConfigData<mjBizAppsOrdersPaymentProviderTypeEntity>('_paymentProviderTypes');
+    }
+    public get PaymentProviders(): mjBizAppsOrdersPaymentProviderEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersPaymentProviderEntity>('_paymentProviders');
     }
     public get PaymentTermsTypes(): mjBizAppsOrdersPaymentTermsTypeEntity[] {
         return this.GetConfigData<mjBizAppsOrdersPaymentTermsTypeEntity>('_paymentTermsTypes');
@@ -608,8 +994,23 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     public get SubscriptionTypes(): mjBizAppsOrdersSubscriptionTypeEntity[] {
         return this.GetConfigData<mjBizAppsOrdersSubscriptionTypeEntity>('_subscriptionTypes');
     }
+    public get SubscriptionFamilies(): mjBizAppsOrdersSubscriptionFamilyEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersSubscriptionFamilyEntity>('_subscriptionFamilies');
+    }
     public get RevenueRecognitionTypes(): mjBizAppsOrdersRevenueRecognitionTypeEntity[] {
         return this.GetConfigData<mjBizAppsOrdersRevenueRecognitionTypeEntity>('_revenueRecognitionTypes');
+    }
+    public get PromotionTypes(): mjBizAppsOrdersPromotionTypeEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersPromotionTypeEntity>('_promotionTypes');
+    }
+    public get OrderCompanyPolicies(): mjBizAppsOrdersOrderCompanyPolicyEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersOrderCompanyPolicyEntity>('_orderCompanyPolicies');
+    }
+    public get PriceLists(): mjBizAppsOrdersPriceListEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersPriceListEntity>('_priceLists');
+    }
+    public get PriceTiers(): mjBizAppsOrdersPriceTierEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersPriceTierEntity>('_priceTiers');
     }
     public get Products(): mjBizAppsOrdersProductEntity[] {
         return this.GetConfigData<mjBizAppsOrdersProductEntity>('_products');
@@ -619,6 +1020,12 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
     public get ProductCategories(): mjBizAppsOrdersProductCategoryEntity[] {
         return this.GetConfigData<mjBizAppsOrdersProductCategoryEntity>('_productCategories');
+    }
+    public get ProductBundleItems(): mjBizAppsOrdersProductBundleItemEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersProductBundleItemEntity>('_productBundleItems');
+    }
+    public get DimensionDefaults(): mjBizAppsOrdersDimensionDefaultEntity[] {
+        return this.GetConfigData<mjBizAppsOrdersDimensionDefaultEntity>('_dimensionDefaults');
     }
 
     /** The event record each event product carries (IS-A child of Product, sharing its ID). */
@@ -657,6 +1064,69 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const key = uuidKey(id);
         if (!key) return undefined;
         return this.ensurePaymentProviderTypesIndex().byId.get(key);
+    }
+    public PaymentProviderTypeByCode(code: string | null | undefined): mjBizAppsOrdersPaymentProviderTypeEntity | undefined {
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensurePaymentProviderTypesIndex().byCode.get(key);
+    }
+    public PaymentProviderByID(id: string | null | undefined): mjBizAppsOrdersPaymentProviderEntity | undefined {
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensurePaymentProvidersIndex().byId.get(key);
+    }
+    public PaymentProvidersByCompanyID(companyId: string | null | undefined): mjBizAppsOrdersPaymentProviderEntity[] {
+        const key = uuidKey(companyId);
+        if (!key) return [];
+        const bucket = this.ensurePaymentProvidersIndex().byCompanyId.get(key);
+        return bucket ? [...bucket] : [];
+    }
+    public PriceListByID(id: string | null | undefined): mjBizAppsOrdersPriceListEntity | undefined {
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensurePriceListsIndex().byId.get(key);
+    }
+    public PriceListByCode(code: string | null | undefined): mjBizAppsOrdersPriceListEntity | undefined {
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensurePriceListsIndex().byCode.get(key);
+    }
+    public PriceTiersForPrice(productPriceId: string | null | undefined): mjBizAppsOrdersPriceTierEntity[] {
+        const key = uuidKey(productPriceId);
+        if (!key) return [];
+        const bucket = this.ensurePriceTiersIndex().byPriceId.get(key);
+        return bucket ? [...bucket] : [];
+    }
+    public PromotionTypeByID(id: string | null | undefined): mjBizAppsOrdersPromotionTypeEntity | undefined {
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensurePromotionTypesIndex().byId.get(key);
+    }
+    public PromotionTypeByCode(code: string | null | undefined): mjBizAppsOrdersPromotionTypeEntity | undefined {
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensurePromotionTypesIndex().byCode.get(key);
+    }
+    public OrderCompanyPolicyByCompanyID(companyId: string | null | undefined): mjBizAppsOrdersOrderCompanyPolicyEntity | undefined {
+        const key = uuidKey(companyId);
+        if (!key) return undefined;
+        return this.ensureOrderCompanyPoliciesIndex().byId.get(key);
+    }
+    public SubscriptionFamilyByID(id: string | null | undefined): mjBizAppsOrdersSubscriptionFamilyEntity | undefined {
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureSubscriptionFamiliesIndex().byId.get(key);
+    }
+    public SubscriptionFamilyByCode(code: string | null | undefined): mjBizAppsOrdersSubscriptionFamilyEntity | undefined {
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensureSubscriptionFamiliesIndex().byCode.get(key);
+    }
+    public BundleItemsForProduct(bundleProductId: string | null | undefined): mjBizAppsOrdersProductBundleItemEntity[] {
+        const key = uuidKey(bundleProductId);
+        if (!key) return [];
+        const bucket = this.ensureProductBundleItemsIndex().byBundleProductId.get(key);
+        return bucket ? [...bucket] : [];
     }
     public PaymentTermsTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTermsTypeEntity | undefined {
         const key = uuidKey(id);

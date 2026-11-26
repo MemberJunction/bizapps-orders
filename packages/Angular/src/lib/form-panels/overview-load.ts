@@ -1,5 +1,87 @@
 import { RunView } from '@memberjunction/core';
-import type { IMetadataProvider } from '@memberjunction/core';
+import type { IMetadataProvider, RunViewParams, RunViewResult } from '@memberjunction/core';
+
+/**
+ * A single typed read inside a {@link LoadOverviewBatch} `RunViews` batch.
+ */
+export interface OverviewBatchSpec<T> {
+    readonly Params: RunViewParams;
+    readonly Extract: (result: RunViewResult | undefined) => T;
+}
+
+/**
+ * Narrow, read-only spec for {@link LoadOverviewBatch}. Never used for mutation.
+ */
+export function OverviewRowsSpec<T>(
+    entityName: string,
+    extraFilter: string,
+    fields: string[],
+    maxRows = 8,
+    orderBy?: string,
+): OverviewBatchSpec<T[]> {
+    return {
+        Params: {
+            EntityName: entityName,
+            ExtraFilter: extraFilter,
+            Fields: fields,
+            MaxRows: maxRows,
+            OrderBy: orderBy,
+            ResultType: 'simple',
+        },
+        Extract: (result) => (result?.Success ? ((result.Results as T[] | undefined) ?? []) : []),
+    };
+}
+
+/** Count-only spec for {@link LoadOverviewBatch}. */
+export function OverviewCountSpec(
+    entityName: string,
+    extraFilter: string,
+): OverviewBatchSpec<number> {
+    return {
+        Params: {
+            EntityName: entityName,
+            ExtraFilter: extraFilter,
+            ResultType: 'count_only',
+        },
+        Extract: (result) => (result?.Success ? (result.TotalRowCount ?? 0) : 0),
+    };
+}
+
+/** Allowed output value types for {@link LoadOverviewBatch} specs. */
+type OverviewBatchValue = object[] | number;
+
+/**
+ * Executes multiple independent overview reads in a single `rv.RunViews([...])` GraphQL request.
+ */
+export async function LoadOverviewBatch<A extends OverviewBatchValue, B extends OverviewBatchValue>(
+    provider: IMetadataProvider,
+    specs: readonly [OverviewBatchSpec<A>, OverviewBatchSpec<B>],
+): Promise<[A, B]>;
+export async function LoadOverviewBatch<
+    A extends OverviewBatchValue,
+    B extends OverviewBatchValue,
+    C extends OverviewBatchValue,
+>(
+    provider: IMetadataProvider,
+    specs: readonly [OverviewBatchSpec<A>, OverviewBatchSpec<B>, OverviewBatchSpec<C>],
+): Promise<[A, B, C]>;
+export async function LoadOverviewBatch<
+    A extends OverviewBatchValue,
+    B extends OverviewBatchValue,
+    C extends OverviewBatchValue,
+    D extends OverviewBatchValue,
+>(
+    provider: IMetadataProvider,
+    specs: readonly [OverviewBatchSpec<A>, OverviewBatchSpec<B>, OverviewBatchSpec<C>, OverviewBatchSpec<D>],
+): Promise<[A, B, C, D]>;
+export async function LoadOverviewBatch(
+    provider: IMetadataProvider,
+    specs: readonly OverviewBatchSpec<OverviewBatchValue>[],
+): Promise<OverviewBatchValue[]> {
+    const rv = RunView.FromMetadataProvider(provider);
+    const results = await rv.RunViews(specs.map((s) => s.Params));
+    return specs.map((spec, idx) => spec.Extract(results[idx]));
+}
 
 /**
  * Narrow, read-only RunView used by Overview panels. Never used for mutation.

@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { Metadata, RunView, CompositeKey, EntityFieldTSType } from '@memberjunction/core';
+import { Metadata, CompositeKey, EntityFieldTSType } from '@memberjunction/core';
 import type { CompositeFilterDescriptor } from '@memberjunction/core';
 import type { FilterFieldInfo } from '@memberjunction/ng-filter-builder';
 import { GetGlobalObjectStore } from '@memberjunction/global';
@@ -642,29 +642,23 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.cdr?.markForCheck();
 
         try {
+            const md = new Metadata();
+            await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
             if (this.Product.Prices) {
                 await this.Product.Prices.Load();
                 this.AllPriceRecords = [...this.Product.Prices.Items] as ProductPriceEntity[];
             } else {
-                const md = new Metadata();
-                await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
                 this.AllPriceRecords = OrdersEngine.Instance.ProductPricesFor(this.Product.ID) as ProductPriceEntity[];
             }
 
-            const rv = new RunView();
             // Only live lists get a tab: the resolver ignores an inactive list's prices, so showing one
-            // here would offer prices no customer can receive.
-            const listsResult = await rv.RunView<mjBizAppsOrdersPriceListEntity>({
-                EntityName: PRICE_LISTS_ENTITY,
-                ExtraFilter: `Status = 'Active'`,
-                OrderBy: 'Name ASC',
-                ResultType: 'entity_object',
-                MaxRows: 50,
-            });
+            // here would offer prices no customer can receive. Read from OrdersEngine cache (0 round trips).
+            const availableLists: mjBizAppsOrdersPriceListEntity[] = OrdersEngine.Instance.PriceLists
+                .filter((l) => l.Status === 'Active')
+                .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''));
 
             await this.loadInheritedPrices();
 
-            const availableLists: mjBizAppsOrdersPriceListEntity[] = listsResult.Success && listsResult.Results ? listsResult.Results : [];
             this.buildChannelsList(availableLists);
             this.rebuildLadder();
             if (!this.NewPriceAmount) {

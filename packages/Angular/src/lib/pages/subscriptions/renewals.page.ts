@@ -7,11 +7,13 @@ import {
     MJDialogComponent,
     MJDropdownComponent,
 } from '@memberjunction/ng-ui-components';
-import { RunView } from '@memberjunction/core';
+import { Metadata } from '@memberjunction/core';
 import { OverlayModule, type ConnectedPosition } from '@angular/cdk/overlay';
 import { ExportService } from '@memberjunction/ng-export-service';
 import {
+    LoadOrdersEngine,
     OrdersChangeSubscriptionProductOperation,
+    OrdersEngine,
     OrdersGetRenewalWorklistOperation,
     OrdersSetRenewalSettingsOperation,
     OrdersSpawnRenewalsOperation,
@@ -1216,15 +1218,17 @@ export class MJORenewalsPageComponent implements OnInit {
             this.ProductChoicesLoading = true;
             this.cdr.detectChanges();
             try {
-                const result = await new RunView().RunView<{ ID: string; Name: string; CompanyID: string; Company: string }>({
-                    EntityName: 'MJ_BizApps_Orders: Products',
-                    ExtraFilter: "Status = 'Active' AND SubscriptionTypeID IS NOT NULL",
-                    Fields: ['ID', 'Name', 'CompanyID', 'Company'],
-                    OrderBy: 'Name',
-                    ResultType: 'simple',
-                });
-                this.productCatalog = result.Results ?? [];
-                if (!result.Success) this.ProductError = result.ErrorMessage || 'The product list could not be loaded.';
+                const md = new Metadata();
+                await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
+                this.productCatalog = OrdersEngine.Instance.Products
+                    .filter((p) => p.Status === 'Active' && Boolean(p.SubscriptionTypeID))
+                    .sort((a, b) => (a.Name ?? '').localeCompare(b.Name ?? ''))
+                    .map((p) => ({
+                        ID: p.ID,
+                        Name: p.Name ?? '',
+                        CompanyID: p.CompanyID ?? '',
+                        Company: p.Company ?? '',
+                    }));
             } catch (err) {
                 this.ProductError = `The product list could not be loaded: ${err instanceof Error ? err.message : String(err)}`;
             } finally {

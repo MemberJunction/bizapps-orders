@@ -10,7 +10,7 @@ import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabCon
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { GetDashboardOrders, GetOpenInstalments, type MJODashboardOrderRow, type MJOOpenInstalmentRow } from '../../data/orders-queries';
+import { GetDashboardOrdersAndInstalments, type MJODashboardOrderRow, type MJOOpenInstalmentRow } from '../../data/orders-queries';
 import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
 import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
@@ -601,9 +601,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     private async loadOrders(): Promise<void> {
-        const [orders, instalments] = await Promise.all([GetDashboardOrders(), GetOpenInstalments()]);
-        this.orders = orders;
-        this.instalmentsByOrder = GroupInstalmentsByOrder(instalments);
+        const { Orders, Instalments } = await GetDashboardOrdersAndInstalments();
+        this.orders = Orders;
+        this.instalmentsByOrder = GroupInstalmentsByOrder(Instalments);
         this.cdr.detectChanges();
     }
 

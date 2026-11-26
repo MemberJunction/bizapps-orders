@@ -884,6 +884,10 @@ export class OrderPricingService {
 
     /** Company policy, defaulting to REFUSE when no policy row exists. */
     private async refusesUnpricedLines(): Promise<boolean> {
+        if (await OrdersEngineReady(this.host.Provider, this.host.User)) {
+            const row = OrdersEngine.Instance.OrderCompanyPolicyByCompanyID(this.ctx.CompanyID);
+            return row ? row.RefuseUnpricedLines !== false : true;
+        }
         const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
         const res = await rv.RunView<{ RefuseUnpricedLines: boolean }>(
             {
@@ -972,6 +976,13 @@ export class OrderPricingService {
 
     /** Stacking policy for this company, defaulting to no stacking and sequential maths. */
     private async loadCompanyPolicy(): Promise<{ AllowPromotionStacking: boolean; StackingMode: StackingMode }> {
+        if (await OrdersEngineReady(this.host.Provider, this.host.User)) {
+            const row = OrdersEngine.Instance.OrderCompanyPolicyByCompanyID(this.ctx.CompanyID);
+            return {
+                AllowPromotionStacking: row ? row.AllowPromotionStacking === true : false,
+                StackingMode: (row?.StackingMode as StackingMode) ?? 'Sequential',
+            };
+        }
         const rv = new RunView((this.host.Provider as unknown as IRunViewProvider));
         const res = await rv.RunView<{ AllowPromotionStacking: boolean; StackingMode: string }>(
             {

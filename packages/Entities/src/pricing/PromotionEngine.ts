@@ -31,6 +31,7 @@ import {
     mjBizAppsOrdersOrderLineEntity,
 } from '../generated/entity_subclasses';
 import { EscapeSQLString, MJGlobal } from '@memberjunction/global';
+import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { AllocateProRata, Money } from './PricingBehavior.js';
 import { AssessConcession } from './ConcessionBehavior.js';
 import {
@@ -450,18 +451,29 @@ export async function RunPromotions(
     if (!rows.length) return { Applications: applications, PerLine: perLine, Unusable: unusable };
 
     // Type codes decide how Value is read.
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const typeRes = await rv.RunView<{ ID: string; Code: string }>(
-        {
-            EntityName: PROMOTION_TYPE_ENTITY,
-            ExtraFilter: `ID IN (${[...new Set(rows.map((r) => r.PromotionTypeID))].map((i) => `'${i}'`).join(',')})`,
-            Fields: ['ID', 'Code'],
-            ResultType: 'simple',
-            BypassCache: true,
-        },
-        user,
-    );
-    const kindOf = new Map((typeRes?.Results ?? []).map((t) => [uuidKey(t.ID), t.Code as PromotionValueKind]));
+    let kindOf: Map<string, PromotionValueKind>;
+    if (await OrdersEngineReady(provider, user)) {
+        kindOf = new Map<string, PromotionValueKind>();
+        for (const r of rows) {
+            const pt = OrdersEngine.Instance.PromotionTypeByID(r.PromotionTypeID);
+            if (pt?.Code) {
+                kindOf.set(uuidKey(pt.ID), pt.Code as PromotionValueKind);
+            }
+        }
+    } else {
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const typeRes = await rv.RunView<{ ID: string; Code: string }>(
+            {
+                EntityName: PROMOTION_TYPE_ENTITY,
+                ExtraFilter: `ID IN (${[...new Set(rows.map((r) => r.PromotionTypeID))].map((i) => `'${i}'`).join(',')})`,
+                Fields: ['ID', 'Code'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        kindOf = new Map((typeRes?.Results ?? []).map((t) => [uuidKey(t.ID), t.Code as PromotionValueKind]));
+    }
 
     // Plugin qualification, before anything is valued — an ineligible promotion should never win a
     // collision and then be discarded, because the customer would have been shown the wrong offer.

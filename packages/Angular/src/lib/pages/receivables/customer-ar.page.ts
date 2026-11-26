@@ -20,11 +20,9 @@ import { MJOMultiSelectComponent } from '../../panels/multi-select.component';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { AddressKey, AdoptCompanyChoice, COMPANY_ADDRESS_KEY, CompaniesToAddress, SameChoice, WriteSharedCompanies } from './worklist-view.model';
 import {
+    GetCustomerPaymentsAndSubscriptions,
     GetInvoiceServiceByCompany,
-    GetOpenInstalmentDetails,
-    GetPaymentsForCustomer,
-    GetReceivableOrders,
-    GetSubscriptionsForCustomer,
+    GetReceivableOrdersAndInstalments,
     type MJOOpenInstalmentDetailRow,
     type MJOReceivableOrderRow,
 } from '../../data/orders-queries';
@@ -1641,8 +1639,12 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
         this.Loading = true;
         this.cdr.detectChanges();
         try {
-            // The invoice services only word the issue dialog; that read never throws.
-            const [orders, instalments, services] = await Promise.all([GetReceivableOrders(), GetOpenInstalmentDetails(), GetInvoiceServiceByCompany()]);
+            // The invoice services only word the issue dialog and come from OrdersEngine; orders +
+            // instalments batch into a single RunViews call.
+            const [{ Orders: orders, Instalments: instalments }, services] = await Promise.all([
+                GetReceivableOrdersAndInstalments(),
+                GetInvoiceServiceByCompany(),
+            ]);
             if (this.destroyed || sequence !== this.loadSequence) return;
             this.invoiceServices = services;
             this.orders = orders;
@@ -1669,7 +1671,7 @@ export class MJOCustomerARPageComponent implements OnInit, OnDestroy {
         this.cdr.detectChanges();
         const identity = { OrganizationID: customer.IsOrganization ? key : null, PersonID: customer.IsOrganization ? null : key };
         try {
-            const [payments, subscriptions] = await Promise.all([GetPaymentsForCustomer(identity), GetSubscriptionsForCustomer(identity)]);
+            const { Payments: payments, Subscriptions: subscriptions } = await GetCustomerPaymentsAndSubscriptions(identity);
             if (this.destroyed || this.SelectedKey !== key) return;
             this.Payments = payments;
             this.LastPayment = LastReceived(payments);

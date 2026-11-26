@@ -18,7 +18,7 @@ import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
 import { FormatCoverageWindow, FormatShortDate, FormatShortInstantDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
-import { CountOverviewRows, LoadOverviewRows } from './overview-load';
+import { CountOverviewRows, LoadOverviewBatch, LoadOverviewRows, OverviewCountSpec, OverviewRowsSpec } from './overview-load';
 
 /**
  * Newest first for every list that reads in time order. The Overview loader keeps 8 rows, so the
@@ -140,19 +140,19 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
         const seq = ++this.loadSeq;
         const p = this.FormComponent.ProviderToUse;
         try {
-            const [terms, grants, events] = await Promise.all([
-                LoadOverviewRows<Pick<mjBizAppsOrdersSubscriptionTermEntity, 'TermNumber' | 'StartDate' | 'EndDate' | 'Amount' | 'Status' | 'IsProrated'>>(
-                    p, MJO_ENTITIES.SubscriptionTerm, `SubscriptionID='${this.Record.ID}'`,
+            const [terms, grants, events] = await LoadOverviewBatch(p, [
+                OverviewRowsSpec<Pick<mjBizAppsOrdersSubscriptionTermEntity, 'TermNumber' | 'StartDate' | 'EndDate' | 'Amount' | 'Status' | 'IsProrated'>>(
+                    MJO_ENTITIES.SubscriptionTerm, `SubscriptionID='${this.Record.ID}'`,
                     ['TermNumber', 'StartDate', 'EndDate', 'Amount', 'Status', 'IsProrated'],
                     OVERVIEW_ROWS, NEWEST_TERMS_FIRST,
                 ),
-                LoadOverviewRows<Pick<mjBizAppsOrdersEntitlementGrantEntity, 'Status' | 'BeneficiaryPerson' | 'ValidTo'>>(
-                    p, MJO_ENTITIES.EntitlementGrant, `SubscriptionID='${this.Record.ID}'`,
+                OverviewRowsSpec<Pick<mjBizAppsOrdersEntitlementGrantEntity, 'Status' | 'BeneficiaryPerson' | 'ValidTo'>>(
+                    MJO_ENTITIES.EntitlementGrant, `SubscriptionID='${this.Record.ID}'`,
                     ['Status', 'BeneficiaryPerson', 'ValidTo'],
                     OVERVIEW_ROWS, LATEST_GRANTS_FIRST,
                 ),
-                LoadOverviewRows<Pick<mjBizAppsOrdersSubscriptionEventEntity, 'EventType' | 'OccurredAt'>>(
-                    p, MJO_ENTITIES.SubscriptionEvent, `SubscriptionID='${this.Record.ID}'`,
+                OverviewRowsSpec<Pick<mjBizAppsOrdersSubscriptionEventEntity, 'EventType' | 'OccurredAt'>>(
+                    MJO_ENTITIES.SubscriptionEvent, `SubscriptionID='${this.Record.ID}'`,
                     ['EventType', 'OccurredAt'],
                     OVERVIEW_ROWS, NEWEST_OCCURRED_FIRST,
                 ),
@@ -357,12 +357,12 @@ export class PaymentProviderOverviewPanel extends BaseFormPanel<mjBizAppsOrdersP
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [payments, intents] = await Promise.all([
-            LoadOverviewRows<{ PaymentNumber: string; Amount: number; Status: string }>(
-                p, MJO_ENTITIES.PaymentHeader, `PaymentProviderID='${this.Record.ID}'`, ['PaymentNumber', 'Amount', 'Status'],
+        const [payments, intents] = await LoadOverviewBatch(p, [
+            OverviewRowsSpec<{ PaymentNumber: string; Amount: number; Status: string }>(
+                MJO_ENTITIES.PaymentHeader, `PaymentProviderID='${this.Record.ID}'`, ['PaymentNumber', 'Amount', 'Status'],
                 OVERVIEW_ROWS, NEWEST_PAYMENTS_FIRST,
             ),
-            CountOverviewRows(p, MJO_ENTITIES.PaymentIntent, `PaymentProviderID='${this.Record.ID}'`),
+            OverviewCountSpec(MJO_ENTITIES.PaymentIntent, `PaymentProviderID='${this.Record.ID}'`),
         ]);
         this.Cards = [
             {

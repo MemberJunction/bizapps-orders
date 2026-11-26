@@ -1,11 +1,12 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RunView } from '@memberjunction/core';
+import { Metadata } from '@memberjunction/core';
 import { MJAlertComponent, MJButtonDirective, MJConfirmService } from '@memberjunction/ng-ui-components';
 import {
+    LoadOrdersEngine,
+    OrdersEngine,
     OrdersGetBillingWorklistOperation,
     OrdersIssueInstalmentInvoiceOperation,
-    RequireUUID,
     Today,
     type BillingWorklistRow,
 } from '@mj-biz-apps/orders-entities';
@@ -75,8 +76,6 @@ const BILLING_STATE_KEY = 'mjOrders.billingWorklist.view';
 /** The tab-address key for this page's window. */
 const DUE_ADDRESS_KEY = 'billingDue';
 
-const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
-const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 /** Provider type codes that invoice through an external rail. Mirrors `INVOICE_RAIL_TYPE_CODES`. */
 const RAIL_TYPE_CODES = ['BillCom'];
 
@@ -749,24 +748,26 @@ export class MJOBillingPageComponent implements OnInit {
     }
 
     /**
-     * Active invoice rails by company. Two small reads of seeded metadata rather than a per-row call,
-     * and a failure leaves the column empty rather than failing the page — it is context, not the work.
+     * Active invoice rails by company, read synchronously from the `OrdersEngine` cache (0 round trips).
+     * A failure leaves the column empty rather than failing the page — it is context, not the work.
      */
     private async loadRails(): Promise<void> {
         this.Rails = new Map();
         try {
-            const rv = new RunView();
-            const codes = RAIL_TYPE_CODES.map((c) => `'${c}'`).join(',');
-            const types = await rv.RunView<{ ID: string }>({ EntityName: PAYMENT_PROVIDER_TYPE_ENTITY, ExtraFilter: `Code IN (${codes})`, Fields: ['ID'], ResultType: 'simple' });
-            const typeIDs = (types.Results ?? []).map((t) => `'${RequireUUID(t.ID, 'PaymentProviderTypeID')}'`);
-            if (!typeIDs.length) return;
-            const providers = await rv.RunView<{ CompanyID: string; Name: string }>({
-                EntityName: PAYMENT_PROVIDER_ENTITY,
-                ExtraFilter: `IsActive = 1 AND PaymentProviderTypeID IN (${typeIDs.join(',')})`,
-                Fields: ['CompanyID', 'Name'],
-                ResultType: 'simple',
-            });
-            for (const p of providers.Results ?? []) this.Rails.set((p.CompanyID ?? '').toLowerCase(), p.Name);
+            const md = new Metadata();
+            await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
+            const engine = OrdersEngine.Instance;
+            const typeIDs = new Set(
+                RAIL_TYPE_CODES
+                    .map((c) => engine.PaymentProviderTypeByCode(c)?.ID?.toLowerCase())
+                    .filter((id): id is string => Boolean(id)),
+            );
+            if (!typeIDs.size) return;
+            for (const p of engine.PaymentProviders) {
+                if (p.IsActive && typeIDs.has((p.PaymentProviderTypeID ?? '').toLowerCase()) && p.CompanyID) {
+                    this.Rails.set(p.CompanyID.toLowerCase(), p.Name);
+                }
+            }
         } catch {
             // Context only. An order still bills the same way whether or not this column renders.
         }

@@ -5,7 +5,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxOverviewData } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJONewProductDialogComponent } from './new-product-dialog.component';
 import { ToRecordOpenRequest, type RecordOpenRequest, type WorkspaceOpenEvent } from '../workspace-requests';
@@ -508,18 +508,15 @@ export class MJOChargesTaxPageComponent implements OnInit {
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.ChargeTypeEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.ChargeType) || null;
-        const [rows, jurisdictions, rates, nexus, exemptions] = await Promise.all([
+        const [rows, taxData] = await Promise.all([
             GetChargeTypes(),
-            GetTaxJurisdictions(),
-            GetTaxRates(),
-            GetTaxNexus(),
-            GetTaxExemptions(),
+            GetTaxOverviewData(),
         ]);
         this.Rows = rows;
-        this.Jurisdictions = jurisdictions;
-        this.Rates = rates;
-        this.Nexus = nexus;
-        this.Exemptions = exemptions;
+        this.Jurisdictions = taxData.Jurisdictions;
+        this.Rates = taxData.Rates;
+        this.Nexus = taxData.Nexus;
+        this.Exemptions = taxData.Exemptions;
         this.cdr.detectChanges();
     }
 

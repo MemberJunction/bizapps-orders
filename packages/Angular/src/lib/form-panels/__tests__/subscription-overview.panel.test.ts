@@ -23,8 +23,9 @@ const mocks = vi.hoisted(() => ({
     logged: [] as string[],
 }));
 
-vi.mock('../overview-load', () => ({
-    LoadOverviewRows: vi.fn(async (_p: unknown, entity: string, extraFilter: string, _fields: string[], maxRows?: number, orderBy?: string) => {
+vi.mock('../overview-load', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../overview-load')>();
+    const loadOne = async (entity: string, extraFilter: string, maxRows?: number, orderBy?: string) => {
         mocks.calls.push({ Entity: entity, ExtraFilter: extraFilter, MaxRows: maxRows, OrderBy: orderBy });
         // Read the answer when called, so a load started before a change keeps what it would have read.
         const rows = mocks.rows.get(entity) ?? [];
@@ -32,9 +33,33 @@ vi.mock('../overview-load', () => ({
         if (mocks.gate) await mocks.gate;
         if (fail) throw fail;
         return rows;
-    }),
-    CountOverviewRows: vi.fn(async () => 0),
-}));
+    };
+    return {
+        ...actual,
+        LoadOverviewRows: vi.fn(async (_p: unknown, entity: string, extraFilter: string, _fields: string[], maxRows?: number, orderBy?: string) =>
+            loadOne(entity, extraFilter, maxRows, orderBy),
+        ),
+        CountOverviewRows: vi.fn(async () => 0),
+        LoadOverviewBatch: vi.fn(async (_p: unknown, specs: ReadonlyArray<{ Params: { EntityName: string; ExtraFilter?: string; MaxRows?: number; OrderBy?: string; ResultType?: string } }>) => {
+            const fail = mocks.fail;
+            const snap = specs.map((s) => {
+                if (s.Params.ResultType === 'count_only') {
+                    return 0;
+                }
+                mocks.calls.push({
+                    Entity: s.Params.EntityName,
+                    ExtraFilter: s.Params.ExtraFilter ?? '',
+                    MaxRows: s.Params.MaxRows,
+                    OrderBy: s.Params.OrderBy,
+                });
+                return mocks.rows.get(s.Params.EntityName) ?? [];
+            });
+            if (mocks.gate) await mocks.gate;
+            if (fail) throw fail;
+            return snap;
+        }),
+    };
+});
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();

@@ -15,7 +15,7 @@ import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
 import { FormatCoverageWindow, FormatInstantWindow, FormatPercentFraction, PromotionValueLabel, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
-import { CountOverviewRows, LoadOverviewRows } from './overview-load';
+import { CountOverviewRows, LoadOverviewBatch, OverviewCountSpec, OverviewRowsSpec } from './overview-load';
 
 const OVERVIEW_META = {
     slot: 'after-fields' as const,
@@ -47,12 +47,12 @@ export class PriceListOverviewPanel extends BaseFormPanel<mjBizAppsOrdersPriceLi
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [prices, assignments] = await Promise.all([
-            LoadOverviewRows<Pick<mjBizAppsOrdersProductPriceEntity, 'Product' | 'PricingModel' | 'Amount' | 'Status'>>(
-                p, MJO_ENTITIES.ProductPrice, `PriceListID='${this.Record.ID}'`, ['Product', 'PricingModel', 'Amount', 'Status'],
+        const [prices, assignments] = await LoadOverviewBatch(p, [
+            OverviewRowsSpec<Pick<mjBizAppsOrdersProductPriceEntity, 'Product' | 'PricingModel' | 'Amount' | 'Status'>>(
+                MJO_ENTITIES.ProductPrice, `PriceListID='${this.Record.ID}'`, ['Product', 'PricingModel', 'Amount', 'Status'],
             ),
-            LoadOverviewRows<Pick<mjBizAppsOrdersPriceListAssignmentEntity, 'Organization' | 'Person' | 'Priority' | 'Status'>>(
-                p, MJO_ENTITIES.PriceListAssignment, `PriceListID='${this.Record.ID}'`, ['Organization', 'Person', 'Priority', 'Status'],
+            OverviewRowsSpec<Pick<mjBizAppsOrdersPriceListAssignmentEntity, 'Organization' | 'Person' | 'Priority' | 'Status'>>(
+                MJO_ENTITIES.PriceListAssignment, `PriceListID='${this.Record.ID}'`, ['Organization', 'Person', 'Priority', 'Status'],
             ),
         ]);
         this.Cards = [
@@ -112,14 +112,14 @@ export class PromotionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersPromoti
     public async ngOnInit(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
-        const [codes, targets, redemptions] = await Promise.all([
-            LoadOverviewRows<Pick<mjBizAppsOrdersPromotionCodeEntity, 'Code' | 'Status' | 'MaxRedemptions'>>(
-                p, MJO_ENTITIES.PromotionCode, `PromotionID='${this.Record.ID}'`, ['Code', 'Status', 'MaxRedemptions'],
+        const [codes, targets, redemptions] = await LoadOverviewBatch(p, [
+            OverviewRowsSpec<Pick<mjBizAppsOrdersPromotionCodeEntity, 'Code' | 'Status' | 'MaxRedemptions'>>(
+                MJO_ENTITIES.PromotionCode, `PromotionID='${this.Record.ID}'`, ['Code', 'Status', 'MaxRedemptions'],
             ),
-            LoadOverviewRows<Pick<mjBizAppsOrdersPromotionTargetEntity, 'Product' | 'ProductCategory' | 'IncludeDescendants'>>(
-                p, MJO_ENTITIES.PromotionTarget, `PromotionID='${this.Record.ID}'`, ['Product', 'ProductCategory', 'IncludeDescendants'],
+            OverviewRowsSpec<Pick<mjBizAppsOrdersPromotionTargetEntity, 'Product' | 'ProductCategory' | 'IncludeDescendants'>>(
+                MJO_ENTITIES.PromotionTarget, `PromotionID='${this.Record.ID}'`, ['Product', 'ProductCategory', 'IncludeDescendants'],
             ),
-            CountOverviewRows(p, MJO_ENTITIES.OrderAdjustment, `PromotionID='${this.Record.ID}'`),
+            OverviewCountSpec(MJO_ENTITIES.OrderAdjustment, `PromotionID='${this.Record.ID}'`),
         ]);
         this.Cards = [
             {
