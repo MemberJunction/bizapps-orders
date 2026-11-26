@@ -13,7 +13,7 @@
     "mergeStrategy": "merge",
     "backupBeforeUpdate": true,
     "backupDirectory": ".backups",
-    "filter": "Name IN ('Engagement Lead', 'Account Director', 'Orders Revenue Supervisor', 'Senior Finance (AR)', 'CFO', 'CEO Approver')",
+    "filter": "Name IN ('Engagement Lead', 'Account Director', 'Orders Revenue Supervisor', 'Senior Finance (AR)', 'CFO', 'CEO Approver', 'Order Creator', 'Orders Catalog Manager')",
     "externalizeFields": [],
     "lookupFields": {},
     "relatedEntities": {}
