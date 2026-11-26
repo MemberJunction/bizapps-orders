@@ -71,5 +71,29 @@
     "primaryKey": {
       "ID": "5BFCAA2B-F32E-4657-ABA4-D5C126211454"
     }
+  },
+  {
+    "_comments": [
+      "Approval of a refund request (bc-aidp-next-golive#355). Its own type, so that closing the task in the Tasks",
+      "inbox runs the Action that applies the decision to the request. IsApproval lists its tasks in the Tasks approvals inbox;",
+      "its OnAssign action posts each assignment to the Teams channel named by the 'Teams Channel Webhook' credential called",
+      "ORDERS_REFUND_APPROVAL. Without that credential the tasks app falls back to the default 'Teams Channel Webhook' credential."
+    ],
+    "fields": {
+      "Name": "Refund Approval",
+      "Code": "ORDERS_REFUND_APPROVAL",
+      "Description": "Approve or reject a refund someone else requested. Approving lets the requester issue the refund for the approved amount; it moves no money itself.",
+      "IconClass": "fa-solid fa-arrow-rotate-left",
+      "DefaultPriority": "High",
+      "IsActive": true,
+      "IsApproval": true,
+      "OnAssignActionID": "@lookup:MJ: Actions.Name=Post Task Assignment to Teams",
+      "OnCompleteActionID": "@lookup:MJ: Actions.Name=Apply Refund Request Decision",
+      "OnCancelActionID": "@lookup:MJ: Actions.Name=Apply Refund Request Decision",
+      "OnRejectActionID": "@lookup:MJ: Actions.Name=Apply Refund Request Decision"
+    },
+    "primaryKey": {
+      "ID": "0F6ED885-376E-4F8C-81D0-B9B00408B474"
+    }
   }
 ]

@@ -1,0 +1,88 @@
+<mj-collapsible-panel
+    SectionKey="refundRequests"
+    SectionName="Refund Requests"
+    Icon="fa-solid fa-arrow-rotate-left"
+    [Form]="FormComponent"
+    [FormContext]="FormContext"
+    [DefaultExpanded]="Requests.length > 0">
+    @if (CanOfferRequest) {
+        <div class="mjo-terms-toolbar">
+            <button type="button" mjButton variant="flat" size="sm" (click)="ShowRequest = true">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i> Request refund
+            </button>
+        </div>
+    }
+    @if (ShowRequest) {
+        <form class="mjo-ao-form" (ngSubmit)="Submit()">
+            <label class="mjo-ao-field">
+                <span>Amount</span>
+                <input type="number" name="amount" min="0.01" step="0.01" required [(ngModel)]="NewAmount" />
+            </label>
+            <label class="mjo-ao-field mjo-ao-field--wide">
+                <span>Reason</span>
+                <textarea name="reason" rows="2" maxlength="1000" required [(ngModel)]="NewReason"></textarea>
+            </label>
+            <p class="mjo-ao-meta mjo-ao-field--wide">Someone other than you approves the refund. Once approved, you issue it from here.</p>
+            <div class="mjo-ao-actions">
+                <button type="submit" mjButton variant="primary" size="sm" [disabled]="!CanSubmit">Submit for approval</button>
+                <button type="button" mjButton variant="flat" size="sm" (click)="ShowRequest = false" [disabled]="Busy">Cancel</button>
+            </div>
+        </form>
+    }
+    @if (Error) {
+        <p class="mjo-ao-error" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ Error }}</p>
+    }
+    @if (Notice) {
+        <p class="mjo-ao-meta" role="status"><i class="fa-solid fa-circle-check" aria-hidden="true"></i> {{ Notice }}</p>
+    }
+    @if (Loading) {
+        <p class="mjo-term-empty">Loading refund requests…</p>
+    } @else if (!Requests.length) {
+        <mj-empty-state Size="inline" Message="No refund requests on this payment." />
+    } @else {
+        <ul class="mjo-ao-list">
+            @for (r of Requests; track r.ID) {
+                <li class="mjo-ao-item">
+                    <div class="mjo-ao-head">
+                        <strong>Refund {{ Money(r.Amount) }}</strong>
+                        <span [class]="ChipClass(r.Status)">{{ r.Status }}</span>
+                        @if (r.RefundPaymentHeader) {
+                            <span class="mjo-ao-meta">as {{ r.RefundPaymentHeader }}</span>
+                        }
+                    </div>
+                    <p class="mjo-ao-reason">{{ r.Reason }}</p>
+                    <p class="mjo-ao-meta">
+                        Requested by {{ r.RequestedByUser || r.RequestedByUserID }} on {{ Day(r.RequestedAt) }}
+                        @if (r.DecidedByUser) { · Decided by {{ r.DecidedByUser }} on {{ Day(r.DecidedAt) }} }
+                    </p>
+                    @if (r.DecisionNotes) {
+                        <p class="mjo-ao-meta">{{ r.DecisionNotes }}</p>
+                    }
+                    @if (r.Status === 'Requested') {
+                        @if (CanDecide(r)) {
+                            <div class="mjo-ao-decide">
+                                <input type="text" placeholder="Notes (optional)" [name]="'notes-' + r.ID" [(ngModel)]="DecisionNotes[r.ID]" />
+                                <button type="button" mjButton variant="primary" size="sm" [disabled]="Busy" (click)="Decide(r, 'Approved')">Approve</button>
+                                <button type="button" mjButton variant="flat" size="sm" [disabled]="Busy" (click)="Decide(r, 'Rejected')">Reject</button>
+                            </div>
+                        } @else {
+                            <p class="mjo-ao-meta mjo-ao-waiting">
+                                <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> {{ WaitingOn(r) }}
+                            </p>
+                        }
+                    }
+                    @if (IsMine(r) && (r.Status === 'Requested' || r.Status === 'Approved')) {
+                        <div class="mjo-ao-decide">
+                            @if (r.Status === 'Approved') {
+                                <button type="button" mjButton variant="primary" size="sm" [disabled]="Busy" (click)="Issue(r)">
+                                    <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i> Issue refund of {{ Money(r.Amount) }}
+                                </button>
+                            }
+                            <button type="button" mjButton variant="flat" size="sm" [disabled]="Busy" (click)="Withdraw(r)">Withdraw</button>
+                        </div>
+                    }
+                </li>
+            }
+        </ul>
+    }
+</mj-collapsible-panel>

@@ -24,6 +24,7 @@ import { LoadDispatchOutboundEventsAction } from './custom/dispatch-outbound-eve
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
 import { LoadApplyAccessOverrideDecisionAction } from './custom/apply-access-override-decision.action.js';
+import { LoadApplyRefundRequestDecisionAction } from './custom/apply-refund-request-decision.action.js';
 import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overlapping-subscriptions.action.js';
 import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-progress.action.js';
 import { LoadReconcilePaymentProviderChargesAction } from './custom/reconcile-payment-provider-charges.action.js';
@@ -49,6 +50,8 @@ import {
     LoadPaymentHeaderEntityServer,
     LoadPaymentLineEntityServer,
     LoadRefundPaymentOperation,
+    LoadRefundRequestEntityServer,
+    LoadRefundRequestOperations,
     LoadApplyAccountCreditOperation,
     LoadPreviewPriceOperation,
     LoadPriceOrderOperation,
@@ -163,6 +166,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPaymentHeaderEntityServer();  // books the cash leg on capture/refund (D18)
     LoadPaymentLineEntityServer();    // the over-application guard
     LoadRefundPaymentOperation();     // the 'Orders.RefundPayment' remote operation (D17)
+    LoadRefundRequestOperations();    // 'Orders.RequestRefund' / 'Orders.RecordRefundRequestDecision' / 'Orders.WithdrawRefundRequest' (golive #355)
+    LoadRefundRequestEntityServer();  // a refund request is decided only through its approval task
     LoadApplyAccountCreditOperation(); // the 'Orders.ApplyAccountCredit' remote operation (D68)
     LoadPreviewPriceOperation();       // the 'Orders.PreviewPrice' dry run (D69)
     LoadPriceOrderOperation();         // 'Orders.PriceOrder' — what a whole order comes to, persisting nothing
@@ -241,6 +246,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
     LoadApplyAccessOverrideDecisionAction(); // 'Orders.ApplyAccessOverrideDecision' — the Tasks inbox hook for overrides (#268)
+    LoadApplyRefundRequestDecisionAction(); // 'Orders.ApplyRefundRequestDecision' — the Tasks inbox hook for refund requests (golive #355)
     LoadDetectOverlappingSubscriptionsAction(); // 'Orders.DetectOverlappingSubscriptions' — nightly overlap check for finance review (golive #279)
     LoadDetectUnattestedProgressAction(); // 'Orders.DetectUnattestedProgress' — nightly unattested-progress exceptions (golive #279)
     LoadReconcilePaymentProviderChargesAction(); // 'Orders.ReconcilePaymentProviderCharges' — nightly charge reconciliation (#477)

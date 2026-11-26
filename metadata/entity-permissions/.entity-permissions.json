@@ -148,5 +148,57 @@
     "primaryKey": {
       "ID": "A4098F01-3B5C-489E-9A41-19A0880E0005"
     }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Refund Requests",
+      "RoleID": "@lookup:MJ: Roles.Name=Finance",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "5B5CF084-84C8-4F24-9F8F-A59CFA7F0001"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Refund Requests",
+      "RoleID": "@lookup:MJ: Roles.Name=Senior Finance (AR)",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "5B5CF084-84C8-4F24-9F8F-A59CFA7F0002"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Refund Requests",
+      "RoleID": "@lookup:MJ: Roles.Name=CFO",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "5B5CF084-84C8-4F24-9F8F-A59CFA7F0003"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Refund Requests",
+      "RoleID": "@lookup:MJ: Roles.Name=CEO Approver",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "5B5CF084-84C8-4F24-9F8F-A59CFA7F0004"
+    }
   }
 ]

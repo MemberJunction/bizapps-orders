@@ -6121,6 +6121,128 @@ export const mjBizAppsOrdersReferralProgramSchema = z.object({
 export type mjBizAppsOrdersReferralProgramEntityType = z.infer<typeof mjBizAppsOrdersReferralProgramSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Refund Requests
+ */
+export const mjBizAppsOrdersRefundRequestSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentHeaderID: z.string().describe(`
+        * * Field Name: PaymentHeaderID
+        * * Display Name: Payment Header
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
+        * * Description: The captured payment to refund.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The amount to refund. The refund issued against an approved request must be this amount.`),
+    Reason: z.string().describe(`
+        * * Field Name: Reason
+        * * Display Name: Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why the refund is needed. Required.`),
+    Status: z.union([z.literal('Approved'), z.literal('Issued'), z.literal('Rejected'), z.literal('Requested'), z.literal('Withdrawn')]).describe(`
+        * * Field Name: Status
+        * * Display Name: Status
+        * * SQL Data Type: nvarchar(20)
+        * * Default Value: Requested
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Issued
+    *   * Rejected
+    *   * Requested
+    *   * Withdrawn
+        * * Description: Requested (awaiting approval), Approved (the requester may issue it), Rejected, Withdrawn (closed without being issued), or Issued (the refund was made).`),
+    RequestedByUserID: z.string().describe(`
+        * * Field Name: RequestedByUserID
+        * * Display Name: Requested By User
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user who requested the refund, and the only one who may issue it once approved.`),
+    RequestedAt: z.date().describe(`
+        * * Field Name: RequestedAt
+        * * Display Name: Requested At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: sysdatetimeoffset()
+        * * Description: When the refund was requested.`),
+    ApprovalTaskID: z.string().nullable().describe(`
+        * * Field Name: ApprovalTaskID
+        * * Display Name: Approval Task
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Tasks: Tasks (vwTasks.ID)
+        * * Description: The Tasks approval request for this refund.`),
+    ApprovalTaskRaisedAt: z.date().nullable().describe(`
+        * * Field Name: ApprovalTaskRaisedAt
+        * * Display Name: Approval Task Raised At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the approval task was raised. Set together with ApprovalTaskID.`),
+    DecidedByUserID: z.string().nullable().describe(`
+        * * Field Name: DecidedByUserID
+        * * Display Name: Decided By User
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user whose decision on the approval task approved or rejected the request.`),
+    DecidedAt: z.date().nullable().describe(`
+        * * Field Name: DecidedAt
+        * * Display Name: Decided At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the request was approved, rejected or withdrawn.`),
+    DecisionNotes: z.string().nullable().describe(`
+        * * Field Name: DecisionNotes
+        * * Display Name: Decision Notes
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: The notes recorded with the decision, or why a request closed without being issued.`),
+    RefundPaymentHeaderID: z.string().nullable().describe(`
+        * * Field Name: RefundPaymentHeaderID
+        * * Display Name: Refund Payment Header
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
+        * * Description: The refund payment issued against this request. Set when the request is Issued.`),
+    IssuedAt: z.date().nullable().describe(`
+        * * Field Name: IssuedAt
+        * * Display Name: Issued At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the refund was issued.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentHeader: z.string().nullable().describe(`
+        * * Field Name: PaymentHeader
+        * * Display Name: Payment Header Details
+        * * SQL Data Type: nvarchar(40)`),
+    RequestedByUser: z.string().nullable().describe(`
+        * * Field Name: RequestedByUser
+        * * Display Name: Requested By User Details
+        * * SQL Data Type: nvarchar(100)`),
+    ApprovalTask: z.string().nullable().describe(`
+        * * Field Name: ApprovalTask
+        * * Display Name: Approval Task Details
+        * * SQL Data Type: nvarchar(255)`),
+    DecidedByUser: z.string().nullable().describe(`
+        * * Field Name: DecidedByUser
+        * * Display Name: Decided By User Details
+        * * SQL Data Type: nvarchar(100)`),
+    RefundPaymentHeader: z.string().nullable().describe(`
+        * * Field Name: RefundPaymentHeader
+        * * Display Name: Refund Payment Header Details
+        * * SQL Data Type: nvarchar(40)`),
+});
+
+export type mjBizAppsOrdersRefundRequestEntityType = z.infer<typeof mjBizAppsOrdersRefundRequestSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Revenue Recognition Types
  */
 export const mjBizAppsOrdersRevenueRecognitionTypeSchema = z.object({
@@ -25446,6 +25568,434 @@ export class mjBizAppsOrdersReferralProgramEntity extends BaseEntity<mjBizAppsOr
     }
 }
 
+
+/**
+ * MJ_BizApps_Orders: Refund Requests - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: RefundRequest
+ * * Base View: vwRefundRequests
+ * * @description A request to refund a captured payment, approved through Tasks by someone other than the requester before the requester may issue it. Needed only while the RefundApprovalThreshold setting is set.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Refund Requests')
+export class mjBizAppsOrdersRefundRequestEntity extends BaseEntity<mjBizAppsOrdersRefundRequestEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Refund Requests record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Refund Requests record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersRefundRequestEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Refund Requests entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * Amount: Refund amount must be greater than zero.
+    * * Reason: Reason must not be empty or consist only of whitespace characters.
+    * * Table-Level: Approval task ID and approval task raised date must either both be provided or both be empty.
+    * * Table-Level: Refunds marked with a status of 'Issued' must have both a refund payment header ID and an issued timestamp, while refunds in any other status cannot have either of these values set.
+    * * Table-Level: Ensures decision details match the refund status: Requested items cannot have decision details, Withdrawn items must include a decision date, and Issued, Rejected, or Approved items must include both the deciding user and decision date.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateAmountGreaterThanZero(result);
+        this.ValidateReasonNotEmpty(result);
+        this.ValidateApprovalTaskIDAndApprovalTaskRaisedAt(result);
+        this.ValidateRefundIssuedFields(result);
+        this.ValidateStatusDecisionDetails(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Refund amount must be greater than zero.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateAmountGreaterThanZero(result: ValidationResult) {
+    	if (this.Amount != null && this.Amount <= 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"Amount",
+    			"Amount must be greater than zero.",
+    			this.Amount,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Reason must not be empty or consist only of whitespace characters.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    	public ValidateReasonNotEmpty(result: ValidationResult) {
+    		if (this.Reason == null || this.Reason.trim().length === 0) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"Reason",
+    				"Reason cannot be blank or contain only whitespace.",
+    				this.Reason,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+
+    /**
+    * Approval task ID and approval task raised date must either both be provided or both be empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateApprovalTaskIDAndApprovalTaskRaisedAt(result: ValidationResult) {
+    	const hasTaskID = this.ApprovalTaskID != null;
+    	const hasRaisedAt = this.ApprovalTaskRaisedAt != null;
+    
+    	if (hasTaskID !== hasRaisedAt) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ApprovalTaskID",
+    			"Approval Task ID and Approval Task Raised At must either both be set or both be empty.",
+    			this.ApprovalTaskID,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Refunds marked with a status of 'Issued' must have both a refund payment header ID and an issued timestamp, while refunds in any other status cannot have either of these values set.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateRefundIssuedFields(result: ValidationResult): void {
+    	const isIssued = this.Status === 'Issued';
+    	const hasRefundPaymentHeaderID = this.RefundPaymentHeaderID != null;
+    	const hasIssuedAt = this.IssuedAt != null;
+    
+    	if (isIssued) {
+    		if (!hasRefundPaymentHeaderID || !hasIssuedAt) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"Status",
+    				"Refunds with status 'Issued' must include both a Refund Payment Header ID and an Issued At timestamp.",
+    				this.Status,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	} else {
+    		if (hasRefundPaymentHeaderID || hasIssuedAt) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"Status",
+    				"Refund Payment Header ID and Issued At timestamp must only be set when the refund status is 'Issued'.",
+    				this.Status,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
+    * Ensures decision details match the refund status: Requested items cannot have decision details, Withdrawn items must include a decision date, and Issued, Rejected, or Approved items must include both the deciding user and decision date.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateStatusDecisionDetails(result: ValidationResult) {
+    	if (this.Status == null) {
+    		return;
+    	}
+    
+    	const isRequested = this.Status === 'Requested' && this.DecidedByUserID == null && this.DecidedAt == null;
+    	const isWithdrawn = this.Status === 'Withdrawn' && this.DecidedAt != null;
+    	const isDecided = (this.Status === 'Issued' || this.Status === 'Rejected' || this.Status === 'Approved') &&
+    		this.DecidedByUserID != null &&
+    		this.DecidedAt != null;
+    
+    	if (!isRequested && !isWithdrawn && !isDecided) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"Status",
+    			"Decision details must match the status: 'Requested' requires no decision info, 'Withdrawn' requires a decision date, and 'Issued', 'Rejected', or 'Approved' require both a deciding user and decision date.",
+    			this.Status,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentHeaderID
+    * * Display Name: Payment Header
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
+    * * Description: The captured payment to refund.
+    */
+    get PaymentHeaderID(): string {
+        return this.Get('PaymentHeaderID');
+    }
+    set PaymentHeaderID(value: string) {
+        this.Set('PaymentHeaderID', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The amount to refund. The refund issued against an approved request must be this amount.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: Reason
+    * * Display Name: Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why the refund is needed. Required.
+    */
+    get Reason(): string {
+        return this.Get('Reason');
+    }
+    set Reason(value: string) {
+        this.Set('Reason', value);
+    }
+
+    /**
+    * * Field Name: Status
+    * * Display Name: Status
+    * * SQL Data Type: nvarchar(20)
+    * * Default Value: Requested
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Approved
+    *   * Issued
+    *   * Rejected
+    *   * Requested
+    *   * Withdrawn
+    * * Description: Requested (awaiting approval), Approved (the requester may issue it), Rejected, Withdrawn (closed without being issued), or Issued (the refund was made).
+    */
+    get Status(): 'Approved' | 'Issued' | 'Rejected' | 'Requested' | 'Withdrawn' {
+        return this.Get('Status');
+    }
+    set Status(value: 'Approved' | 'Issued' | 'Rejected' | 'Requested' | 'Withdrawn') {
+        this.Set('Status', value);
+    }
+
+    /**
+    * * Field Name: RequestedByUserID
+    * * Display Name: Requested By User
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user who requested the refund, and the only one who may issue it once approved.
+    */
+    get RequestedByUserID(): string {
+        return this.Get('RequestedByUserID');
+    }
+    set RequestedByUserID(value: string) {
+        this.Set('RequestedByUserID', value);
+    }
+
+    /**
+    * * Field Name: RequestedAt
+    * * Display Name: Requested At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: sysdatetimeoffset()
+    * * Description: When the refund was requested.
+    */
+    get RequestedAt(): Date {
+        return this.Get('RequestedAt');
+    }
+    set RequestedAt(value: Date) {
+        this.Set('RequestedAt', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskID
+    * * Display Name: Approval Task
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Tasks: Tasks (vwTasks.ID)
+    * * Description: The Tasks approval request for this refund.
+    */
+    get ApprovalTaskID(): string | null {
+        return this.Get('ApprovalTaskID');
+    }
+    set ApprovalTaskID(value: string | null) {
+        this.Set('ApprovalTaskID', value);
+    }
+
+    /**
+    * * Field Name: ApprovalTaskRaisedAt
+    * * Display Name: Approval Task Raised At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the approval task was raised. Set together with ApprovalTaskID.
+    */
+    get ApprovalTaskRaisedAt(): Date | null {
+        return this.Get('ApprovalTaskRaisedAt');
+    }
+    set ApprovalTaskRaisedAt(value: Date | null) {
+        this.Set('ApprovalTaskRaisedAt', value);
+    }
+
+    /**
+    * * Field Name: DecidedByUserID
+    * * Display Name: Decided By User
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user whose decision on the approval task approved or rejected the request.
+    */
+    get DecidedByUserID(): string | null {
+        return this.Get('DecidedByUserID');
+    }
+    set DecidedByUserID(value: string | null) {
+        this.Set('DecidedByUserID', value);
+    }
+
+    /**
+    * * Field Name: DecidedAt
+    * * Display Name: Decided At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the request was approved, rejected or withdrawn.
+    */
+    get DecidedAt(): Date | null {
+        return this.Get('DecidedAt');
+    }
+    set DecidedAt(value: Date | null) {
+        this.Set('DecidedAt', value);
+    }
+
+    /**
+    * * Field Name: DecisionNotes
+    * * Display Name: Decision Notes
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: The notes recorded with the decision, or why a request closed without being issued.
+    */
+    get DecisionNotes(): string | null {
+        return this.Get('DecisionNotes');
+    }
+    set DecisionNotes(value: string | null) {
+        this.Set('DecisionNotes', value);
+    }
+
+    /**
+    * * Field Name: RefundPaymentHeaderID
+    * * Display Name: Refund Payment Header
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Headers (vwPaymentHeaders.ID)
+    * * Description: The refund payment issued against this request. Set when the request is Issued.
+    */
+    get RefundPaymentHeaderID(): string | null {
+        return this.Get('RefundPaymentHeaderID');
+    }
+    set RefundPaymentHeaderID(value: string | null) {
+        this.Set('RefundPaymentHeaderID', value);
+    }
+
+    /**
+    * * Field Name: IssuedAt
+    * * Display Name: Issued At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the refund was issued.
+    */
+    get IssuedAt(): Date | null {
+        return this.Get('IssuedAt');
+    }
+    set IssuedAt(value: Date | null) {
+        this.Set('IssuedAt', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentHeader
+    * * Display Name: Payment Header Details
+    * * SQL Data Type: nvarchar(40)
+    */
+    get PaymentHeader(): string | null {
+        return this.Get('PaymentHeader');
+    }
+
+    /**
+    * * Field Name: RequestedByUser
+    * * Display Name: Requested By User Details
+    * * SQL Data Type: nvarchar(100)
+    */
+    get RequestedByUser(): string | null {
+        return this.Get('RequestedByUser');
+    }
+
+    /**
+    * * Field Name: ApprovalTask
+    * * Display Name: Approval Task Details
+    * * SQL Data Type: nvarchar(255)
+    */
+    get ApprovalTask(): string | null {
+        return this.Get('ApprovalTask');
+    }
+
+    /**
+    * * Field Name: DecidedByUser
+    * * Display Name: Decided By User Details
+    * * SQL Data Type: nvarchar(100)
+    */
+    get DecidedByUser(): string | null {
+        return this.Get('DecidedByUser');
+    }
+
+    /**
+    * * Field Name: RefundPaymentHeader
+    * * Display Name: Refund Payment Header Details
+    * * SQL Data Type: nvarchar(40)
+    */
+    get RefundPaymentHeader(): string | null {
+        return this.Get('RefundPaymentHeader');
+    }
+}
 
 /**
  * MJ_BizApps_Orders: Revenue Recognition Types - strongly typed entity sub-class

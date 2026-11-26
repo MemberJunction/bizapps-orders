@@ -17,8 +17,9 @@
  *   - never a second full refund of the same payment
  *   - the refund's applications mirror the original's, so a payment split across three orders
  *     refunds proportionally rather than dumping the whole reversal on the first one
- *   - the caller may issue it: at or below the RefundApprovalThreshold setting a RefundApproverRole
- *     holder, above it the receiving company's approver (./RefundAuthority.ts; off while unset)
+ *   - while the RefundApprovalThreshold setting is set, the payment's refund request must be
+ *     Approved, requested by the caller, for exactly this amount; the request is marked Issued in the
+ *     same transaction (bc-aidp-next-golive#355; ./RefundAuthority.ts, ./RefundRequest.ts)
  *
  * FAILURE MODEL: logical refusals come back INSIDE the output as `Success: false` with a reason —
  * the same contract accounting's operations and `Orders.CancelSubscription` use. Only genuine faults
@@ -46,7 +47,9 @@ import {
     LoadAppliedAllocations,
     type AppliedAllocation,
 } from './PaymentReversalFactory.js';
-import { CheckRefundAuthority } from './RefundAuthority.js';
+import { OrdersSettings } from './OrdersSettings.js';
+import { IsProviderOriginatedRefund, RefundIssueRefusal, type IssuableRefundRequest } from './RefundAuthority.js';
+import { MarkRefundRequestIssued, OpenRefundRequestFor } from './RefundRequest.js';
 import { ReversalGate } from './ReversalAuthority.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -145,21 +148,16 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
             };
         }
 
-        // Who may issue it (golive #320 §3). Checked before the Preview return, so a Preview call is
-        // refused exactly as the real refund would be; the in-repo UI does not preview, and shows the
-        // refusal from the result's Message. Off unless RefundApprovalThreshold is set; see ./RefundAuthority.ts.
-        const authorityRefusal = await CheckRefundAuthority(
-            {
-                PaymentNumber: payment.PaymentNumber,
-                ReceivingCompanyID: payment.ReceivingCompanyID,
-                RefundedTotalAfter: money(alreadyRefunded + requested),
-                ProviderRefundID: input.ProviderRefundID ?? null,
-            },
+        // No one approves their own refund (golive #355). Checked before the Preview return, so a Preview
+        // call is refused exactly as the real refund would be. Off unless RefundApprovalThreshold is set.
+        const approval = await this.approvedRequest(
+            payment,
+            { Amount: requested, ProviderRefundID: input.ProviderRefundID ?? null },
             provider,
             user,
         );
-        if (authorityRefusal) {
-            return { Success: false, Message: authorityRefusal, RemainingRefundable: refundable };
+        if ('Refusal' in approval) {
+            return { Success: false, Message: approval.Refusal, RemainingRefundable: refundable };
         }
 
         const applications = await LoadAppliedAllocations(provider, user, payment.ID);
@@ -200,6 +198,7 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
                 },
                 lines,
             );
+            if (approval.Request) await MarkRefundRequestIssued(approval.Request.ID, refund.ID, provider, user);
 
             await dbProvider.CommitTransaction();
             return {
@@ -220,6 +219,32 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
             }
             return { Success: false, Message: err instanceof Error ? err.message : String(err) };
         }
+    }
+
+    /**
+     * The approved request this refund is issued against, null when none is needed (the threshold is
+     * off, or the gateway already made the refund), or why it may not be issued.
+     */
+    private async approvedRequest(
+        payment: PaymentRow,
+        refund: { Amount: number; ProviderRefundID: string | null },
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<{ Request: IssuableRefundRequest | null } | { Refusal: string }> {
+        await OrdersSettings.Load(provider, user);
+        const threshold = OrdersSettings.RefundApprovalThreshold;
+        const isProviderOriginated = IsProviderOriginatedRefund(refund.ProviderRefundID, user);
+        if (threshold == null || isProviderOriginated) return { Request: null };
+        const openRequest = await OpenRefundRequestFor(payment.ID, provider, user);
+        const refusal = RefundIssueRefusal({
+            Threshold: threshold,
+            IsProviderOriginated: isProviderOriginated,
+            Amount: refund.Amount,
+            PaymentNumber: payment.PaymentNumber,
+            CallerUserID: user.ID,
+            OpenRequest: openRequest,
+        });
+        return refusal ? { Refusal: refusal } : { Request: openRequest };
     }
 
     // ─── Reads ─────────────────────────────────────────────────────────────────

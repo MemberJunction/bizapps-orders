@@ -734,5 +734,74 @@
       "lastModified": "2026-09-27T18:11:41.514Z",
       "checksum": "3aaabb59f796836d5a822fa2585fb8a3ec024e5b03584d97f6602fefd3e9033d"
     }
+  },
+  {
+    "fields": {
+      "Name": "Request Refund",
+      "OperationKey": "Orders.RequestRefund",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Request a refund of a captured payment, for an amount and a reason. Needs the finance reversal authorization and the RefundApprovalThreshold setting. Writes a Requested refund request and raises its Tasks approval, assigned to approvers other than the requester; once approved, the requester issues the refund with Orders.RefundPayment for exactly that amount.",
+      "InputTypeName": "RequestRefundInput",
+      "InputTypeDefinition": "@file:types/orders-request-refund.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "RequestRefundOutput",
+      "OutputTypeDefinition": "@file:types/orders-request-refund.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:payments:refund",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "A4BE9F21-363D-491A-BDA0-690E0412453E"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Record Refund Request Decision",
+      "OperationKey": "Orders.RecordRefundRequestDecision",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Approve or reject a requested refund. Only an assignee of the request's Tasks approval may decide, never the requester. Records the decision on the approval task and applies it to the request; no money moves.",
+      "InputTypeName": "RecordRefundRequestDecisionInput",
+      "InputTypeDefinition": "@file:types/orders-record-refund-request-decision.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "RefundRequestDecisionOutput",
+      "OutputTypeDefinition": "@file:types/orders-refund-request-decision.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:payments:refund",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "4B3AF942-926C-4B70-B0D6-59F33BD1FDAC"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Withdraw Refund Request",
+      "OperationKey": "Orders.WithdrawRefundRequest",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "The requester closes their own open refund request, Requested or Approved. A Requested one cancels its approval task.",
+      "InputTypeName": "WithdrawRefundRequestInput",
+      "InputTypeDefinition": "@file:types/orders-withdraw-refund-request.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "RefundRequestDecisionOutput",
+      "OutputTypeDefinition": "@file:types/orders-refund-request-decision.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:payments:refund",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "0452153E-EF76-4994-9087-80806B193137"
+    }
   }
 ]

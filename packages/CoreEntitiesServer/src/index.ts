@@ -363,6 +363,38 @@ export { RefundPaymentOperation, LoadRefundPaymentOperation } from './RefundPaym
 export { CapturePaymentOperation, LoadCapturePaymentOperation } from './CapturePaymentOperation.js';
 export { AdvanceOrderStateOperation, LoadAdvanceOrderStateOperation } from './AdvanceOrderStateOperation.js';
 export type { RefundPaymentInput, RefundPaymentOutput } from './RefundPaymentOperation.js';
+// Refund requests (bc-aidp-next-golive#355): no one approves their own refund.
+export {
+    IsProviderOriginatedRefund,
+    RefundApprovers,
+    RefundIssueRefusal,
+} from './RefundAuthority.js';
+export type { IssuableRefundRequest, RefundApproverBasis, RefundApproverFacts, RefundApproverResult, RefundIssueFacts } from './RefundAuthority.js';
+export {
+    ApplyRefundRequestDecision,
+    MarkRefundRequestIssued,
+    OpenRefundRequestFor,
+    RecordRefundRequestDecision,
+    REFUND_REQUEST_TASK_TYPE_CODE,
+    RefundDecisionRefusalFor,
+    RefundRequestOutcome,
+    RequestRefund,
+    WithdrawRefundRequest,
+} from './RefundRequest.js';
+export type {
+    RecordRefundRequestDecisionInput,
+    RefundRequestDecisionOutput,
+    RequestRefundInput,
+    RequestRefundOutput,
+    WithdrawRefundRequestInput,
+} from './RefundRequest.js';
+export {
+    LoadRefundRequestOperations,
+    RecordRefundRequestDecisionOperation,
+    RequestRefundOperation,
+    WithdrawRefundRequestOperation,
+} from './RefundRequestOperations.js';
+export { LoadRefundRequestEntityServer, RefundRequestEntityServer } from './RefundRequestEntityServer.js';
 export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './ApplyAccountCreditOperation.js';
 // Pricing (D69): the pure engine, the resolver walk + its plugin seam, the dry run, and the
 // write-time guard that stops an ambiguous rule set reaching an order.
