@@ -38,6 +38,7 @@ export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
 export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
 export { CheckAmountChange } from './AmountChange.js';
+export { SetSystemOrderOrigin } from './SystemOrderOrigin.js';
 export type { AmountChangeRequest, CheckedAmountChange } from './AmountChange.js';
 export { PlanAmountChange, PlanReduction } from './AmountChangePlan.js';
 export type { AmountChangeInput, AmountChangePlan, CreditApplication, InstalmentChange, ReductionInput, ReductionInstalment, ReductionPlan } from './AmountChangePlan.js';

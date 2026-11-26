@@ -122,6 +122,7 @@ describe('OrderReviewExemption', () => {
     it('leaves checkout and provider-payment orders alone, by the exact Origin those processes write', () => {
         expect(OrderReviewExemption({ Origin: 'Widget', ReversesOrderHeaderID: null, Lines: [sale] })?.Kind).toBe('NotDirect');
         expect(OrderReviewExemption({ Origin: 'ProviderPayment', ReversesOrderHeaderID: null, Lines: [sale] })?.Kind).toBe('NotDirect');
+        expect(OrderReviewExemption({ Origin: 'Migration', ReversesOrderHeaderID: null, Lines: [sale] })?.Kind).toBe('NotDirect');
     });
 
     it('reviews any Origin it does not know, rather than reading "not Direct" as exempt (PR #912 review)', () => {
@@ -131,7 +132,7 @@ describe('OrderReviewExemption', () => {
         }
         expect(IsSystemOrderOrigin('Widget')).toBe(true);
         expect(IsSystemOrderOrigin('Direct')).toBe(false);
-        expect([...SYSTEM_ORDER_ORIGINS]).toEqual(['Widget', 'ProviderPayment']);
+        expect([...SYSTEM_ORDER_ORIGINS]).toEqual(['Widget', 'ProviderPayment', 'Migration']);
     });
 
     it('leaves a reversal alone', () => {
