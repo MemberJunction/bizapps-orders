@@ -226,7 +226,6 @@ async function createOrderAndIntent(
         order.Description = `Created from provider payment ${args.ProviderChargeID}`;
 
         const line = (await order.Lines.Create()) as OrderLineEntity;
-        await line.EnsureISAChild();
         const quantity = args.Quantity ?? 1;
         const unitPrice = UnitPriceForCharge(args.ProviderChargeID, amount, quantity);
         if ('Code' in unitPrice) throw new RefusedStep(unitPrice.Code, unitPrice.Message);

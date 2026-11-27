@@ -180,7 +180,8 @@ never runs in CI; see [`docs/billcom-invoice-rail.md`](../../docs/billcom-invoic
 
 `orders-isa` covers MemberJunction's IS-A machinery against a real database, which MJ cannot do itself — it
 has no IS-A entity of its own and tests the machinery with mocks. It drives both of Orders' disjoint pairs
-through save, view, load, promotion (`AttachToParent`), `EnsureISAChild` and delete. Three things differ
+through save, view, load, promotion (`AttachToParent`), declarative `SubtypeSelector` (`AutoEnsureOnSave` on
+`Products` and zero-arg `EnsureISAChild()` on `Order Lines`), and delete. Three things differ
 from the other bundles:
 
 - **Its name carries the app.** Accounting and Sales have IS-A bundles too, and the check registry
